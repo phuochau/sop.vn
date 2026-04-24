@@ -160,6 +160,23 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 - [ ] **Step 2: Create `src/config/index.ts`**
 
 ```ts
+export const CATEGORIES = [
+  "Coffee & Drinks",
+  "Food & Cooking",
+  "Spa & Beauty",
+  "Nail",
+  "Other",
+] as const;
+export type Category = (typeof CATEGORIES)[number];
+
+const DOMAIN_TERMINOLOGY: Record<Category, string> = {
+  "Coffee & Drinks": "chiết xuất, pha, định lượng, xay, tamping, crema",
+  "Food & Cooking":  "xào, hầm, nêm, luộc, ướp, gia vị",
+  "Spa & Beauty":    "tẩy tế bào chết, ủ, massage, mặt nạ, dưỡng",
+  "Nail":            "giũa, sơn gel, đắp, phủ bóng, dũa móng",
+  "Other":           "",
+};
+
 export const config = {
   ai: {
     transcriptionProvider: "fal" as const,
@@ -168,13 +185,7 @@ export const config = {
     contextModel: "google/gemini-2.5-flash",
     sopModel: "anthropic/claude-sonnet-4.5",
     maxRetries: 1,
-    domainTerminology: {
-      "Coffee & Drinks": "chiết xuất, pha, định lượng, xay, tamping, crema",
-      "Food & Cooking":  "xào, hầm, nêm, luộc, ướp, gia vị",
-      "Spa & Beauty":    "tẩy tế bào chết, ủ, massage, mặt nạ, dưỡng",
-      "Nail":            "giũa, sơn gel, đắp, phủ bóng, dũa móng",
-      "Other":           "",
-    } as Record<Category, string>,
+    domainTerminology: DOMAIN_TERMINOLOGY,
     prompts: {
       normalizeSystem:
         `You clean Vietnamese ASR transcripts. Remove filler words ("ờ","à","ừm","thì","là" used as filler), stutters, and self-corrections. Preserve meaning. CRITICAL: return the same segment IDs unchanged — do not merge, split, or renumber.`,
@@ -199,16 +210,8 @@ export const config = {
   },
   retention: { videoRetentionDays: 30 },
   app: { shareTokenLength: 16, pollIntervalMs: 2000 },
-  categories: [
-    "Coffee & Drinks",
-    "Food & Cooking",
-    "Spa & Beauty",
-    "Nail",
-    "Other",
-  ] as const,
-} as const;
-
-export type Category = (typeof config.categories)[number];
+  categories: CATEGORIES,
+};
 ```
 
 - [ ] **Step 3: Commit**
@@ -510,13 +513,14 @@ git commit -m "feat: OpenRouter wrapper with strict JSON schemas and retry"
 - [ ] **Step 1: Install fal client**
 
 ```bash
-npm i @fal-ai/serverless-client
+npm i @fal-ai/client
 ```
+(The older `@fal-ai/serverless-client` is deprecated; use `@fal-ai/client`.)
 
 - [ ] **Step 2: Create `src/lib/fal.ts`**
 
 ```ts
-import { fal } from "@fal-ai/serverless-client";
+import { fal } from "@fal-ai/client";
 import type { Segment } from "./mongo";
 
 fal.config({ credentials: process.env.FAL_API_KEY });
