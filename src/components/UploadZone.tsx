@@ -1,8 +1,7 @@
 "use client";
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { UploadCloud, Folder, Link2, Globe, Lock, Play } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { UploadCloud, Link2, Lock, Sparkles, Globe } from "lucide-react";
 import { config } from "@/config";
 
 export function UploadZone() {
@@ -63,112 +62,140 @@ export function UploadZone() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto px-6 pt-14 pb-8">
-      <div className="text-center mb-8">
-        <h1 className="text-4xl md:text-5xl font-bold tracking-tight">Tải video lên</h1>
-        <p className="text-gray-600 mt-3 max-w-lg mx-auto text-sm md:text-base">
-          Chọn nguồn video bạn muốn chuyển thành SOP. Hỗ trợ tệp MP4/MOV và các liên kết YouTube, Loom, Vimeo.
-        </p>
-      </div>
+    <div className="min-h-[calc(100vh-72px-72px)] bg-[#FAFAFA] flex flex-col items-center justify-center py-10 px-6">
+      <div className="w-full max-w-[720px] space-y-6">
+        {/* Header */}
+        <div className="text-center space-y-2.5">
+          <h1
+            className="font-bold text-[#0A0A0A] text-3xl md:text-[36px] tracking-[-0.022em]"
+            style={{ fontFamily: "var(--font-inter)" }}
+          >
+            Tải video lên
+          </h1>
+          <p className="text-[15px] text-[#4B5563] leading-[1.5] max-w-[600px] mx-auto">
+            Chọn nguồn video bạn muốn chuyển thành SOP. Hỗ trợ tệp MP4/MOV và liên kết YouTube, Loom, Vimeo.
+          </p>
+        </div>
 
-      <div className="rounded-2xl border bg-white shadow-sm p-5 md:p-6 space-y-4">
-        {/* Drop zone */}
+        {/* Card */}
         <div
-          onClick={() => inputRef.current?.click()}
-          onDrop={(e) => { e.preventDefault(); pick(e.dataTransfer.files?.[0] ?? null); }}
-          onDragOver={(e) => e.preventDefault()}
-          className="rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 hover:bg-gray-100 transition px-6 py-10 text-center cursor-pointer"
+          className="rounded-3xl border border-gray-200 bg-white p-8 space-y-6"
+          style={{ boxShadow: "0 16px 48px -8px rgba(10, 10, 10, 0.08)" }}
         >
-          {file ? (
-            <div className="space-y-1">
-              <p className="font-medium">{file.name}</p>
-              <p className="text-xs text-gray-500">{(file.size / 1024 / 1024).toFixed(1)} MB</p>
-            </div>
-          ) : (
-            <>
-              <div className="w-12 h-12 mx-auto rounded-xl bg-white border flex items-center justify-center mb-3 shadow-sm">
-                <UploadCloud className="w-6 h-6 text-blue-600" strokeWidth={2} />
+          {/* Drop zone */}
+          <div
+            onClick={() => inputRef.current?.click()}
+            onDrop={(e) => { e.preventDefault(); pick(e.dataTransfer.files?.[0] ?? null); }}
+            onDragOver={(e) => e.preventDefault()}
+            className="rounded-[20px] border-2 border-dashed border-[#D1D5DB] bg-[#FAFAFA] hover:bg-gray-100 transition px-6 py-10 flex flex-col items-center justify-center gap-3.5 cursor-pointer"
+          >
+            {file ? (
+              <div className="text-center space-y-1">
+                <p className="font-medium text-[#0A0A0A]">{file.name}</p>
+                <p className="text-xs text-gray-500">{(file.size / 1024 / 1024).toFixed(1)} MB</p>
               </div>
-              <p className="font-medium text-sm">Kéo thả video vào đây</p>
-              <p className="text-xs text-gray-500 mt-1">hoặc dán liên kết YouTube/Loom bên dưới</p>
-              <Button size="sm" variant="outline" className="mt-4 rounded-full" onClick={(e) => { e.stopPropagation(); inputRef.current?.click(); }}>
-                <Folder className="w-3.5 h-3.5 mr-1.5" strokeWidth={2} />
-                Chọn tệp từ máy tính
-              </Button>
-            </>
-          )}
-          <input
-            ref={inputRef} type="file" className="hidden"
-            accept={config.limits.allowedMimeTypes.join(",")}
-            onChange={(e) => pick(e.target.files?.[0] ?? null)}
-          />
-        </div>
+            ) : (
+              <>
+                <div className="w-16 h-16 rounded-full bg-white border border-gray-200 flex items-center justify-center">
+                  <UploadCloud className="w-7 h-7 text-[#0A0A0A]" strokeWidth={1.75} />
+                </div>
+                <p
+                  className="font-semibold text-[18px] text-[#0A0A0A]"
+                  style={{ fontFamily: "var(--font-inter)" }}
+                >
+                  Kéo thả video vào đây
+                </p>
+                <p className="text-sm text-[#6B7280]">hoặc dán liên kết YouTube/Loom bên dưới</p>
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); inputRef.current?.click(); }}
+                  className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-[18px] py-[10px] text-sm font-medium hover:bg-gray-50 transition"
+                >
+                  Chọn tệp từ máy tính
+                </button>
+              </>
+            )}
+            <input
+              ref={inputRef}
+              type="file"
+              className="hidden"
+              accept={config.limits.allowedMimeTypes.join(",")}
+              onChange={(e) => pick(e.target.files?.[0] ?? null)}
+            />
+          </div>
 
-        <div className="flex items-center gap-3 text-xs text-gray-400">
-          <div className="flex-1 h-px bg-gray-200" />
-          <span>hoặc dán link</span>
-          <div className="flex-1 h-px bg-gray-200" />
-        </div>
+          {/* OR divider */}
+          <div className="flex items-center gap-3">
+            <div className="flex-1 h-px bg-gray-200" />
+            <span className="text-[12px] text-[#9CA3AF] tracking-[0.04em]">hoặc dán liên kết</span>
+            <div className="flex-1 h-px bg-gray-200" />
+          </div>
 
-        {/* URL paste (visual only for MVP) */}
-        <div className="flex items-center gap-2">
-          <div className="flex-1 flex items-center rounded-full border bg-white pl-4 pr-1.5 py-1.5">
-            <Link2 className="w-4 h-4 text-gray-400 mr-2 shrink-0" strokeWidth={2} />
+          {/* URL input (visual only) */}
+          <div className="flex items-center gap-2 rounded-2xl border border-gray-200 bg-white pl-[18px] pr-1.5 py-1.5">
+            <Link2 className="w-4.5 h-4.5 text-[#9CA3AF] shrink-0" strokeWidth={2} />
             <input
               disabled
               placeholder="https://youtube.com/watch?v=..."
-              className="flex-1 bg-transparent outline-none text-sm placeholder:text-gray-400"
+              className="flex-1 bg-transparent outline-none text-sm placeholder:text-[#9CA3AF] text-[#0A0A0A] disabled:cursor-not-allowed"
             />
-            <button disabled className="rounded-full bg-gray-900 text-white text-xs px-4 py-1.5 opacity-50 cursor-not-allowed">Dán</button>
+            <button
+              disabled
+              className="rounded-full bg-[#0A0A0A] text-white text-sm font-medium px-[18px] py-[10px] opacity-50 cursor-not-allowed"
+            >
+              Dán
+            </button>
           </div>
-        </div>
 
-        {/* Options row */}
-        <div className="flex items-center justify-between pt-2 text-sm">
-          <div className="flex items-center gap-2 text-gray-700">
-            <svg className="w-4 h-4 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-            <span className="font-medium">Ngôn ngữ nói:</span>
-            <span className="rounded-full border px-3 py-1 text-xs font-medium">Tiếng Việt</span>
-          </div>
-          <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
-            <span className={`w-9 h-5 rounded-full p-0.5 transition ${isPublic ? "bg-blue-600" : "bg-gray-300"}`}>
-              <span className={`block w-4 h-4 rounded-full bg-white transition ${isPublic ? "translate-x-4" : ""}`} />
-            </span>
-            <input type="checkbox" className="hidden" checked={isPublic} onChange={e => setIsPublic(e.target.checked)} />
-            Chia sẻ công khai sau khi hoàn tất SOP
-          </label>
-        </div>
-
-        {/* Warning note */}
-        <div className="flex items-center justify-center gap-2 pt-1 text-[11px] text-gray-500">
-          <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-          Video của bạn được xử lý riêng tư và sẽ tự động xóa sau 30 ngày
-        </div>
-
-        {error && <p className="text-sm text-red-600 text-center">{error}</p>}
-        {uploading && (
-          <div className="space-y-1.5">
-            <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
-              <div className="h-full bg-blue-600 transition-all" style={{ width: `${progress}%` }} />
+          {/* Options row */}
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div className="inline-flex items-center gap-2.5 rounded-xl border border-gray-200 bg-[#FAFAFA] px-3.5 py-2.5">
+              <Globe className="w-4 h-4 text-[#0A0A0A]" strokeWidth={2} />
+              <span className="text-sm font-medium text-[#0A0A0A]">Tiếng Việt</span>
             </div>
-            <p className="text-xs text-gray-500 text-center">Đang tải lên… {progress}%</p>
+            <label className="inline-flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isPublic}
+                onChange={(e) => setIsPublic(e.target.checked)}
+                className="w-4 h-4 rounded border-gray-300 text-[#0066FF] focus:ring-[#0066FF]"
+              />
+              <span className="text-sm text-[#374151]">Chia sẻ công khai sau khi hoàn tất</span>
+            </label>
           </div>
-        )}
 
-        {/* CTA */}
-        <Button
-          disabled={!file || uploading}
-          onClick={submit}
-          className="w-full rounded-full bg-blue-600 hover:bg-blue-700 text-white h-12 text-base"
-        >
-          <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-          Bắt đầu tạo SOP
-        </Button>
+          {/* Privacy note */}
+          <div className="flex items-center justify-center gap-1.5 text-[12px] text-[#666666]">
+            <Lock className="w-3 h-3" strokeWidth={2} />
+            Video của bạn được xử lý riêng tư và tự động xóa sau 30 ngày.
+          </div>
+
+          {error && <p className="text-sm text-red-600 text-center">{error}</p>}
+          {uploading && (
+            <div className="space-y-1.5">
+              <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
+                <div className="h-full bg-[#0066FF] transition-all" style={{ width: `${progress}%` }} />
+              </div>
+              <p className="text-xs text-gray-500 text-center">Đang tải lên… {progress}%</p>
+            </div>
+          )}
+
+          {/* Submit */}
+          <button
+            disabled={!file || uploading}
+            onClick={submit}
+            className="w-full inline-flex items-center justify-center gap-2.5 rounded-full bg-[#0066FF] text-white font-medium text-[15px] px-7 py-4 hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Sparkles className="w-4.5 h-4.5" strokeWidth={2} />
+            Bắt đầu tạo SOP
+          </button>
+        </div>
+
+        {/* Helper text */}
+        <p className="text-center text-[12px] text-[#9CA3AF]">
+          Tệp tối đa 500 MB · Thời lượng tối đa 5 phút · Hỗ trợ MP4, MOV, WEBM
+        </p>
       </div>
-
-      <p className="text-xs text-gray-500 text-center mt-5">
-        Tải từ tệp: 500 MB · Thời lượng tối đa 5 phút · MP4, MOV, WebM
-      </p>
     </div>
   );
 }
