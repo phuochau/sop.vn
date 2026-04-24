@@ -56,20 +56,14 @@ export const processSop = task({
       const segmentsClean = await runNormalize(segments);
       await (await sops()).updateOne({ _id }, { $set: { segmentsClean, updatedAt: new Date() } });
 
-      // Stage 3
+      // Stage 3 — always AI-detect category
       await setStatus(_id, "analyzing");
       const { category, domainSummary } = await runContext({
-        userCategory: doc.userProvidedCategory ? doc.category : null,
         cleanTranscript: segmentsClean.map(s => s.text).join(" "),
       });
       await (await sops()).updateOne(
         { _id },
-        {
-          $set: {
-            category: doc.userProvidedCategory ? doc.category : category,
-            domainSummary, updatedAt: new Date(),
-          },
-        }
+        { $set: { category, domainSummary, updatedAt: new Date() } }
       );
 
       // Stage 4
@@ -82,11 +76,8 @@ export const processSop = task({
         return fail(_id, "generation_failed");
       }
 
-      // Title: user wins over AI
-      const finalTitle = (doc.title && doc.title.trim().length > 0) ? doc.title : extracted.title;
-
       // Stage 5
-      await setStatus(_id, "clipping", { title: finalTitle });
+      await setStatus(_id, "clipping", { title: extracted.title });
       let steps;
       try {
         steps = await runClip({

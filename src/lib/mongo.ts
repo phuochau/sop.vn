@@ -37,9 +37,8 @@ export interface Step {
 
 export interface SopDoc {
   _id: ObjectId;
-  title: string;
-  category: string;
-  userProvidedCategory: boolean;    // true if user picked on S2 (skip Stage 3)
+  title: string;                     // AI-generated in Stage 4
+  category: string;                  // AI-detected in Stage 3
   status: SopStatus;
   errorCode: ErrorCode;
   videoR2Key: string | null;

@@ -10,14 +10,12 @@ const Body = z.object({
   filename: z.string().min(1),
   sizeBytes: z.number().int().positive(),
   mimeType: z.string(),
-  userTitle: z.string().optional(),
-  userCategory: z.enum(config.categories as unknown as [string, ...string[]]).optional(),
 });
 
 export async function POST(req: Request) {
   const parsed = Body.safeParse(await req.json());
   if (!parsed.success) return NextResponse.json({ error: "bad_request" }, { status: 400 });
-  const { filename, sizeBytes, mimeType, userTitle, userCategory } = parsed.data;
+  const { filename, sizeBytes, mimeType } = parsed.data;
 
   if (sizeBytes > config.limits.maxVideoSizeMB * 1024 * 1024)
     return NextResponse.json({ error: "file_too_large" }, { status: 400 });
@@ -32,9 +30,8 @@ export async function POST(req: Request) {
 
   await (await sops()).insertOne({
     _id,
-    title: userTitle ?? "",
-    category: userCategory ?? "",
-    userProvidedCategory: Boolean(userCategory),
+    title: "",           // AI fills in Stage 4
+    category: "",        // AI fills in Stage 3
     status: "uploading",
     errorCode: null,
     videoR2Key: key,

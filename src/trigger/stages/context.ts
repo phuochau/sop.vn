@@ -5,12 +5,8 @@ import { logger } from "@trigger.dev/sdk/v3";
 import type { Category } from "@/config";
 
 export async function runContext(args: {
-  userCategory: string | null;
   cleanTranscript: string;
 }): Promise<{ category: Category; domainSummary: string }> {
-  if (args.userCategory) {
-    return { category: args.userCategory as Category, domainSummary: "" };
-  }
   try {
     const out = await llmJson({
       model: config.ai.contextModel,
