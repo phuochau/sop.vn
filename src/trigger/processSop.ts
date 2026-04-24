@@ -2,6 +2,8 @@ import { task, logger } from "@trigger.dev/sdk/v3";
 import { ObjectId } from "mongodb";
 import { sops, events, type ErrorCode, type SopStatus } from "@/lib/mongo";
 import { presignGet } from "@/lib/r2";
+import { config } from "@/config";
+import { probeDuration } from "./lib/probe";
 import { runTranscribe } from "./stages/transcribe";
 import { runNormalize } from "./stages/normalize";
 import { runContext } from "./stages/context";
@@ -26,6 +28,16 @@ export const processSop = task({
     const signedVideo = await presignGet(doc.videoR2Key, 3600);
 
     try {
+      // Pre-stage: validate duration
+      try {
+        const duration = await probeDuration(signedVideo);
+        if (duration < config.limits.minVideoDurationSec) return fail(_id, "video_too_short");
+        if (duration > config.limits.maxVideoDurationSec) return fail(_id, "video_too_long");
+      } catch (e) {
+        logger.error("probe failed", { e: String(e) });
+        return fail(_id, "unknown");
+      }
+
       // Stage 1
       await setStatus(_id, "transcribing");
       let stage1;
