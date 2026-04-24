@@ -36,8 +36,8 @@ export const config = {
     },
   },
   limits: {
-    maxVideoSizeMB: 500,
-    maxVideoDurationSec: 300,
+    maxVideoSizeMB: 50,
+    maxVideoDurationSec: 60 * 10,
     minVideoDurationSec: 10,
     allowedMimeTypes: [
       "video/mp4",

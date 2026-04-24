@@ -2,9 +2,10 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
+import { Check, Loader2, Mail, AtSign, ArrowRight, X, Lock } from "lucide-react";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
+import { Button } from "@/components/ui/button";
 import { config } from "@/config";
 
 type Status =
@@ -12,22 +13,16 @@ type Status =
   | "generating" | "clipping" | "done" | "failed";
 
 const STATUS_STEP_INDEX: Record<Status, number> = {
-  uploading: 0,
-  transcribing: 0,
-  normalizing: 1,
-  analyzing: 2,
-  generating: 3,
-  clipping: 4,
-  done: 5,
-  failed: 0,
+  uploading: 0, transcribing: 0, normalizing: 1, analyzing: 2,
+  generating: 3, clipping: 4, done: 5, failed: 0,
 };
 
 const STEPS = [
-  { label: "Trích xuất âm thanh từ video" },
-  { label: "Làm sạch & chuyển thành văn bản" },
-  { label: "Phân tích các bước thao tác" },
-  { label: "Tạo nội dung từng bước" },
-  { label: "Cắt video & hoàn thiện SOP" },
+  "Trích xuất âm thanh",
+  "Chuyển đổi giọng nói thành văn bản",
+  "Phân tích các bước thao tác",
+  "Dịch sang tiếng Việt",
+  "Định dạng SOP",
 ];
 
 const ERROR_MSG: Record<string, string> = {
@@ -69,117 +64,198 @@ export default function Processing({ params }: { params: Promise<{ id: string }>
 
   return (
     <>
-      <Nav variant="app" />
-      <main className="max-w-6xl mx-auto px-6 pt-10 pb-8">
-        <div className="flex justify-end mb-6">
-          <span className="inline-flex items-center gap-2 rounded-full bg-blue-50 text-blue-700 border border-blue-100 px-3 py-1 text-xs font-medium">
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse" />
+      {/* Nav with processing badge in the middle */}
+      <header className="w-full bg-white border-b border-gray-100">
+        <div className="max-w-7xl mx-auto px-6 md:px-12 h-[72px] flex items-center justify-between gap-4">
+          <Link href="/" className="flex items-center gap-2.5">
+            <span className="w-8 h-8 rounded-lg bg-[#0A0A0A] text-white flex items-center justify-center font-bold text-sm">S</span>
+            <span className="font-bold text-[18px]" style={{ fontFamily: "var(--font-inter)" }}>SOP.vn</span>
+          </Link>
+          <span className="inline-flex items-center gap-2.5 rounded-full bg-[#EFF6FF] text-[#1D4ED8] px-3.5 py-1.5 text-[13px] font-medium">
+            <span className="w-2 h-2 rounded-full bg-[#2563EB] animate-pulse" />
             Đang xử lý video của bạn
           </span>
+          <div className="w-[100px]" />
         </div>
+      </header>
 
-        <div className="grid md:grid-cols-5 gap-8 items-start">
-          <aside className="md:col-span-2">
-            <div className="relative rounded-2xl bg-gray-900 text-white aspect-square p-8 flex flex-col items-center justify-center shadow-xl overflow-hidden">
-              <svg className="w-44 h-44 -rotate-90" viewBox="0 0 100 100">
-                <circle cx="50" cy="50" r="44" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="8" />
-                <circle
-                  cx="50" cy="50" r="44" fill="none"
-                  stroke="#3b82f6" strokeWidth="8" strokeLinecap="round"
-                  strokeDasharray={`${2 * Math.PI * 44}`}
-                  strokeDashoffset={`${2 * Math.PI * 44 * (1 - progress / 100)}`}
-                  style={{ transition: "stroke-dashoffset 0.5s ease" }}
-                />
-              </svg>
-              <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-4xl font-bold text-blue-400 -mt-8">{progress}%</span>
+      <main className="min-h-[calc(100vh-72px-72px)] bg-[#FAFAFA] px-6 md:px-12 py-10">
+        <div className="max-w-6xl mx-auto grid md:grid-cols-[480px_1fr] gap-10 lg:gap-16 items-start justify-center">
+          {/* Cascade */}
+          <aside className="relative h-[480px] mx-auto w-full max-w-[480px] hidden md:block">
+            {/* Back left */}
+            <div
+              className="absolute left-[30px] top-[60px] w-[300px] h-[360px] rounded-3xl border border-gray-200 bg-white p-5 overflow-hidden"
+              style={{ transform: "rotate(-9deg)", boxShadow: "0 24px 48px -8px rgba(10, 10, 10, 0.08)" }}
+            >
+              <p className="text-[11px] text-[#9CA3AF] mb-2.5">Bản ghi âm</p>
+              <div className="space-y-2.5">
+                {[1, 2, 3, 4].map(i => <div key={i} className="h-1.5 rounded-full bg-gray-200" />)}
               </div>
-              <p className="mt-4 text-sm text-gray-300 text-center max-w-[14rem]">
-                {failed ? "Xử lý không thành công" : STEPS[Math.min(activeIdx, STEPS.length - 1)].label}
+            </div>
+            {/* Back right */}
+            <div
+              className="absolute left-[170px] top-[60px] w-[300px] h-[360px] rounded-3xl border border-gray-200 bg-white p-5 overflow-hidden"
+              style={{ transform: "rotate(9deg)", boxShadow: "0 24px 48px -8px rgba(10, 10, 10, 0.08)" }}
+            >
+              <p className="text-[11px] text-[#9CA3AF] mb-2.5">Văn bản đã trích xuất</p>
+              <div className="space-y-2.5">
+                {[1, 2, 3].map(i => <div key={i} className="h-1.5 rounded-full bg-gray-200" />)}
+              </div>
+            </div>
+            {/* Front dark */}
+            <div
+              className="absolute left-[80px] top-[30px] w-[340px] h-[420px] rounded-[28px] bg-[#0A0A0A] p-7 flex flex-col items-center justify-center gap-4 overflow-hidden"
+              style={{ boxShadow: "0 32px 64px -12px rgba(10, 10, 10, 0.2)" }}
+            >
+              <div className="relative w-24 h-24">
+                <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
+                  <circle cx="50" cy="50" r="44" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="6" />
+                  <circle
+                    cx="50" cy="50" r="44" fill="none"
+                    stroke="#3b82f6" strokeWidth="6" strokeLinecap="round"
+                    strokeDasharray={`${2 * Math.PI * 44}`}
+                    strokeDashoffset={`${2 * Math.PI * 44 * (1 - progress / 100)}`}
+                    style={{ transition: "stroke-dashoffset 0.5s ease" }}
+                  />
+                </svg>
+              </div>
+              <span className="text-white text-[32px] font-bold" style={{ fontFamily: "var(--font-inter)" }}>{progress}%</span>
+              <p className="text-[13px] text-[#9CA3AF] leading-[1.45] text-center max-w-[240px]">
+                {failed ? "Xử lý không thành công" : `Đang ${STEPS[Math.min(activeIdx, STEPS.length - 1)].toLowerCase()} trong video...`}
               </p>
             </div>
           </aside>
 
-          <section className="md:col-span-3 space-y-6">
-            <div className="space-y-2">
-              <p className="text-xs font-medium text-blue-600">Bước {Math.min(activeIdx + 1, STEPS.length)}/{STEPS.length}</p>
-              <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
-                {failed ? "Đã có lỗi xảy ra" : "Đang phân tích video…"}
+          {/* Right column */}
+          <section className="w-full max-w-[560px] space-y-6">
+            {/* Header */}
+            <div className="space-y-2.5">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-[#EFF6FF] text-[#1D4ED8] px-3 py-1.5 text-[12px] font-medium">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#2563EB]" />
+                Bước {Math.min(activeIdx + 1, STEPS.length)} / {STEPS.length}
+              </span>
+              <h1
+                className="font-bold text-[#0A0A0A] text-3xl md:text-[36px] tracking-[-0.022em]"
+                style={{ fontFamily: "var(--font-inter)" }}
+              >
+                {failed ? "Đã có lỗi xảy ra" : "Đang phân tích video..."}
               </h1>
-              <p className="text-gray-600 text-sm">
-                Hệ thống đang xem từng khung hình và đọc theo các thao tác trên màn hình. Bạn có thể đóng trình duyệt — chúng tôi sẽ giữ kết quả khi xong.
+              <p className="text-sm text-[#4B5563] leading-[1.55]">
+                Hệ thống đang xem từng khung hình và ghi lại các thao tác trên màn hình. Bạn có thể đóng tab — chúng tôi sẽ gửi email khi xong.
               </p>
             </div>
 
             {!failed && (
               <>
+                {/* Progress */}
                 <div className="space-y-2">
-                  <div className="flex justify-between text-xs text-gray-600">
-                    <span>Tiến độ tổng thể</span>
-                    <span className="font-semibold">{progress}%</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[13px] font-medium text-[#374151]">Tiến độ tổng thể</span>
+                    <span
+                      className="text-[13px] font-semibold text-[#0A0A0A]"
+                      style={{ fontFamily: "var(--font-inter)" }}
+                    >
+                      {progress}%
+                    </span>
                   </div>
-                  <div className="h-1.5 rounded-full bg-gray-200 overflow-hidden">
-                    <div className="h-full bg-blue-600 rounded-full transition-all" style={{ width: `${progress}%` }} />
+                  <div className="h-2 rounded-full bg-[#E5E7EB] overflow-hidden">
+                    <div className="h-full bg-[#2563EB] transition-all" style={{ width: `${progress}%` }} />
                   </div>
+                  <p className="text-[12px] text-[#6B7280]">Còn lại khoảng 2 phút</p>
                 </div>
 
-                <div className="space-y-2">
-                  <p className="text-xs font-medium text-gray-500">Các bước xử lý</p>
-                  <ul className="space-y-1.5">
-                    {STEPS.map((s, i) => {
-                      const state = i < activeIdx ? "done" : i === activeIdx ? "active" : "pending";
-                      return (
-                        <li
-                          key={i}
-                          className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 text-sm ${
-                            state === "active" ? "bg-blue-50 border-blue-200" : "bg-white border-gray-100"
+                {/* Steps */}
+                <div className="rounded-2xl border border-gray-200 bg-white p-5 space-y-1.5">
+                  {STEPS.map((label, i) => {
+                    const state = i < activeIdx ? "done" : i === activeIdx ? "active" : "pending";
+                    return (
+                      <div
+                        key={i}
+                        className={`flex items-center gap-3 p-3 rounded-xl ${state === "active" ? "bg-[#EFF6FF]" : ""}`}
+                      >
+                        <span
+                          className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${
+                            state === "done"
+                              ? "bg-[#0A0A0A] text-white"
+                              : state === "active"
+                              ? "bg-[#2563EB] text-white"
+                              : "bg-white border border-[#D1D5DB]"
                           }`}
                         >
-                          <span
-                            className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-semibold shrink-0 ${
-                              state === "done"
-                                ? "bg-green-600 text-white"
-                                : state === "active"
-                                ? "bg-blue-600 text-white"
-                                : "bg-gray-200 text-gray-500"
-                            }`}
-                          >
-                            {state === "done" ? "✓" : state === "active" ? (
-                              <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round"/></svg>
-                            ) : i + 1}
-                          </span>
-                          <span className={state === "pending" ? "text-gray-400" : ""}>{s.label}</span>
-                          <span className="ml-auto text-xs text-gray-400">
-                            {state === "done" && "Hoàn tất"}
-                            {state === "active" && "Đang chạy…"}
-                          </span>
-                        </li>
-                      );
-                    })}
-                  </ul>
+                          {state === "done" && <Check className="w-3.5 h-3.5" strokeWidth={2.5} />}
+                          {state === "active" && <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={2.5} />}
+                        </span>
+                        <span
+                          className={`flex-1 text-sm ${
+                            state === "pending" ? "text-[#9CA3AF] font-normal" :
+                            state === "active" ? "text-[#0A0A0A] font-semibold" :
+                            "text-[#0A0A0A] font-medium"
+                          }`}
+                        >
+                          {label}
+                        </span>
+                        <span
+                          className={`text-[12px] ${
+                            state === "active" ? "text-[#2563EB] font-medium" :
+                            state === "pending" ? "text-[#9CA3AF]" :
+                            "text-[#9CA3AF]"
+                          }`}
+                          style={state === "done" ? { fontFamily: "var(--font-inter)" } : {}}
+                        >
+                          {state === "done" && "xong"}
+                          {state === "active" && "đang chạy..."}
+                          {state === "pending" && "chờ"}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
 
-                <div className="rounded-xl border bg-gray-50 p-4 flex items-start gap-3">
-                  <div className="w-9 h-9 rounded-lg bg-white border flex items-center justify-center shrink-0">
-                    <svg className="w-4 h-4 text-gray-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-                  </div>
-                  <div className="flex-1 space-y-2">
-                    <div>
-                      <p className="text-sm font-medium">Đừng đợi ở đây — chúng tôi sẽ gửi email khi xong</p>
-                      <p className="text-xs text-gray-500">Nhập email để nhận thông báo ngay khi SOP sẵn sàng.</p>
+                {/* Email notify card */}
+                <div
+                  className="rounded-2xl border border-gray-200 bg-white p-6 space-y-3.5"
+                  style={{ boxShadow: "0 16px 48px -8px rgba(10, 10, 10, 0.08)" }}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-[10px] bg-[#EFF6FF] flex items-center justify-center">
+                      <Mail className="w-4.5 h-4.5 text-[#0066FF]" strokeWidth={2} />
                     </div>
-                    <div className="flex items-center gap-2">
-                      <input
-                        disabled
-                        type="email"
-                        placeholder="email@example.com"
-                        className="flex-1 rounded-full border bg-white px-4 py-1.5 text-sm placeholder:text-gray-400 outline-none opacity-60"
-                      />
-                      <button disabled className="rounded-full bg-blue-600 text-white text-xs px-4 py-2 opacity-60 cursor-not-allowed">
-                        Nhận thông báo
-                      </button>
-                    </div>
+                    <h3
+                      className="font-semibold text-[17px] text-[#0A0A0A] leading-[1.3]"
+                      style={{ fontFamily: "var(--font-inter)" }}
+                    >
+                      Đừng đợi ở đây — chúng tôi sẽ gửi email khi xong
+                    </h3>
                   </div>
+                  <p className="text-sm text-[#4B5563] leading-[1.55]">
+                    Video có thể mất vài phút để xử lý. Hãy để lại email, chúng tôi sẽ gửi SOP hoàn chỉnh ngay khi sẵn sàng.
+                  </p>
+                  <div className="flex items-center gap-2 rounded-2xl border border-gray-200 bg-[#FAFAFA] pl-4 pr-1.5 py-1.5">
+                    <AtSign className="w-4 h-4 text-[#9CA3AF] shrink-0" strokeWidth={2} />
+                    <input
+                      disabled
+                      type="email"
+                      placeholder="email@congty.com"
+                      className="flex-1 bg-transparent outline-none text-sm placeholder:text-[#9CA3AF] text-[#0A0A0A] disabled:cursor-not-allowed"
+                    />
+                    <button
+                      disabled
+                      className="inline-flex items-center gap-2 rounded-full bg-[#0066FF] text-white text-[13px] font-medium px-[18px] py-2.5 opacity-60 cursor-not-allowed"
+                    >
+                      Nhận thông báo qua email
+                      <ArrowRight className="w-3.5 h-3.5" strokeWidth={2} />
+                    </button>
+                  </div>
+                  <p className="text-[12px] text-[#9CA3AF]">Bạn có thể đóng tab này, chúng tôi sẽ liên hệ khi SOP sẵn sàng.</p>
+                </div>
+
+                {/* Cancel */}
+                <div className="flex items-center justify-center gap-1.5 pt-1">
+                  <Link href="/" className="inline-flex items-center gap-1.5 text-[13px] text-[#6B7280] hover:text-[#0A0A0A]">
+                    <X className="w-3.5 h-3.5" strokeWidth={2} />
+                    Hủy xử lý
+                  </Link>
                 </div>
               </>
             )}
@@ -188,17 +264,19 @@ export default function Processing({ params }: { params: Promise<{ id: string }>
               <div className="space-y-4">
                 <p className="text-red-600 text-sm">{ERROR_MSG[errorCode ?? "unknown"]}</p>
                 <Link href="/upload">
-                  <Button className="rounded-full bg-blue-600 hover:bg-blue-700">Thử lại</Button>
+                  <Button className="rounded-full bg-[#0066FF] hover:bg-blue-700 text-white">Thử lại</Button>
                 </Link>
               </div>
             )}
 
-            <div className="text-center pt-4">
-              <Link href="/" className="text-xs text-gray-400 hover:text-gray-600">Hủy xử lý</Link>
+            <div className="flex items-center justify-center gap-1.5 pt-1 text-[12px] text-[#9CA3AF]">
+              <Lock className="w-3 h-3" strokeWidth={2} />
+              Video và SOP của bạn được mã hóa và sẽ tự xóa sau 30 ngày.
             </div>
           </section>
         </div>
       </main>
+
       <Footer />
     </>
   );
