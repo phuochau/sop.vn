@@ -55,11 +55,12 @@ export function UploadZone() {
         xhr.send(file);
       });
 
-      await fetch("/api/upload/commit", {
+      const commit = await fetch("/api/upload/commit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sopId: init.sopId }),
       });
+      if (!commit.ok) throw new Error("commit_failed");
 
       router.push(`/processing/${init.sopId}`);
     } catch (e: any) {
