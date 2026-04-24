@@ -58,7 +58,7 @@ sops {
   _id: ObjectId,
   title: string,                   // AI-generated; overridden by user-entered S2 title if provided
   category: string,                // AI-generated; overridden by user-entered S2 category if provided
-  status: "uploading" | "transcribing" | "generating" | "clipping" | "done" | "failed",
+  status: "uploading" | "transcribing" | "normalizing" | "analyzing" | "generating" | "clipping" | "done" | "failed",
   errorCode:                       // set when status="failed"
     | null
     | "video_too_short"
@@ -72,7 +72,10 @@ sops {
     | "unknown",
   videoR2Key: string | null,       // nulled after retention cleanup
   videoExpiresAt: Date,             // createdAt + 30 days
-  transcript: string | null,
+  transcript: string | null,              // joined clean text, for debugging/admin
+  segments: [{ id, start, end, text }],     // raw Whisper output, authoritative timestamps
+  segmentsClean: [{ id, text }] | null,     // normalized Stage 2 output
+  domainSummary: string | null,              // Stage 3
   steps: [{
     title: string,
     description: string,
@@ -102,6 +105,7 @@ No rate-limit collection for MVP.
 
 ## Processing Pipeline
 
+### High-level flow
 ```
 [Client]                    [Next.js API]                  [Trigger.dev Job]
    |                              |                               |
@@ -112,29 +116,100 @@ No rate-limit collection for MVP.
    | 3. POST /api/upload/commit ->|                               |
    |    (sopId)                   | status=transcribing           |
    |                              | trigger.tasks.trigger("processSop", {sopId}) --->|
-   |<-- 200                       |                               | a. fal.ai transcribe → timestamped segments
-   |                              |                               | b. OpenRouter → steps JSON (title, desc, start, end)
-   |                              |                               | c. ffmpeg: cut clip + poster per step, upload to R2
-   |                              |                               | d. update sops (steps, status=done)
+   |<-- 200                       |                               | runs staged AI pipeline (see below)
    | 4. poll /api/sop/:id/status -|                               |
    |<-- {status, ...}             |                               |
    | 5. navigate to /sop/:id      |                               |
 ```
 
+### AI pipeline (4 stages, inside `processSop` Trigger.dev task)
+
+**Design principle:** timestamps come from Whisper only. LLMs reference segments by ID, never emit raw timestamps. Code resolves IDs back to timestamps for ffmpeg.
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ Stage 1 — ASR                                 status="transcribing" │
+│ fal.ai Whisper verbose_json on R2 video URL                         │
+│ → segments: [{ id, start, end, text }]  (id = array index)          │
+│ Store `transcript` (joined text) + raw segments on sops doc         │
+└─────────────────────────────────────────────────────────────────────┘
+                                  │
+┌─────────────────────────────────────────────────────────────────────┐
+│ Stage 2 — Normalize                           status="normalizing"  │
+│ Cheap LLM via OpenRouter (`config.ai.normalizeModel`)               │
+│ Input: indexed segments                                             │
+│ Task: remove Vietnamese fillers ("ờ","à","thì là"), repetitions,    │
+│ self-corrections. MUST preserve segment IDs 1:1.                    │
+│ Output schema: [{ id: number, text: string }]                       │
+│ → `segmentsClean`                                                   │
+└─────────────────────────────────────────────────────────────────────┘
+                                  │
+┌─────────────────────────────────────────────────────────────────────┐
+│ Stage 3 — Context detect                      status="analyzing"    │
+│ Cheap LLM (`config.ai.contextModel`)                                │
+│ Input: joined clean transcript                                      │
+│ Output schema:                                                      │
+│   { category: "Coffee & Drinks" | "Food & Cooking"                  │
+│             | "Spa & Beauty" | "Nail" | "Other",                    │
+│     domainSummary: string }                                         │
+│ Stored on sops doc. If user provided category on S2, user wins.     │
+│ Used to select a domain terminology hint for Stage 4.               │
+└─────────────────────────────────────────────────────────────────────┘
+                                  │
+┌─────────────────────────────────────────────────────────────────────┐
+│ Stage 4 — Step extraction                     status="generating"   │
+│ Strong LLM (`config.ai.sopModel`) with strict JSON schema response  │
+│ Input:                                                              │
+│   - clean indexed segments                                          │
+│   - domain terminology hint from Stage 3                            │
+│ Prompt rule (explicit): "Let the trainer's narration decide where   │
+│   steps begin and end. Do not impose a preferred number of steps."  │
+│ Output schema:                                                      │
+│   { title: string,                                                  │
+│     steps: [{ title: string,                                        │
+│               description: string,                                  │
+│               startSegmentId: number,                               │
+│               endSegmentId: number }] }                             │
+│ Retry ONCE on schema-validation failure. If second attempt fails,   │
+│ set status="failed", errorCode="generation_failed".                 │
+└─────────────────────────────────────────────────────────────────────┘
+                                  │
+┌─────────────────────────────────────────────────────────────────────┐
+│ Stage 5 — Resolve + Clip                      status="clipping"     │
+│ Pure code (no LLM):                                                 │
+│  a. For each step, look up real start/end from raw Stage-1 segments │
+│     via startSegmentId/endSegmentId                                 │
+│  b. Validate: monotonic, endTime > startTime, in [0, videoDuration] │
+│     If invalid, clamp; if still invalid, drop the step              │
+│  c. Download original video to task tmp dir                         │
+│  d. For each step: ffmpeg cut clip + extract poster frame at        │
+│     midpoint, upload both to R2                                     │
+│  e. Write final steps array + status="done" to Mongo                │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Runtime details
+
 - **Poll interval:** 2 seconds.
-- **Step statuses exposed to UI:** `uploading`/`transcribing` (S3 step 2 active), `generating`/`clipping` (S3 step 3 active), `done` (redirect S4), `failed` (inline error on S3 with retry → /upload).
-- **Video cap:** 5 minutes, 500 MB, MP4/MOV/WEBM/AVI. Enforced server-side in `/api/upload/init` (size + mime); duration validated in the Trigger.dev job after probe via `ffprobe`.
+- **Step statuses exposed to UI:** `uploading`/`transcribing`/`normalizing`/`analyzing` → S3 step 2 active; `generating`/`clipping` → S3 step 3 active; `done` → redirect S4; `failed` → inline error on S3 with retry → /upload.
+- **Video cap:** 5 minutes, 500 MB, MP4/MOV/WEBM/AVI. Enforced server-side in `/api/upload/init` (size + mime); duration validated in the Trigger.dev job via `ffprobe` before Stage 1.
 - **Poll response shape:** `GET /api/sop/:id/status` → `{ status, errorCode, title, hasSteps: boolean }`. S3 uses `status` for the stepper and `errorCode` for failure messages.
 - **Audio handling:** fal.ai Whisper accepts the video R2 URL directly and extracts audio internally — no separate audio-extraction step required.
-
-### Prompt (OpenRouter, configurable)
-
-Input: timestamped transcript segments.
-Output: strict JSON `{ "title": string, "category": string, "steps": [{ "title": string, "description": string, "startTime": number, "endTime": number }] }`. All text in Vietnamese. Prompt itself in English for model performance.
+- **Domain terminology hints** (injected into Stage 4 prompt based on Stage 3 category):
+  - `Coffee & Drinks`: "chiết xuất, pha, định lượng, xay, tamping, crema"
+  - `Food & Cooking`: "xào, hầm, nêm, luộc, ướp, gia vị"
+  - `Spa & Beauty`: "tẩy tế bào chết, ủ, massage, mặt nạ, dưỡng"
+  - `Nail`: "giũa, sơn gel, đắp, phủ bóng, dũa móng"
+  - `Other`: "" (no hint)
+- **Structured outputs:** all LLM calls use OpenRouter `response_format: { type: "json_schema", strict: true }` and Zod validation on receive. Stages 2 + 4 retry once on validation failure; Stage 3 does not retry (failure → `category="Other"`).
+- **Model tiers** (all configurable in `src/config/index.ts`):
+  - `normalizeModel` — cheap (e.g., `google/gemini-2.5-flash` or `anthropic/claude-haiku-4.5`)
+  - `contextModel` — cheap (same tier)
+  - `sopModel` — strong (e.g., `anthropic/claude-sonnet-4.5`)
 
 ### Clip cutting (ffmpeg)
 
-For each step, run `ffmpeg -ss {startTime} -to {endTime} -i input.mp4 -c copy clip.mp4` and `ffmpeg -ss {midpoint} -i input.mp4 -frames:v 1 poster.jpg`. Upload both to R2 under `sops/{sopId}/step-{i}.mp4` and `sops/{sopId}/step-{i}.jpg`. Clips served via R2 public URL (or signed URL if bucket is private).
+For each step, run `ffmpeg -ss {startTime} -to {endTime} -i input.mp4 -c copy clip.mp4` and `ffmpeg -ss {midpoint} -i input.mp4 -frames:v 1 poster.jpg`. Upload both to R2 under `sops/{sopId}/step-{i}.mp4` and `sops/{sopId}/step-{i}.jpg`. Clips served via signed URLs from the API layer.
 
 ---
 
@@ -165,12 +240,25 @@ Step clips + posters are kept indefinitely (tiny, and they are the SOP).
 ```ts
 export const config = {
   ai: {
-    sopModel: "anthropic/claude-sonnet-4.5",
     transcriptionProvider: "fal",
     transcriptionModel: "fal-ai/whisper",
-    sopSystemPrompt: `You convert Vietnamese-narrated training videos into structured step-by-step SOPs. You receive a timestamped transcript. Group segments into coherent steps (typically 3–10). Each step has a short Vietnamese title (≤8 words), a 2–4 sentence Vietnamese description, and startTime/endTime in seconds matching the transcript. Also output an overall Vietnamese SOP title and pick a category from: "Coffee & Drinks", "Food & Cooking", "Spa & Beauty", "Nail", "Other". Return strict JSON only, no prose.`,
-    sopUserPromptTemplate: (segments: string) =>
-      `Transcript segments (JSON):\n${segments}\n\nReturn JSON matching: { title: string, category: string, steps: [{ title, description, startTime, endTime }] }`,
+    normalizeModel: "google/gemini-2.5-flash",     // cheap, fast
+    contextModel: "google/gemini-2.5-flash",        // cheap, fast
+    sopModel: "anthropic/claude-sonnet-4.5",        // strong
+    maxRetries: 1,                                   // schema-validation retries
+    domainTerminology: {
+      "Coffee & Drinks": "chiết xuất, pha, định lượng, xay, tamping, crema",
+      "Food & Cooking":  "xào, hầm, nêm, luộc, ướp, gia vị",
+      "Spa & Beauty":    "tẩy tế bào chết, ủ, massage, mặt nạ, dưỡng",
+      "Nail":            "giũa, sơn gel, đắp, phủ bóng, dũa móng",
+      "Other":           "",
+    },
+    prompts: {
+      normalizeSystem: `You clean Vietnamese ASR transcripts. Remove filler words ("ờ","à","ừm","thì","là" when used as filler), stutters, and self-corrections. Preserve all meaningful content. CRITICAL: return the same segment IDs unchanged — do not merge, split, or renumber.`,
+      contextSystem: `You classify Vietnamese training videos. Read the transcript and return the single best-fit category plus a 1-2 sentence Vietnamese summary of what the video teaches.`,
+      sopSystem: (domainHint: string) =>
+        `You convert Vietnamese-narrated training videos into structured SOPs. You receive cleaned, indexed transcript segments. Let the trainer's narration decide where steps begin and end — do NOT impose a preferred number of steps. Each step is a coherent unit the trainer is explaining. Each step has: a short Vietnamese title (≤8 words), a 2-4 sentence Vietnamese description, and a startSegmentId/endSegmentId referencing the input segment IDs. Also produce an overall Vietnamese SOP title.${domainHint ? `\n\nDomain vocabulary to prefer when relevant: ${domainHint}` : ""}\n\nReturn strict JSON only.`,
+    },
   },
   limits: {
     maxVideoSizeMB: 500,
@@ -191,8 +279,8 @@ Autonomous execution. Parallel subagents where tasks are independent.
 
 - **Phase 1 — Foundation:** Next.js + Tailwind + shadcn scaffold, Mongo + R2 clients, config file, env wiring, Trigger.dev init with ffmpeg extension.
 - **Phase 2 — Pipeline (parallel):**
-  - **Track A:** `/api/upload/init`, `/api/upload/commit`, `/api/sop/:id/status` endpoints.
-  - **Track B:** Trigger.dev `processSop` task (fal.ai → OpenRouter → ffmpeg → Mongo).
+  - **Track A:** `/api/upload/init`, `/api/upload/commit`, `/api/sop/:id/status`, `/api/sop/:id`, `/api/share/:token`, `/api/clips/:sopId/:key` (signed-URL proxy) endpoints.
+  - **Track B:** Trigger.dev `processSop` task — Stage 1 (fal.ai) → Stage 2 (normalize) → Stage 3 (context) → Stage 4 (extract) → Stage 5 (resolve + ffmpeg + R2 + Mongo). Each stage is its own sub-function with Zod schemas and one-retry wrapper where noted.
 - **Phase 3 — UI (parallel per screen):** S1, S2, S3, S4, S6, S7 — each read from `mvp.pen` and built with shadcn + Tailwind.
 - **Phase 4 — Integration:** Deploy to Vercel; run one real end-to-end test video; fix obvious bugs.
 - **Phase 5 — Cleanup cron:** daily Trigger.dev scheduled task that nulls expired `videoR2Key` and deletes from R2.
