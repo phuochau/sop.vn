@@ -7,7 +7,7 @@ fal.config({ credentials: process.env.FAL_API_KEY });
  * Runs fal.ai Whisper on an R2 signed URL. Returns indexed segments
  * matching our Mongo Segment type.
  */
-export async function transcribeVideo(signedUrl: string): Promise<{
+export async function transcribeAudio(signedUrl: string): Promise<{
   transcript: string;
   segments: Segment[];
 }> {
@@ -24,7 +24,8 @@ export async function transcribeVideo(signedUrl: string): Promise<{
   });
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rawSegments: any[] = result?.chunks ?? result?.segments ?? [];
+  const data = result?.data ?? result;
+  const rawSegments: any[] = data?.chunks ?? data?.segments ?? [];
   const segments: Segment[] = rawSegments
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .map((s: any, i: number) => ({

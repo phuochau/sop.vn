@@ -1,8 +1,8 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { Calendar, Clock3, List, Pencil, Info, Plus } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Calendar, Clock3, List, Pencil, Info, Plus, ThumbsUp, ThumbsDown } from "lucide-react";
 import { StepCard } from "@/components/StepCard";
+import { HeroVideo } from "@/components/HeroVideo";
 import { ShareButton } from "@/components/ShareButton";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
@@ -111,6 +111,14 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
           {/* Main column */}
           <div className="min-w-0 space-y-5">
             {/* Privacy note */}
+            {sop.steps.length > 0 && (
+              <HeroVideo
+                sopId={sop.id}
+                posterUrl={sop.steps[0].posterUrl}
+                totalSeconds={duration}
+              />
+            )}
+
             <div className="flex items-center gap-2.5 rounded-xl bg-[#F3F4F6] px-4 py-3">
               <Info className="w-3.5 h-3.5 text-[#666666] shrink-0" strokeWidth={2} />
               <p className="text-[12px] text-[#666666]">
@@ -120,22 +128,27 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
 
             {sop.steps.map((s) => <StepCard key={s.index} {...s} />)}
 
-            {/* Bottom CTA */}
+            {/* Feedback card */}
             <div className="rounded-[20px] border border-gray-200 bg-white px-6 py-6 flex flex-col md:flex-row items-center justify-between gap-4">
               <div>
                 <h3
                   className="font-semibold text-[#0A0A0A] text-base"
                   style={{ fontFamily: "var(--font-inter)" }}
                 >
-                  Muốn tạo SOP khác từ video của bạn?
+                  SOP này có hữu ích?
                 </h3>
-                <p className="text-[13px] text-[#6B7280] mt-1">Tải video lên, chúng tôi sẽ biến nó thành SOP đánh số trong vài phút.</p>
+                <p className="text-[13px] text-[#6B7280] mt-1">Phản hồi giúp chúng tôi tạo SOP tốt hơn cho lần sau.</p>
               </div>
-              <Link href="/upload">
-                <Button className="rounded-full bg-[#0066FF] hover:bg-blue-700 text-white font-medium text-sm px-6 py-2.5">
-                  Tạo SOP mới
-                </Button>
-              </Link>
+              <div className="flex items-center gap-2">
+                <button className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-4 py-2.5 text-[13px] font-medium text-[#0A0A0A] hover:bg-gray-50 transition">
+                  <ThumbsUp className="w-3.5 h-3.5" strokeWidth={2} />
+                  Có, rất hữu ích
+                </button>
+                <button className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-4 py-2.5 text-[13px] font-medium text-[#0A0A0A] hover:bg-gray-50 transition">
+                  <ThumbsDown className="w-3.5 h-3.5" strokeWidth={2} />
+                  Chưa hiệu quả
+                </button>
+              </div>
             </div>
           </div>
 

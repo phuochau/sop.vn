@@ -9,7 +9,7 @@ export async function GET(
 ) {
   const { sopId, key } = await params;
   if (!ObjectId.isValid(sopId)) return NextResponse.json({ error: "bad_id" }, { status: 400 });
-  if (!/^step-\d+\.(mp4|jpg)$/.test(key)) {
+  if (!/^(step-\d+\.(mp4|jpg)|source\.mp4)$/.test(key)) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
 

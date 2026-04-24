@@ -95,7 +95,7 @@ export function StepCard({
             controls
             autoPlay
             preload="metadata"
-            className="w-full h-[135px] rounded-xl bg-black object-cover"
+            className="w-full h-[135px] rounded-xl bg-black object-contain"
           />
         )}
         {hasRange && (

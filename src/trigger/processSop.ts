@@ -44,7 +44,9 @@ export const processSop = task({
       try {
         stage1 = await runTranscribe(signedVideo);
       } catch (e) {
-        logger.error("transcribe failed", { e: String(e) });
+        const msg = String(e);
+        logger.error("transcribe failed", { e: msg });
+        if (msg.includes("NO_AUDIO_STREAM")) return fail(_id, "silent_audio");
         return fail(_id, "transcription_failed");
       }
       const { transcript, segments } = stage1;
