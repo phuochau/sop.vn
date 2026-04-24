@@ -26,11 +26,11 @@ MVP quality bar: **just works.** No auth, no payments, no polish beyond what's n
 | Object storage | Cloudflare R2 |
 | Background jobs | Trigger.dev v3 (with `@trigger.dev/build/extensions/core` ffmpeg extension) |
 | Transcription | fal.ai Whisper (`verbose_json` — segment timestamps) |
-| SOP generation | OpenRouter → Claude Sonnet (model id configurable) |
+| LLM (normalize, context, SOP) | OpenRouter — 3 model slots, all configurable |
 
-**Secrets** (env): `MONGODB_URI`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_PUBLIC_BASE_URL`, `FAL_API_KEY`, `OPENROUTER_API_KEY`, `TRIGGER_SECRET_KEY`, `ADMIN_PASSWORD`.
+**Secrets** (env): `MONGODB_URI`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `FAL_API_KEY`, `OPENROUTER_API_KEY`, `TRIGGER_SECRET_KEY`, `ADMIN_PASSWORD`.
 
-**Tunables** (single file: `src/config/index.ts`): AI model ids, prompt template, max video size/duration, retention days, share token length, allowed mime types.
+**Tunables** (single file: `src/config/index.ts`): AI model ids per pipeline stage, prompts, domain terminology, retry count, video limits, retention, share token length, poll interval, allowed mime types.
 
 ---
 
@@ -122,7 +122,7 @@ No rate-limit collection for MVP.
    | 5. navigate to /sop/:id      |                               |
 ```
 
-### AI pipeline (4 stages, inside `processSop` Trigger.dev task)
+### AI pipeline (5 stages, inside `processSop` Trigger.dev task)
 
 **Design principle:** timestamps come from Whisper only. LLMs reference segments by ID, never emit raw timestamps. Code resolves IDs back to timestamps for ffmpeg.
 
@@ -141,19 +141,24 @@ No rate-limit collection for MVP.
 │ Task: remove Vietnamese fillers ("ờ","à","thì là"), repetitions,    │
 │ self-corrections. MUST preserve segment IDs 1:1.                    │
 │ Output schema: [{ id: number, text: string }]                       │
+│ Retry ONCE on schema failure. If still failing, SKIP normalization  │
+│ and continue with raw Stage-1 segments as `segmentsClean`.          │
 │ → `segmentsClean`                                                   │
 └─────────────────────────────────────────────────────────────────────┘
                                   │
 ┌─────────────────────────────────────────────────────────────────────┐
 │ Stage 3 — Context detect                      status="analyzing"    │
+│ SKIP this stage if user provided a category on S2.                  │
 │ Cheap LLM (`config.ai.contextModel`)                                │
 │ Input: joined clean transcript                                      │
 │ Output schema:                                                      │
 │   { category: "Coffee & Drinks" | "Food & Cooking"                  │
 │             | "Spa & Beauty" | "Nail" | "Other",                    │
 │     domainSummary: string }                                         │
-│ Stored on sops doc. If user provided category on S2, user wins.     │
-│ Used to select a domain terminology hint for Stage 4.               │
+│ Stored on sops doc. No retry — failure falls back to category       │
+│ "Other" and empty domainSummary.                                    │
+│ The resulting category (user-provided or detected) drives the       │
+│ Stage 4 domain terminology hint.                                    │
 └─────────────────────────────────────────────────────────────────────┘
                                   │
 ┌─────────────────────────────────────────────────────────────────────┐
