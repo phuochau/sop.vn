@@ -598,7 +598,7 @@
                           "fill": {
                             "type": "image",
                             "enabled": true,
-                            "url": "./images/generated-1777019468892.png",
+                            "url": "images/generated-1777019468892.png",
                             "mode": "fill"
                           },
                           "cornerRadius": 12
@@ -758,7 +758,7 @@
                           "fill": {
                             "type": "image",
                             "enabled": true,
-                            "url": "./images/generated-1777019488144.png",
+                            "url": "images/generated-1777019488144.png",
                             "mode": "fill"
                           },
                           "cornerRadius": 14
@@ -958,6 +958,7 @@
                       "id": "hDN7B",
                       "name": "s1FC1",
                       "width": "fill_container",
+                      "height": 280,
                       "fill": "#FFFFFF",
                       "cornerRadius": 20,
                       "stroke": {
@@ -1032,6 +1033,7 @@
                       "id": "IXpIy",
                       "name": "s1FC2",
                       "width": "fill_container",
+                      "height": 280,
                       "fill": "#FFFFFF",
                       "cornerRadius": 20,
                       "stroke": {
@@ -1060,7 +1062,7 @@
                           "name": "s1FC2Icon",
                           "width": 48,
                           "height": 48,
-                          "fill": "#F3F4F6",
+                          "fill": "#EFF6FF",
                           "cornerRadius": 14,
                           "justifyContent": "center",
                           "alignItems": "center",
@@ -1072,7 +1074,7 @@
                               "height": 24,
                               "iconFontName": "languages",
                               "iconFontFamily": "lucide",
-                              "fill": "#0A0A0A"
+                              "fill": "#2563EB"
                             }
                           ]
                         },
@@ -1106,6 +1108,7 @@
                       "id": "CO1yT",
                       "name": "s1FC3",
                       "width": "fill_container",
+                      "height": 280,
                       "fill": "#FFFFFF",
                       "cornerRadius": 20,
                       "stroke": {
@@ -1134,7 +1137,7 @@
                           "name": "s1FC3Icon",
                           "width": 48,
                           "height": 48,
-                          "fill": "#F3F4F6",
+                          "fill": "#EFF6FF",
                           "cornerRadius": 14,
                           "justifyContent": "center",
                           "alignItems": "center",
@@ -1144,9 +1147,9 @@
                               "id": "EvQs9",
                               "width": 24,
                               "height": 24,
-                              "iconFontName": "file-text",
+                              "iconFontName": "shield-check",
                               "iconFontFamily": "lucide",
-                              "fill": "#0A0A0A"
+                              "fill": "#2563EB"
                             }
                           ]
                         },
@@ -1156,7 +1159,7 @@
                           "fill": "#0A0A0A",
                           "textGrowth": "fixed-width",
                           "width": "fill_container",
-                          "content": "Xuất PDF đẹp",
+                          "content": "Riêng tư & tự xóa",
                           "fontFamily": "Inter",
                           "fontSize": 20,
                           "fontWeight": "600"
@@ -1167,7 +1170,7 @@
                           "fill": "#6B7280",
                           "textGrowth": "fixed-width",
                           "width": "fill_container",
-                          "content": "Mẫu PDF chuyên nghiệp, kèm logo công ty và mã QR liên kết video — sẵn sàng in hoặc chia sẻ nội bộ.",
+                          "content": "Chúng tôi không lưu dữ liệu. Video gốc tự xóa sau 30 ngày — bạn chỉ cần liên kết chia sẻ để giữ SOP.",
                           "lineHeight": 1.55,
                           "fontFamily": "Geist",
                           "fontSize": 14,
@@ -3253,7 +3256,7 @@
                           "fill": {
                             "type": "image",
                             "enabled": true,
-                            "url": "./images/generated-1777019748733.png",
+                            "url": "images/generated-1777019748733.png",
                             "mode": "fill"
                           },
                           "cornerRadius": 14,
