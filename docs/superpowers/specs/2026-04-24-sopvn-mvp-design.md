@@ -45,9 +45,9 @@ MVP quality bar: **just works.** No auth, no payments, no polish beyond what's n
 | S6 | `/share/:token` | Read-only SOP view for link recipients |
 | S7 | `/admin` | Password-gated counters dashboard |
 
-**Explicitly cut from original spec:** S5 PDF export preview, S7 dedicated error screen (errors rendered inline on S2/S3), S4 thumbs up/down feedback.
+**Explicitly cut from original product spec:** S5 PDF export preview, the original S7 error screen (errors rendered inline on S2/S3 instead), S4 thumbs up/down feedback. Note: the S7 route in this design is a **new** admin dashboard, not the original error screen.
 
-UI is Vietnamese-only; strings copied from `mvp.pen`. shadcn primitives (Button, Card, Progress, Toast, Dialog, Input) styled to approximate each pen frame — visually equivalent, not pixel-perfect.
+UI is Vietnamese-only; strings copied from `mvp.pen` for S1–S6. shadcn primitives (Button, Card, Progress, Toast, Dialog, Input) styled to approximate each pen frame — visually equivalent, not pixel-perfect. **S7 admin is not in `mvp.pen`** — built directly in code during Phase 3 as a minimal one-page layout.
 
 ---
 
@@ -56,22 +56,32 @@ UI is Vietnamese-only; strings copied from `mvp.pen`. shadcn primitives (Button,
 ```
 sops {
   _id: ObjectId,
-  title: string,
-  category: string,
+  title: string,                   // AI-generated; overridden by user-entered S2 title if provided
+  category: string,                // AI-generated; overridden by user-entered S2 category if provided
   status: "uploading" | "transcribing" | "generating" | "clipping" | "done" | "failed",
-  errorCode: string | null,
-  videoR2Key: string,
-  videoExpiresAt: Date,           // createdAt + 30 days
+  errorCode:                       // set when status="failed"
+    | null
+    | "video_too_short"
+    | "video_too_long"
+    | "unsupported_format"
+    | "file_too_large"
+    | "silent_audio"
+    | "transcription_failed"
+    | "generation_failed"
+    | "clipping_failed"
+    | "unknown",
+  videoR2Key: string | null,       // nulled after retention cleanup
+  videoExpiresAt: Date,             // createdAt + 30 days
   transcript: string | null,
   steps: [{
     title: string,
     description: string,
-    startTime: number,            // seconds
+    startTime: number,              // seconds
     endTime: number,
     clipR2Key: string,
     posterR2Key: string
   }],
-  shareToken: string,              // random, 16 chars, unique
+  shareToken: string,                // random, 16 chars; Mongo unique index
   createdAt: Date,
   updatedAt: Date
 }
@@ -112,8 +122,10 @@ No rate-limit collection for MVP.
 ```
 
 - **Poll interval:** 2 seconds.
-- **Step statuses exposed to UI:** `transcribing` (S3 step 2 active), `generating` + `clipping` (S3 step 3 active), `done` (redirect S4), `failed` (inline error on S3 with retry → /upload).
-- **Video cap:** 5 minutes, 500 MB, MP4/MOV/WEBM/AVI. Enforced server-side in `/api/upload/init`.
+- **Step statuses exposed to UI:** `uploading`/`transcribing` (S3 step 2 active), `generating`/`clipping` (S3 step 3 active), `done` (redirect S4), `failed` (inline error on S3 with retry → /upload).
+- **Video cap:** 5 minutes, 500 MB, MP4/MOV/WEBM/AVI. Enforced server-side in `/api/upload/init` (size + mime); duration validated in the Trigger.dev job after probe via `ffprobe`.
+- **Poll response shape:** `GET /api/sop/:id/status` → `{ status, errorCode, title, hasSteps: boolean }`. S3 uses `status` for the stepper and `errorCode` for failure messages.
+- **Audio handling:** fal.ai Whisper accepts the video R2 URL directly and extracts audio internally — no separate audio-extraction step required.
 
 ### Prompt (OpenRouter, configurable)
 
@@ -156,8 +168,9 @@ export const config = {
     sopModel: "anthropic/claude-sonnet-4.5",
     transcriptionProvider: "fal",
     transcriptionModel: "fal-ai/whisper",
-    sopSystemPrompt: `You are an expert at converting Vietnamese training videos into step-by-step SOPs...`,
-    sopUserPromptTemplate: (segments: string) => `...`,
+    sopSystemPrompt: `You convert Vietnamese-narrated training videos into structured step-by-step SOPs. You receive a timestamped transcript. Group segments into coherent steps (typically 3–10). Each step has a short Vietnamese title (≤8 words), a 2–4 sentence Vietnamese description, and startTime/endTime in seconds matching the transcript. Also output an overall Vietnamese SOP title and pick a category from: "Coffee & Drinks", "Food & Cooking", "Spa & Beauty", "Nail", "Other". Return strict JSON only, no prose.`,
+    sopUserPromptTemplate: (segments: string) =>
+      `Transcript segments (JSON):\n${segments}\n\nReturn JSON matching: { title: string, category: string, steps: [{ title, description, startTime, endTime }] }`,
   },
   limits: {
     maxVideoSizeMB: 500,
@@ -182,7 +195,7 @@ Autonomous execution. Parallel subagents where tasks are independent.
   - **Track B:** Trigger.dev `processSop` task (fal.ai → OpenRouter → ffmpeg → Mongo).
 - **Phase 3 — UI (parallel per screen):** S1, S2, S3, S4, S6, S7 — each read from `mvp.pen` and built with shadcn + Tailwind.
 - **Phase 4 — Integration:** Deploy to Vercel; run one real end-to-end test video; fix obvious bugs.
-- **Phase 5 — Cleanup cron + admin page polish.**
+- **Phase 5 — Cleanup cron:** daily Trigger.dev scheduled task that nulls expired `videoR2Key` and deletes from R2.
 
 ---
 
