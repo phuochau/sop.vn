@@ -28,7 +28,14 @@ export const processSop = task({
     try {
       // Stage 1
       await setStatus(_id, "transcribing");
-      const { transcript, segments } = await runTranscribe(signedVideo);
+      let stage1;
+      try {
+        stage1 = await runTranscribe(signedVideo);
+      } catch (e) {
+        logger.error("transcribe failed", { e: String(e) });
+        return fail(_id, "transcription_failed");
+      }
+      const { transcript, segments } = stage1;
       if (segments.length === 0) return fail(_id, "silent_audio");
       await (await sops()).updateOne({ _id }, { $set: { transcript, segments, updatedAt: new Date() } });
 
