@@ -13,13 +13,14 @@ export async function transcribeVideo(signedUrl: string): Promise<{
 }> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const result: any = await fal.subscribe("fal-ai/whisper", {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     input: {
       audio_url: signedUrl,
       task: "transcribe",
       language: "vi",
       chunk_level: "segment",
       version: "3",
-    },
+    } as any,
   });
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
