@@ -1,6 +1,7 @@
 "use client";
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { UploadCloud, Folder, Link2, Globe, Lock, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { config } from "@/config";
 
@@ -86,16 +87,12 @@ export function UploadZone() {
           ) : (
             <>
               <div className="w-12 h-12 mx-auto rounded-xl bg-white border flex items-center justify-center mb-3 shadow-sm">
-                <svg className="w-6 h-6 text-blue-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                  <polyline points="17 8 12 3 7 8"/>
-                  <line x1="12" y1="3" x2="12" y2="15"/>
-                </svg>
+                <UploadCloud className="w-6 h-6 text-blue-600" strokeWidth={2} />
               </div>
               <p className="font-medium text-sm">Kéo thả video vào đây</p>
               <p className="text-xs text-gray-500 mt-1">hoặc dán liên kết YouTube/Loom bên dưới</p>
               <Button size="sm" variant="outline" className="mt-4 rounded-full" onClick={(e) => { e.stopPropagation(); inputRef.current?.click(); }}>
-                <svg className="w-3.5 h-3.5 mr-1.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                <Folder className="w-3.5 h-3.5 mr-1.5" strokeWidth={2} />
                 Chọn tệp từ máy tính
               </Button>
             </>
@@ -116,9 +113,7 @@ export function UploadZone() {
         {/* URL paste (visual only for MVP) */}
         <div className="flex items-center gap-2">
           <div className="flex-1 flex items-center rounded-full border bg-white pl-4 pr-1.5 py-1.5">
-            <svg className="w-4 h-4 text-gray-400 mr-2 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
-            </svg>
+            <Link2 className="w-4 h-4 text-gray-400 mr-2 shrink-0" strokeWidth={2} />
             <input
               disabled
               placeholder="https://youtube.com/watch?v=..."
