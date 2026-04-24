@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["../../../src/trigger/stages/extract.ts"],
+  "sourcesContent": ["import { llmJson } from \"@/lib/openrouter\";\nimport { SopExtractOutput } from \"@/lib/schemas\";\nimport { config, type Category } from \"@/config\";\nimport type { CleanSegment } from \"@/lib/mongo\";\n\nexport async function runExtract(args: {\n  segmentsClean: CleanSegment[];\n  category: Category;\n}) {\n  const domainHint = config.ai.domainTerminology[args.category] ?? \"\";\n  const out = await llmJson({\n    model: config.ai.sopModel,\n    system: config.ai.prompts.sopSystem(domainHint),\n    user: `Segments (JSON, use ids to reference):\\n${JSON.stringify(args.segmentsClean)}\\n\\nReturn { \"title\": string, \"steps\": [{ \"title\", \"description\", \"startSegmentId\", \"endSegmentId\" }] }.`,\n    schema: SopExtractOutput,\n    schemaName: \"sop_extract\",\n    maxRetries: config.ai.maxRetries,\n  });\n  return out;\n}\n"],
+  "mappings": ";;;;;;;;;;;;;AAAA;AAKA,eAAsB,WAAW,MAG9B;AACD,QAAM,aAAa,OAAO,GAAG,kBAAkB,KAAK,QAAQ,KAAK;AACjE,QAAM,MAAM,MAAM,QAAQ;AAAA,IACxB,OAAO,OAAO,GAAG;AAAA,IACjB,QAAQ,OAAO,GAAG,QAAQ,UAAU,UAAU;AAAA,IAC9C,MAAM;AAAA,EAA2C,KAAK,UAAU,KAAK,aAAa,CAAC;AAAA;AAAA;AAAA,IACnF,QAAQ;AAAA,IACR,YAAY;AAAA,IACZ,YAAY,OAAO,GAAG;AAAA,EACxB,CAAC;AACD,SAAO;AACT;AAdsB;",
+  "names": []
+}

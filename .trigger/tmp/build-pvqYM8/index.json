@@ -1,0 +1,55 @@
+{
+  "configPath": "/Users/hauvo/Documents/1-active-projects/document-to-sop/.trigger/tmp/build-pvqYM8/Documents/1-active-projects/document-to-sop/trigger.config.mjs",
+  "customConditions": [
+  ],
+  "prompts": [
+  ],
+  "queues": [
+  ],
+  "runtime": "node",
+  "runtimeVersion": "22.14.0",
+  "tasks": [
+    {
+      "entryPoint": "/Users/hauvo/Documents/1-active-projects/document-to-sop/.trigger/tmp/build-pvqYM8/Documents/1-active-projects/document-to-sop/src/trigger/cleanupVideos.mjs",
+      "filePath": "src/trigger/cleanupVideos.ts",
+      "id": "cleanup-videos",
+      "maxDuration": 3600,
+      "retry": {
+        "factor": 2,
+        "maxAttempts": 1,
+        "maxTimeoutInMs": 10000,
+        "minTimeoutInMs": 1000,
+        "randomize": true
+      },
+      "schedule": {
+        "cron": "0 3 * * *",
+        "timezone": "UTC"
+      },
+      "triggerSource": "schedule"
+    },
+    {
+      "entryPoint": "/Users/hauvo/Documents/1-active-projects/document-to-sop/.trigger/tmp/build-pvqYM8/Documents/1-active-projects/document-to-sop/src/trigger/processSop.mjs",
+      "filePath": "src/trigger/processSop.ts",
+      "id": "process-sop",
+      "maxDuration": 900,
+      "retry": {
+        "factor": 2,
+        "maxAttempts": 1,
+        "maxTimeoutInMs": 10000,
+        "minTimeoutInMs": 1000,
+        "randomize": true
+      }
+    }
+  ],
+  "timings": {
+    "src/trigger/cleanupVideos.ts": 53.34745799999999,
+    "src/trigger/lib/probe.ts": 2.800582999999989,
+    "src/trigger/processSop.ts": 1.6370000000000005,
+    "src/trigger/stages/clip.ts": 0.671291000000025,
+    "src/trigger/stages/context.ts": 3.341667000000001,
+    "src/trigger/stages/extract.ts": 1.1543749999999875,
+    "src/trigger/stages/normalize.ts": 0.6355839999999944,
+    "src/trigger/stages/transcribe.ts": 3.1668750000000045
+  },
+  "workerEntryPoint": "/Users/hauvo/Documents/1-active-projects/document-to-sop/.trigger/tmp/build-pvqYM8/.npm/_npx/f51a09bd0abf5f10/node_modules/trigger.dev/dist/esm/entryPoints/dev-run-worker.mjs"
+}

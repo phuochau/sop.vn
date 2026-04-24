@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["../../../../../../trigger.config.ts"],
+  "sourcesContent": ["import { defineConfig } from \"@trigger.dev/sdk/v3\";\nimport { ffmpeg } from \"@trigger.dev/build/extensions/core\";\n\nexport default defineConfig({\n  project: \"proj_vrlpycnuckmgaizuxikz\",\n  runtime: \"node\",\n  logLevel: \"info\",\n  maxDuration: 3600,\n  retries: {\n    enabledInDev: true,\n    default: { maxAttempts: 1, minTimeoutInMs: 1000, maxTimeoutInMs: 10000, factor: 2, randomize: true },\n  },\n  dirs: [\"./src/trigger\"],\n  build: {},\n});\nexport const resolveEnvVars = undefined;"],
+  "mappings": ";;;;;;;;;;AAAA;AAGA,IAAO,yBAAQ,aAAa;AAAA,EAC1B,SAAS;AAAA,EACT,SAAS;AAAA,EACT,UAAU;AAAA,EACV,aAAa;AAAA,EACb,SAAS;AAAA,IACP,cAAc;AAAA,IACd,SAAS,EAAE,aAAa,GAAG,gBAAgB,KAAM,gBAAgB,KAAO,QAAQ,GAAG,WAAW,KAAK;AAAA,EACrG;AAAA,EACA,MAAM,CAAC,eAAe;AAAA,EACtB,OAAO,CAAC;AACV,CAAC;AACM,IAAM,iBAAiB;",
+  "names": []
+}
