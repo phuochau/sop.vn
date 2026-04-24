@@ -18,6 +18,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       index: i,
       title: s.title,
       description: s.description,
+      startTime: s.startTime,
+      endTime: s.endTime,
       clipUrl: `/api/clips/${doc._id.toHexString()}/step-${i}.mp4`,
       posterUrl: `/api/clips/${doc._id.toHexString()}/step-${i}.jpg`,
     })),

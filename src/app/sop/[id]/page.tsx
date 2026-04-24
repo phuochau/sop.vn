@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import { Calendar, Clock3, List, Pencil, Info, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StepCard } from "@/components/StepCard";
 import { ShareButton } from "@/components/ShareButton";
@@ -11,6 +12,8 @@ type Step = {
   index: number;
   title: string;
   description: string;
+  startTime?: number;
+  endTime?: number;
   clipUrl: string;
   posterUrl: string;
 };
@@ -31,73 +34,143 @@ async function getSop(id: string): Promise<Sop | null> {
   return r.json();
 }
 
+function totalDuration(steps: Step[]) {
+  if (steps.length === 0) return 0;
+  const last = steps[steps.length - 1];
+  return typeof last.endTime === "number" ? Math.round(last.endTime) : 0;
+}
+function fmtDur(s: number) {
+  if (s <= 0) return "—";
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${m} phút ${String(sec).padStart(2, "0")} giây`;
+}
+function fmtDateTime(iso: string) {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} · ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 export default async function Page({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const sop = await getSop(id);
   if (!sop) return notFound();
 
+  const duration = totalDuration(sop.steps);
+
   return (
     <>
       <Nav variant="app" />
-      <main className="max-w-6xl mx-auto px-6 pt-10 pb-8">
-        {/* Header */}
-        <header className="space-y-4 mb-6">
-          <h1 className="text-3xl md:text-4xl font-bold tracking-tight">SOP: {sop.title}</h1>
-          <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500">
-            <span className="flex items-center gap-2">
-              <span className="w-6 h-6 rounded-full bg-gray-200" />
-              <span>Bạn</span>
+
+      {/* Header */}
+      <section className="bg-white px-6 md:px-12 pt-10 pb-6 border-b border-gray-100">
+        <div className="max-w-6xl mx-auto space-y-3">
+          <h1
+            className="font-bold text-[#0A0A0A] text-3xl md:text-[40px] leading-[1.15] tracking-[-0.022em] max-w-4xl"
+            style={{ fontFamily: "var(--font-inter)" }}
+          >
+            SOP: {sop.title}
+          </h1>
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] text-[#6B7280]">
+            <span className="inline-flex items-center gap-1.5">
+              <Calendar className="w-3.5 h-3.5" strokeWidth={2} />
+              Tạo lúc {fmtDateTime(sop.createdAt)}
             </span>
-            <span>{new Date(sop.createdAt).toLocaleDateString("vi-VN", { day: "numeric", month: "long", year: "numeric" })}</span>
-            <span>•</span>
-            <span>{sop.category}</span>
-            <span>•</span>
-            <span>{sop.steps.length} bước</span>
+            {duration > 0 && (
+              <span className="inline-flex items-center gap-1.5">
+                <Clock3 className="w-3.5 h-3.5" strokeWidth={2} />
+                Video gốc · {fmtDur(duration)}
+              </span>
+            )}
+            <span className="inline-flex items-center gap-1.5">
+              <List className="w-3.5 h-3.5" strokeWidth={2} />
+              {sop.steps.length} bước
+            </span>
           </div>
-          <div className="flex flex-wrap gap-2 pt-1">
-            <ShareButton token={sop.shareToken} />
-            <Button variant="outline" size="sm" className="rounded-full">
-              <svg className="w-3.5 h-3.5 mr-1.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              Lưu bản sao
-            </Button>
-            <Link href="/upload">
-              <Button variant="outline" size="sm" className="rounded-full">
-                <svg className="w-3.5 h-3.5 mr-1.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                Tạo SOP khác
-              </Button>
+          <div className="flex flex-wrap items-center gap-2 pt-2">
+            <ShareButton token={sop.shareToken} variant="outline" />
+            <ShareButton token={sop.shareToken} variant="primary" />
+            <button className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-4 py-2.5 text-[13px] font-medium text-[#0A0A0A] hover:bg-gray-50 transition">
+              <Pencil className="w-3.5 h-3.5" strokeWidth={2} />
+              Chỉnh sửa
+            </button>
+            <Link
+              href="/upload"
+              className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-4 py-2.5 text-[13px] font-medium text-[#0A0A0A] hover:bg-gray-50 transition"
+            >
+              <Plus className="w-3.5 h-3.5" strokeWidth={2} />
+              Tạo SOP khác
             </Link>
           </div>
-        </header>
+        </div>
+      </section>
 
-        <div className="grid md:grid-cols-[1fr_240px] gap-8">
+      {/* Body */}
+      <main className="bg-[#FAFAFA] px-6 md:px-12 py-10 pb-20">
+        <div className="max-w-6xl mx-auto grid md:grid-cols-[1fr_280px] gap-8">
           {/* Main column */}
-          <div className="min-w-0 space-y-4">
+          <div className="min-w-0 space-y-5">
+            {/* Privacy note */}
+            <div className="flex items-center gap-2.5 rounded-xl bg-[#F3F4F6] px-4 py-3">
+              <Info className="w-3.5 h-3.5 text-[#666666] shrink-0" strokeWidth={2} />
+              <p className="text-[12px] text-[#666666]">
+                Lưu ý: Video gốc sẽ tự xóa sau 30 ngày. Hãy sao chép liên kết chia sẻ để giữ SOP này.
+              </p>
+            </div>
+
             {sop.steps.map((s) => <StepCard key={s.index} {...s} />)}
 
-            {/* CTA footer */}
-            <div className="mt-10 py-10 text-center border-t">
-              <p className="text-gray-600 mb-4 text-sm">Bạn cũng có thể tạo SOP từ video của mình.</p>
+            {/* Bottom CTA */}
+            <div className="rounded-[20px] border border-gray-200 bg-white px-6 py-6 flex flex-col md:flex-row items-center justify-between gap-4">
+              <div>
+                <h3
+                  className="font-semibold text-[#0A0A0A] text-base"
+                  style={{ fontFamily: "var(--font-inter)" }}
+                >
+                  Muốn tạo SOP khác từ video của bạn?
+                </h3>
+                <p className="text-[13px] text-[#6B7280] mt-1">Tải video lên, chúng tôi sẽ biến nó thành SOP đánh số trong vài phút.</p>
+              </div>
               <Link href="/upload">
-                <Button size="lg" className="rounded-full bg-blue-600 hover:bg-blue-700">
-                  Tạo SOP của mình
+                <Button className="rounded-full bg-[#0066FF] hover:bg-blue-700 text-white font-medium text-sm px-6 py-2.5">
+                  Tạo SOP mới
                 </Button>
               </Link>
             </div>
           </div>
 
-          {/* Sidebar TOC */}
+          {/* TOC */}
           <aside className="hidden md:block">
-            <div className="sticky top-20 rounded-xl border bg-white p-4 shadow-sm">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Mục lục</p>
-              <ol className="space-y-1.5 text-sm">
-                {sop.steps.map((s) => (
+            <div
+              className="sticky top-6 rounded-[20px] border border-gray-200 bg-white p-6"
+              style={{ boxShadow: "0 6px 18px -4px rgba(10, 10, 10, 0.04)" }}
+            >
+              <div className="flex items-center gap-2 mb-3">
+                <List className="w-3.5 h-3.5 text-[#0A0A0A]" strokeWidth={2} />
+                <span
+                  className="text-sm font-semibold text-[#0A0A0A] tracking-[0.04em]"
+                  style={{ fontFamily: "var(--font-inter)" }}
+                >
+                  Mục lục
+                </span>
+              </div>
+              <div className="h-px bg-gray-200 -mx-6 mb-3" />
+              <ol className="space-y-0.5">
+                {sop.steps.map((s, i) => (
                   <li key={s.index}>
                     <a
                       href={`#step-${s.index + 1}`}
-                      className="flex gap-2 py-1 hover:text-blue-600 text-gray-700"
+                      className={`flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 ${i === 0 ? "bg-[#F3F4F6]" : "hover:bg-gray-50"}`}
                     >
-                      <span className="text-gray-400 font-medium shrink-0">{String(s.index + 1).padStart(2, "0")}</span>
-                      <span className="line-clamp-2">{s.title}</span>
+                      <span
+                        className={`text-[12px] font-medium ${i === 0 ? "text-[#2563EB]" : "text-[#9CA3AF]"}`}
+                        style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}
+                      >
+                        {String(s.index + 1).padStart(2, "0")}
+                      </span>
+                      <span className={`text-[13px] leading-snug line-clamp-2 ${i === 0 ? "text-[#0A0A0A]" : "text-[#374151]"}`}>
+                        {s.title}
+                      </span>
                     </a>
                   </li>
                 ))}
@@ -106,6 +179,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
           </aside>
         </div>
       </main>
+
       <Footer />
     </>
   );

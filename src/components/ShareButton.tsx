@@ -1,8 +1,8 @@
 "use client";
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
+import { Share2, Link as LinkIcon, Check } from "lucide-react";
 
-export function ShareButton({ token }: { token: string }) {
+export function ShareButton({ token, variant = "primary" }: { token: string; variant?: "primary" | "outline" }) {
   const [copied, setCopied] = useState(false);
   async function copy() {
     const url = `${location.origin}/share/${token}`;
@@ -10,13 +10,24 @@ export function ShareButton({ token }: { token: string }) {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
+  if (variant === "outline") {
+    return (
+      <button
+        onClick={copy}
+        className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-4 py-2.5 text-[13px] font-medium text-[#0A0A0A] hover:bg-gray-50 transition"
+      >
+        {copied ? <Check className="w-3.5 h-3.5" strokeWidth={2} /> : <Share2 className="w-3.5 h-3.5" strokeWidth={2} />}
+        {copied ? "Đã sao chép!" : "Chia sẻ"}
+      </button>
+    );
+  }
   return (
-    <Button size="sm" onClick={copy} className="rounded-full bg-blue-600 hover:bg-blue-700">
-      <svg className="w-3.5 h-3.5 mr-1.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
-        <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
-      </svg>
-      {copied ? "Đã sao chép!" : "Chia sẻ link"}
-    </Button>
+    <button
+      onClick={copy}
+      className="inline-flex items-center gap-1.5 rounded-full bg-[#0066FF] text-white text-[13px] font-medium px-4 py-2.5 hover:bg-blue-700 transition"
+    >
+      {copied ? <Check className="w-3.5 h-3.5" strokeWidth={2} /> : <LinkIcon className="w-3.5 h-3.5" strokeWidth={2} />}
+      {copied ? "Đã sao chép!" : "Sao chép link"}
+    </button>
   );
 }
