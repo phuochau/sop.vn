@@ -1,4 +1,5 @@
 import { z, type ZodTypeAny } from "zod";
+import fs from "node:fs";
 
 const API = "https://openrouter.ai/api/v1/chat/completions";
 
@@ -80,4 +81,64 @@ function zodToJsonSchemaLike(schema: ZodTypeAny): unknown {
     default:
       throw new Error(`Unsupported Zod type: ${def.typeName}`);
   }
+}
+
+export async function llmJsonVision<T extends ZodTypeAny>(opts: {
+  model: string;
+  system: string;
+  userText: string;
+  imagePaths: string[];
+  schema: T;
+  schemaName: string;
+  maxRetries: number;
+}): Promise<z.infer<T>> {
+  const imageParts = await Promise.all(
+    opts.imagePaths.map(async (p) => {
+      const b = await fs.promises.readFile(p);
+      const url = `data:image/jpeg;base64,${b.toString("base64")}`;
+      return { type: "image_url" as const, image_url: { url } };
+    })
+  );
+
+  const body = {
+    model: opts.model,
+    messages: [
+      { role: "system", content: opts.system },
+      { role: "user", content: [{ type: "text" as const, text: opts.userText }, ...imageParts] },
+    ],
+    response_format: {
+      type: "json_schema",
+      json_schema: {
+        name: opts.schemaName,
+        strict: true,
+        schema: zodToJsonSchemaLike(opts.schema),
+      },
+    },
+    temperature: 0.2,
+  };
+
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt <= opts.maxRetries; attempt++) {
+    try {
+      const res = await fetch(API, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY!}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL ?? "https://sop.vn",
+          "X-Title": "SOP.vn",
+        },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(`OpenRouter ${res.status}: ${await res.text()}`);
+      const data = await res.json();
+      const content = data.choices?.[0]?.message?.content;
+      if (!content) throw new Error("Empty content");
+      const parsed = JSON.parse(content);
+      return opts.schema.parse(parsed);
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr ?? new Error("LLM failed");
 }
