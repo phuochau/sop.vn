@@ -4,7 +4,7 @@ import { sops, type SopDoc } from "@/lib/mongo";
 import { presignGet, putObject } from "@/lib/r2";
 import { pdfKey } from "@/lib/utils";
 import { runSynthesizeOverview, type Overview } from "./stages/synthesizeOverview";
-import { runSynthesizeStep, type StepRewrite } from "./stages/synthesizeStep";
+import { runSynthesizeStep, sliceTranscriptByTime, type StepRewrite } from "./stages/synthesizeStep";
 import { renderSopPdf, type RenderInput } from "./stages/renderPdf";
 
 async function fetchR2Buffer(key: string): Promise<Buffer> {
@@ -38,6 +38,12 @@ async function loadOverviewSafely(doc: SopDoc): Promise<Overview | null> {
 
 async function loadStepRewriteSafely(doc: SopDoc, stepIndex: number): Promise<StepRewrite | null> {
   const step = doc.steps[stepIndex];
+  const slice = sliceTranscriptByTime(doc.segments, step.startTime, step.endTime);
+  if (!slice) {
+    // No transcript content for this step — skip the LLM call and return the fallback shape directly.
+    logger.info("step has no transcript slice; using fallback", { stepIndex });
+    return { prose: step.description, subBullets: [], callouts: [] };
+  }
   const prevTitle = stepIndex > 0 ? doc.steps[stepIndex - 1].title : null;
   try {
     return await runSynthesizeStep({

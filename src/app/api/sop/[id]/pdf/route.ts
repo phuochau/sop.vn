@@ -18,7 +18,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   const now = new Date();
 
   // Cache hit: ready and SOP unchanged since
-  if (pdf?.status === "ready" && pdf.generatedAt && doc.updatedAt <= pdf.generatedAt) {
+  if (pdf?.status === "ready" && pdf.r2Key && pdf.generatedAt && doc.updatedAt <= pdf.generatedAt) {
     return NextResponse.json({ status: "ready", url: `/api/sop/${id}/pdf/file` });
   }
 
@@ -27,20 +27,38 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ status: "generating", runId: pdf.runId });
   }
 
-  // Trigger fresh run (atomic: set generating + startedAt + runId)
-  const handle = await tasks.trigger("generate-sop-pdf", { sopId: id });
-  await col.updateOne(
-    { _id },
+  // Atomic claim: only succeed if status is not a fresh "generating" run.
+  const staleCutoff = new Date(now.getTime() - STALE_MS);
+  const claim = await col.findOneAndUpdate(
+    {
+      _id,
+      $or: [
+        { "pdf.status": { $ne: "generating" } },
+        { "pdf.startedAt": { $lt: staleCutoff } },
+        { "pdf.startedAt": null },
+        { "pdf.startedAt": { $exists: false } },
+      ],
+    },
     {
       $set: {
         "pdf.status": "generating",
         "pdf.startedAt": now,
-        "pdf.runId": handle.id,
         "pdf.errorMessage": null,
         updatedAt: now,
       },
-    }
+    },
+    { returnDocument: "after" }
   );
+
+  if (!claim) {
+    // Lost the race — another POST already claimed and is in flight.
+    const fresh = await col.findOne({ _id }, { projection: { pdf: 1 } });
+    return NextResponse.json({ status: "generating", runId: fresh?.pdf?.runId ?? null });
+  }
+
+  // We won the claim — trigger the run and write its id.
+  const handle = await tasks.trigger("generate-sop-pdf", { sopId: id });
+  await col.updateOne({ _id }, { $set: { "pdf.runId": handle.id, updatedAt: new Date() } });
   return NextResponse.json({ status: "generating", runId: handle.id });
 }
 
