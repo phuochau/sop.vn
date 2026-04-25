@@ -20,8 +20,11 @@ export type SopStatus =
 export type ErrorCode =
   | null
   | "video_too_short" | "video_too_long" | "unsupported_format"
-  | "file_too_large" | "silent_audio" | "transcription_failed"
-  | "generation_failed" | "clipping_failed" | "unknown";
+  | "file_too_large" | "transcription_failed"
+  | "generation_failed" | "clipping_failed"
+  | "visual_context_failed" | "visual_extract_failed"
+  | "frame_sampling_failed" | "video_download_failed"
+  | "unknown";
 
 export interface Segment { id: number; start: number; end: number; text: string; }
 export interface CleanSegment { id: number; text: string; }
@@ -51,6 +54,8 @@ export interface SopDoc {
   _id: ObjectId;
   title: string;                     // AI-generated in Stage 4
   category: string;                  // AI-detected in Stage 3
+  inputMode?: "speech" | "silent";
+  defaultLanguage?: string;
   status: SopStatus;
   errorCode: ErrorCode;
   videoR2Key: string | null;

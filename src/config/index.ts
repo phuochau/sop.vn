@@ -23,6 +23,7 @@ export const config = {
     contextModel: "google/gemini-2.5-flash",
     sopModel: "anthropic/claude-sonnet-4.5",
     pdfModel: "google/gemini-2.5-flash",
+    visionModel: "google/gemini-2.5-flash",
     maxRetries: 1,
     domainTerminology: DOMAIN_TERMINOLOGY,
     prompts: {
@@ -44,6 +45,12 @@ export const config = {
         `You are writing the opening of a printed SOP document. The reader cannot watch the source video — they only have your text. Read the full transcript and step list, then produce a concise overview: purpose (2-3 sentences), audience (one sentence), prerequisites (bullets), tools/materials mentioned (bullets), and estimated duration (a short phrase like "~N minutes" / "~N phút" matching the output language). No filler, no speculation beyond what the transcript supports.\n\nLANGUAGE: Output every field in ${lang}. Keep technical / industry / brand terms in their original form (do not translate them).`,
       pdfStepSystem: (lang: string) =>
         `You rewrite a single step of a training SOP for a reader who cannot watch the video. Convert the spoken transcript slice into clear written instructions. Output: 1-3 short paragraphs of prose, an ordered list of discrete actions in imperative voice (subBullets), and any warnings/tips/notes as callouts with kind="warning"|"tip"|"note". Do not invent steps not present in the transcript. If there are no callouts, return an empty array.\n\nLANGUAGE: Output prose, subBullets, and callouts in ${lang}. Keep technical / industry / brand terms in their original form (do not translate them).`,
+      visualContextSystem: (lang: string) =>
+        `You classify training videos by looking at sampled frames. Identify the single best-fit category and write a 1-2 sentence summary of what the video teaches.\n\nLANGUAGE: Output the summary in ${lang}. Keep technical / industry / brand terms in their original form.`,
+      visualSopSystem: (domainHint: string, lang: string) =>
+        `You convert silent how-to videos into structured SOPs. You receive frames sampled from the video plus the second-offset of each frame. Identify the discrete actions being performed. For each action, write a clear instructional step in the output language. Each step has: a short title (≤8 words), a 2-4 sentence description describing what to do, and startTime/endTime in seconds within the video duration. Order steps chronologically and do not overlap them. Return at least one step.\n\nLANGUAGE: Output the title and every step's title and description in ${lang}. Keep technical / industry / brand terms in their original form (do not translate them).${
+          domainHint ? `\n\nDomain vocabulary to prefer when relevant: ${domainHint}` : ""
+        }\n\nReturn strict JSON only.`,
     },
   },
   limits: {

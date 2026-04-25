@@ -41,3 +41,13 @@ export const StepRewriteOutput = z.object({
     text: z.string(),
   })),
 });
+
+export const VisualSopExtractOutput = z.object({
+  title: z.string(),
+  steps: z.array(z.object({
+    title: z.string(),
+    description: z.string(),
+    startTime: z.number(),
+    endTime: z.number(),
+  })).min(1),
+});
