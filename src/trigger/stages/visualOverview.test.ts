@@ -10,8 +10,10 @@ test("runVisualOverview against a real fixture (skipped if missing)", async (t) 
     return;
   }
 
-  // Probe duration so sampleFrames doesn't seek past EOF. Pick a small value
-  // (5 sec) safely within any plausible fixture length to avoid an extra ffprobe.
+  // Sample frames across a 5-sec range — well within the fixture's actual
+  // length (~157 s, verified via ffprobe), so sampleFrames won't seek past EOF.
+  // Frames span this range only, not the full video; that's acceptable for a
+  // unit test that mocks the LLM response.
   const durationSec = 5;
 
   let capturedBody: { messages: { content: string | { type: string; text?: string }[] }[] } | null = null;
