@@ -29,6 +29,7 @@ async function loadOverviewSafely(doc: SopDoc): Promise<Overview | null> {
       category: doc.category,
       transcript: doc.transcript,
       stepTitles: doc.steps.map(s => s.title),
+      language: doc.language ?? "vi",
     });
   } catch (e) {
     logger.warn("overview synth failed; rendering without overview", { e: String(e) });
@@ -50,6 +51,7 @@ async function loadStepRewriteSafely(doc: SopDoc, stepIndex: number): Promise<St
       step,
       segments: doc.segments,
       prevTitle,
+      language: doc.language ?? "vi",
     });
   } catch (e) {
     logger.warn("step rewrite failed; using fallback", { stepIndex, e: String(e) });

@@ -4,11 +4,11 @@ import { config } from "@/config";
 import type { Segment, CleanSegment } from "@/lib/mongo";
 import { logger } from "@trigger.dev/sdk/v3";
 
-export async function runNormalize(segments: Segment[]): Promise<CleanSegment[]> {
+export async function runNormalize(segments: Segment[], language: string): Promise<CleanSegment[]> {
   try {
     const out = await llmJson({
       model: config.ai.normalizeModel,
-      system: config.ai.prompts.normalizeSystem,
+      system: config.ai.prompts.normalizeSystem(language),
       user: `Segments (JSON):\n${JSON.stringify(segments.map(s => ({ id: s.id, text: s.text })))}\n\nReturn { "segments": [{ id, text }] } with SAME ids.`,
       schema: NormalizeOutput,
       schemaName: "normalize",

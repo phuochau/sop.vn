@@ -6,11 +6,12 @@ import type { Category } from "@/config";
 
 export async function runContext(args: {
   cleanTranscript: string;
+  language: string;
 }): Promise<{ category: Category; domainSummary: string }> {
   try {
     const out = await llmJson({
       model: config.ai.contextModel,
-      system: config.ai.prompts.contextSystem,
+      system: config.ai.prompts.contextSystem(args.language),
       user: `Transcript:\n${args.cleanTranscript}\n\nReturn { "category": <enum>, "domainSummary": string }.`,
       schema: ContextOutput,
       schemaName: "context",

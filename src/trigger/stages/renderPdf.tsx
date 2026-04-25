@@ -50,8 +50,8 @@ const s = StyleSheet.create({
 
   stepHeader:  { fontSize: 9, color: COLORS.meta, marginBottom: 4 },
   stepTitle:   { fontSize: 18, fontWeight: 700, marginBottom: 12 },
-  frameStrip:  { flexDirection: "row", marginBottom: 12 },
-  frame:       { width: 150, height: 84, marginRight: 8, objectFit: "cover", borderRadius: 4, backgroundColor: "#F3F4F6" },
+  frameStrip:  { flexDirection: "column", marginBottom: 12 },
+  frame:       { width: "100%", marginBottom: 8, objectFit: "contain", borderRadius: 4, backgroundColor: "#F3F4F6" },
   prose:       { marginBottom: 8 },
   callout:     { marginTop: 8, padding: 8, borderLeftWidth: 3, borderLeftColor: COLORS.warn, backgroundColor: "#FFFBEB", fontSize: 10 },
   calloutTip:  { borderLeftColor: COLORS.tip, backgroundColor: "#ECFDF5" },

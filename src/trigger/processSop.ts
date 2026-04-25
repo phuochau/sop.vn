@@ -50,19 +50,20 @@ export const processSop = task({
         if (msg.includes("NO_AUDIO_STREAM")) return fail(_id, "silent_audio");
         return fail(_id, "transcription_failed");
       }
-      const { transcript, segments } = stage1;
+      const { transcript, segments, language } = stage1;
       if (segments.length === 0) return fail(_id, "silent_audio");
-      await (await sops()).updateOne({ _id }, { $set: { transcript, segments, updatedAt: new Date() } });
+      await (await sops()).updateOne({ _id }, { $set: { transcript, segments, language, updatedAt: new Date() } });
 
       // Stage 2
       await setStatus(_id, "normalizing");
-      const segmentsClean = await runNormalize(segments);
+      const segmentsClean = await runNormalize(segments, language);
       await (await sops()).updateOne({ _id }, { $set: { segmentsClean, updatedAt: new Date() } });
 
       // Stage 3 — always AI-detect category
       await setStatus(_id, "analyzing");
       const { category, domainSummary } = await runContext({
         cleanTranscript: segmentsClean.map(s => s.text).join(" "),
+        language,
       });
       await (await sops()).updateOne(
         { _id },
@@ -73,7 +74,7 @@ export const processSop = task({
       await setStatus(_id, "generating");
       let extracted;
       try {
-        extracted = await runExtract({ segmentsClean, category });
+        extracted = await runExtract({ segmentsClean, category, language });
       } catch (e) {
         logger.error("extract failed", { e: String(e) });
         return fail(_id, "generation_failed");

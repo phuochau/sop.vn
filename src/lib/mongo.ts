@@ -56,6 +56,7 @@ export interface SopDoc {
   videoR2Key: string | null;
   videoExpiresAt: Date;
   transcript: string | null;
+  language: string | null;          // ISO-ish code from Whisper, e.g. "vi", "en"
   segments: Segment[];
   segmentsClean: CleanSegment[] | null;
   domainSummary: string | null;

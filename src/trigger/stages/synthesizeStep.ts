@@ -22,6 +22,7 @@ export async function runSynthesizeStep(args: {
   step: { title: string; description: string; startTime: number; endTime: number };
   segments: Segment[];
   prevTitle: string | null;
+  language: string;
 }): Promise<StepRewrite> {
   const transcriptSlice = sliceTranscriptByTime(args.segments, args.step.startTime, args.step.endTime);
 
@@ -34,7 +35,7 @@ export async function runSynthesizeStep(args: {
 
   return llmJson({
     model: config.ai.pdfModel,
-    system: config.ai.prompts.pdfStepSystem,
+    system: config.ai.prompts.pdfStepSystem(args.language),
     user: userPrompt,
     schema: StepRewriteOutput,
     schemaName: "pdf_step_rewrite",

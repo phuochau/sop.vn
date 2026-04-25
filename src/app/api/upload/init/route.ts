@@ -37,6 +37,7 @@ export async function POST(req: Request) {
     videoR2Key: key,
     videoExpiresAt,
     transcript: null,
+    language: null,
     segments: [],
     segmentsClean: null,
     domainSummary: null,

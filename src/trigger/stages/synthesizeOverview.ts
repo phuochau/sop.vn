@@ -10,6 +10,7 @@ export async function runSynthesizeOverview(args: {
   category: string;
   transcript: string;
   stepTitles: string[];
+  language: string;
 }): Promise<Overview> {
   const userPrompt =
     `SOP title: ${args.title}\n` +
@@ -20,7 +21,7 @@ export async function runSynthesizeOverview(args: {
 
   return llmJson({
     model: config.ai.pdfModel,
-    system: config.ai.prompts.pdfOverviewSystem,
+    system: config.ai.prompts.pdfOverviewSystem(args.language),
     user: userPrompt,
     schema: OverviewOutput,
     schemaName: "pdf_overview",
