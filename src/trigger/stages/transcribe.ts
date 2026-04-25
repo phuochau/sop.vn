@@ -19,7 +19,7 @@ export async function runTranscribe(signedVideoUrl: string) {
         resolve((data.streams ?? []).some(s => s.codec_type === "audio"));
       });
     });
-    if (!hasAudio) throw new Error("NO_AUDIO_STREAM");
+    if (!hasAudio) return { transcript: "", segments: [], language: null };
     await new Promise<void>((resolve, reject) => {
       ffmpeg(vid)
         .noVideo()
