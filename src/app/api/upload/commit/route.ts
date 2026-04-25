@@ -4,7 +4,10 @@ import { z } from "zod";
 import { sops, events } from "@/lib/mongo";
 import { tasks } from "@trigger.dev/sdk/v3";
 
-const Body = z.object({ sopId: z.string().length(24) });
+const Body = z.object({
+  sopId: z.string().length(24),
+  defaultLanguage: z.enum(["vi", "en"]).default("vi"),
+});
 
 export async function POST(req: Request) {
   const parsed = Body.safeParse(await req.json());
@@ -14,7 +17,7 @@ export async function POST(req: Request) {
   const col = await sops();
   const res = await col.updateOne(
     { _id, status: "uploading" },
-    { $set: { status: "transcribing", updatedAt: new Date() } }
+    { $set: { status: "transcribing", defaultLanguage: parsed.data.defaultLanguage, updatedAt: new Date() } }
   );
   if (res.matchedCount === 0) return NextResponse.json({ error: "not_found_or_wrong_state" }, { status: 404 });
 

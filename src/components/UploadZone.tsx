@@ -12,6 +12,7 @@ export function UploadZone() {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [isPublic, setIsPublic] = useState(false);
+  const [language, setLanguage] = useState<"vi" | "en">("vi");
 
   function pick(f: File | null) {
     setError(null);
@@ -50,7 +51,7 @@ export function UploadZone() {
       const commit = await fetch("/api/upload/commit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sopId: init.sopId }),
+        body: JSON.stringify({ sopId: init.sopId, defaultLanguage: language }),
       });
       if (!commit.ok) throw new Error("commit_failed");
 
@@ -149,9 +150,21 @@ export function UploadZone() {
 
           {/* Options row */}
           <div className="flex items-center justify-between gap-4 flex-wrap">
-            <div className="inline-flex items-center gap-2.5 rounded-xl border border-gray-200 bg-[#FAFAFA] px-3.5 py-2.5">
-              <Globe className="w-4 h-4 text-[#0A0A0A]" strokeWidth={2} />
-              <span className="text-sm font-medium text-[#0A0A0A]">Tiếng Việt</span>
+            <div className="flex flex-col items-start gap-1">
+              <div className="inline-flex items-center gap-2.5 rounded-xl border border-gray-200 bg-[#FAFAFA] px-3.5 py-2.5">
+                <Globe className="w-4 h-4 text-[#0A0A0A]" strokeWidth={2} />
+                <select
+                  value={language}
+                  onChange={(e) => setLanguage(e.target.value as "vi" | "en")}
+                  className="bg-transparent text-sm font-medium text-[#0A0A0A] outline-none"
+                >
+                  <option value="vi">Tiếng Việt</option>
+                  <option value="en">English</option>
+                </select>
+              </div>
+              <span className="text-[11px] text-[#9CA3AF] pl-1">
+                Chỉ dùng khi video không có người nói.
+              </span>
             </div>
             <label className="inline-flex items-center gap-2 cursor-pointer">
               <input
