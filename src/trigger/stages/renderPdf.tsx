@@ -1,12 +1,14 @@
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import React from "react";
 import {
   Document, Page, Text, View, Image, Font, StyleSheet,
   renderToBuffer,
 } from "@react-pdf/renderer";
 
-const FONT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../public/fonts");
+// Fonts live at <projectRoot>/public/fonts in dev and at <workerRoot>/public/fonts in
+// the deployed Trigger.dev worker (via the additionalFiles build extension in trigger.config.ts).
+// In both cases process.cwd() points to the right root.
+const FONT_DIR = path.join(process.cwd(), "public/fonts");
 
 Font.register({
   family: "BeVietnamPro",
