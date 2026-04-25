@@ -1,7 +1,7 @@
 import { task, logger } from "@trigger.dev/sdk/v3";
 import { ObjectId } from "mongodb";
 import { sops, type SopDoc } from "@/lib/mongo";
-import { presignGet, putObject } from "@/lib/r2";
+import { presignGet, putObject, deleteObject } from "@/lib/r2";
 import { pdfKey } from "@/lib/utils";
 import { runSynthesizeOverview, type Overview } from "./stages/synthesizeOverview";
 import { runSynthesizeStep, sliceTranscriptByTime, type StepRewrite } from "./stages/synthesizeStep";
@@ -121,12 +121,18 @@ export const generateSopPdf = task({
       await putObject(key, buf, "application/pdf");
 
       // Stage 6: finalize
+      const previousKey = doc.pdf?.r2Key;
       await setPdfState(_id, {
         status: "ready",
         r2Key: key,
         generatedAt: new Date(),
         errorMessage: null,
       });
+      // Best-effort cleanup of the previous PDF object now that the doc points elsewhere.
+      if (previousKey && previousKey !== key) {
+        try { await deleteObject(previousKey); }
+        catch (e) { logger.warn("failed to delete previous pdf object", { previousKey, e: String(e) }); }
+      }
       logger.info("pdf ready", { sopId: payload.sopId, key, bytes: buf.length });
     } catch (e) {
       const msg = String(e);

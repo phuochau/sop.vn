@@ -1,5 +1,5 @@
 import { defineConfig } from "@trigger.dev/sdk/v3";
-import { ffmpeg } from "@trigger.dev/build/extensions/core";
+import { ffmpeg, additionalFiles } from "@trigger.dev/build/extensions/core";
 
 export default defineConfig({
   project: "proj_vrlpycnuckmgaizuxikz",
@@ -11,5 +11,11 @@ export default defineConfig({
     default: { maxAttempts: 1, minTimeoutInMs: 1000, maxTimeoutInMs: 10000, factor: 2, randomize: true },
   },
   dirs: ["./src/trigger"],
-  build: { extensions: [ffmpeg()] },
+  build: {
+    extensions: [
+      ffmpeg(),
+      // Bundle Be Vietnam Pro fonts so renderPdf.tsx can load them in deployed workers.
+      additionalFiles({ files: ["public/fonts/*.ttf"] }),
+    ],
+  },
 });
