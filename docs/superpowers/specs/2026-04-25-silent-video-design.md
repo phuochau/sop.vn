@@ -115,7 +115,7 @@ This wraps the same `/chat/completions` endpoint, but constructs the user messag
 
 Pure ffmpeg helper.
 
-- Signature: `sampleFrames(srcPath: string, durationSec: number, opts?: { count?: number; targetFps?: number; max?: number }) => Promise<{ paths: string[]; tmpDir: string; dispose: () => Promise<void> }>`.
+- Signature: `sampleFrames(srcPath: string, durationSec: number, opts?: { count?: number; targetFps?: number; max?: number }) => Promise<{ paths: string[]; timestamps: number[]; tmpDir: string; dispose: () => Promise<void> }>`.
 - Two modes:
   - **Fixed-count mode** (used by `runVisualContext`): `count = clamp(2, 8, floor(durationSec))`. Frames at positions `(i + 1) * durationSec / (count + 1)` for `i in [0, count)`. The pre-stage `minVideoDurationSec` gate guarantees `durationSec` is large enough that the lower clamp is never hit in practice.
   - **Density mode** (used by `runVisualExtract`): `count = clamp(2, 60, ceil(durationSec * 0.5))` (i.e., ~one frame every 2 seconds, between 2 and 60 frames). Spacing uses the same `(i + 1) * durationSec / (count + 1)` formula.
@@ -125,7 +125,7 @@ Pure ffmpeg helper.
 
 - Signature: `runVisualContext({ framePaths: string[], language: string }) => Promise<{ category: Category; domainSummary: string }>`.
 - Output shape matches `runContext` (`category` from existing enum in `schemas.ts`, `domainSummary: string`).
-- Implementation: calls `llmJsonVision` with `framePaths` (the 2–8 context frames), the existing `ContextOutput` schema, and a vision-friendly prompt asking for category + a one-paragraph domain summary in `language`. Model is read from a shared config knob `config.models.visionModel` (default `google/gemini-2.5-flash`). The same knob is used by `runVisualExtract`.
+- Implementation: calls `llmJsonVision` with `framePaths` (the 2–8 context frames), the existing `ContextOutput` schema, and a vision-friendly prompt asking for category + a one-paragraph domain summary in `language`. Model is read from a new shared config knob `config.ai.visionModel` (default `google/gemini-2.5-flash`), following the existing `config.ai.*Model` naming convention. The same knob is used by `runVisualExtract`.
 
 #### `src/trigger/stages/visualExtract.ts`
 
@@ -153,16 +153,19 @@ Pure ffmpeg helper.
   ```
 
   - The returned `disposeSrc` and `srcPath` fields are dropped from the result — both branches own these externally.
+  - The internal `ffprobeDuration(srcPath)` call is removed; duration is supplied by the caller (avoiding a second probe).
 - `resolveTimes` remains exported and unchanged. The speech-path call site (`processSop.ts`) calls `resolveTimes` first, then passes the result to `runClip`.
-- **Speech-path duration.** `resolveTimes` requires `videoDurationSec`. Today the pre-stage `probeDuration(signedVideo)` already computes this and discards it; the refactor captures it in a variable (`durationSec`) and reuses it for both `resolveTimes` and any downstream stage that needs it. `fetchSourceVideo` is then called once on the speech path and its `srcPath` passed into `runClip` and `runKeyframes`. The caller disposes in a `finally`.
+- **Speech-path duration.** `resolveTimes` requires `videoDurationSec`. Today the pre-stage `probeDuration(signedVideo)` already computes this and discards it; the refactor captures it in a variable (`durationSec`) and reuses it for both `resolveTimes` and any downstream stage that needs it. `fetchSourceVideo` is then called once on the speech path and its `srcPath` passed into `runClip` and `runKeyframes` (signature of `runKeyframes` is unchanged — it already accepts an externally-owned `srcPath`). The caller disposes in a `finally`.
 
-#### `src/trigger/stages/transcribe.ts`
+#### `src/trigger/stages/transcribe.ts` and `src/lib/fal.ts`
 
-- Stops treating "no audio stream" or empty ASR result as fatal. The two cases the modified `transcribe.ts` now returns `{ transcript: "", segments: [], language: null }` for:
-  1. `NO_AUDIO_STREAM` — file has no audio track at all.
-  2. fal returns 0 segments (or its `silent_audio` indicator) — has audio, but no transcribable speech.
+- `fal.ts` `transcribeAudio` return type widens to `{ transcript: string; segments: Segment[]; language: string | null }`. The current hardcoded `"vi"` default for `language` is replaced with `null` when no segments are produced; when segments exist, behavior is unchanged.
+- `transcribe.ts` stops treating no-audio or empty ASR result as fatal. The two cases for which it returns `{ transcript: "", segments: [], language: null }`:
+  1. `NO_AUDIO_STREAM` (probe-derived) — file has no audio track at all.
+  2. fal returns 0 (post-filter) segments — has audio, but no transcribable speech. Detection is purely `segments.length === 0`; no special fal field is used.
 - Continues to throw on real ASR API errors (network, 5xx); those still map to `transcription_failed`.
 - `processSop.ts` consequently drops both the `msg.includes("NO_AUDIO_STREAM") → silent_audio` path and the `segments.length === 0 → silent_audio` early failure (lines 50 and 54 in the current file).
+- `SopDoc.language` is already `string | null` in `mongo.ts`, so no further type change is needed there.
 
 #### `src/trigger/processSop.ts`
 
@@ -192,7 +195,7 @@ Pure ffmpeg helper.
 - Add `inputMode?: "speech" | "silent"` to `Sop` (optional for back-compat with existing docs).
 - Add `defaultLanguage?: string` to `Sop` (optional; consumers default to `"vi"` when missing).
 - Remove `"silent_audio"` from `ErrorCode`.
-- Add `"visual_context_failed"`, `"visual_extract_failed"`, and `"frame_sampling_failed"` to `ErrorCode`.
+- Add `"visual_context_failed"`, `"visual_extract_failed"`, `"frame_sampling_failed"`, and `"video_download_failed"` to `ErrorCode`.
 - No data migration is performed; both new fields are optional and existing in-flight SOPs will simply lack them (they only matter for new uploads going forward).
 
 #### `src/lib/schemas.ts`
