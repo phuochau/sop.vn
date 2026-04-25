@@ -7137,6 +7137,1648 @@
           ]
         }
       ]
+    },
+    {
+      "type": "frame",
+      "id": "dlHwL",
+      "x": 10800,
+      "y": 0,
+      "name": "S5 Examples",
+      "width": 1440,
+      "height": 2760,
+      "fill": "#FFFFFF",
+      "layout": "none",
+      "children": [
+        {
+          "type": "frame",
+          "id": "mbdtc",
+          "x": 0,
+          "y": 0,
+          "name": "s5Wrap",
+          "width": 1440,
+          "fill": "#FFFFFF",
+          "layout": "vertical",
+          "children": [
+            {
+              "type": "frame",
+              "id": "NFOKZ",
+              "name": "s5Nav",
+              "width": "fill_container",
+              "height": 72,
+              "fill": "#FFFFFF",
+              "padding": [
+                16,
+                48
+              ],
+              "justifyContent": "space_between",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "5ggWh",
+                  "name": "s1NavLeft",
+                  "gap": 10,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "i4Vgz",
+                      "name": "s1Logo",
+                      "width": 32,
+                      "height": 32,
+                      "fill": "#0A0A0A",
+                      "cornerRadius": 8,
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "r9Gq5",
+                          "fill": "#FFFFFF",
+                          "content": "S",
+                          "fontFamily": "Inter",
+                          "fontSize": 18,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "Yf9W9",
+                      "fill": "#0A0A0A",
+                      "content": "SOP.vn",
+                      "fontFamily": "Inter",
+                      "fontSize": 18,
+                      "fontWeight": "700"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "gmY2g",
+                      "name": "s1BetaBadge",
+                      "fill": "#0066FF",
+                      "cornerRadius": 999,
+                      "padding": [
+                        3,
+                        10
+                      ],
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "mZfxT",
+                          "name": "betaTxt",
+                          "fill": "#FFFFFF",
+                          "content": "BETA",
+                          "fontFamily": "Inter",
+                          "fontSize": 10,
+                          "fontWeight": "700",
+                          "letterSpacing": 1
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "tLdEi",
+                  "name": "s1NavMid",
+                  "gap": 32,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "Q2zaL",
+                      "fill": "#374151",
+                      "content": "Tính năng",
+                      "fontFamily": "Geist",
+                      "fontSize": 14,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "KQPjB",
+                      "fill": "#0A0A0A",
+                      "content": "Ví dụ",
+                      "fontFamily": "Geist",
+                      "fontSize": 14,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "i5BtX",
+                  "name": "s1NavRight",
+                  "gap": 12,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "rB0nU",
+                      "name": "s1NavCta",
+                      "fill": "#0A0A0A",
+                      "cornerRadius": 999,
+                      "padding": [
+                        10,
+                        18
+                      ],
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "CCeJ9",
+                          "fill": "#FFFFFF",
+                          "content": "Bắt đầu",
+                          "fontFamily": "Geist",
+                          "fontSize": 14,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "uNOBs",
+              "name": "s5Header",
+              "width": "fill_container",
+              "fill": "#FAFAFA",
+              "stroke": {
+                "align": "inside",
+                "thickness": {
+                  "bottom": 1
+                },
+                "fill": "#E5E7EB"
+              },
+              "layout": "vertical",
+              "gap": 20,
+              "padding": [
+                80,
+                48,
+                60,
+                48
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "TAW9G",
+                  "name": "s5Pill",
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 999,
+                  "stroke": {
+                    "align": "inside",
+                    "thickness": 1,
+                    "fill": "#E5E7EB"
+                  },
+                  "gap": 8,
+                  "padding": [
+                    6,
+                    14
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon_font",
+                      "id": "m3WSH",
+                      "width": 12,
+                      "height": 12,
+                      "iconFontName": "sparkles",
+                      "iconFontFamily": "lucide",
+                      "fill": "#0066FF"
+                    },
+                    {
+                      "type": "text",
+                      "id": "3bR1l",
+                      "fill": "#374151",
+                      "content": "Thư viện SOP mẫu",
+                      "fontFamily": "Funnel Sans",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "kbIW5",
+                  "fill": "#0A0A0A",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "Ví dụ SOP từ cộng đồng",
+                  "lineHeight": 1.08,
+                  "textAlign": "center",
+                  "fontFamily": "Inter",
+                  "fontSize": 52,
+                  "fontWeight": "700",
+                  "letterSpacing": -1.2
+                },
+                {
+                  "type": "text",
+                  "id": "vFbA5",
+                  "fill": "#4B5563",
+                  "textGrowth": "fixed-width",
+                  "width": 680,
+                  "content": "Khám phá các quy trình thao tác chuẩn được chia sẻ công khai. Bắt đầu từ một ví dụ sẵn có, hoặc lấy cảm hứng cho SOP riêng của bạn.",
+                  "lineHeight": 1.5,
+                  "textAlign": "center",
+                  "fontFamily": "Geist",
+                  "fontSize": 17,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "VCI2h",
+                  "name": "s5Search",
+                  "width": 520,
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 999,
+                  "stroke": {
+                    "align": "inside",
+                    "thickness": 1,
+                    "fill": "#E5E7EB"
+                  },
+                  "gap": 10,
+                  "padding": [
+                    12,
+                    20
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon_font",
+                      "id": "qI8Km",
+                      "width": 16,
+                      "height": 16,
+                      "iconFontName": "search",
+                      "iconFontFamily": "lucide",
+                      "fill": "#9CA3AF"
+                    },
+                    {
+                      "type": "text",
+                      "id": "9CjES",
+                      "fill": "#9CA3AF",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Tìm SOP theo tên, danh mục, từ khoá…",
+                      "fontFamily": "Geist",
+                      "fontSize": 14,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "fUl0u",
+              "name": "s5Body",
+              "width": "fill_container",
+              "fill": "#FFFFFF",
+              "layout": "vertical",
+              "gap": 64,
+              "padding": [
+                64,
+                48,
+                80,
+                48
+              ],
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "9BtGy",
+                  "name": "s5Cat1",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 24,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "JLZBp",
+                      "name": "cat1Head",
+                      "width": "fill_container",
+                      "justifyContent": "space_between",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "YY2In",
+                          "name": "cat1Left",
+                          "gap": 12,
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "GTASx",
+                              "name": "cat1Icon",
+                              "width": 40,
+                              "height": 40,
+                              "fill": "#EEF4FF",
+                              "cornerRadius": 10,
+                              "justifyContent": "center",
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "icon_font",
+                                  "id": "PRXAa",
+                                  "width": 20,
+                                  "height": 20,
+                                  "iconFontName": "calculator",
+                                  "iconFontFamily": "lucide",
+                                  "fill": "#0066FF"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "2R6is",
+                              "name": "cat1TitleCol",
+                              "layout": "vertical",
+                              "gap": 2,
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "ktPFI",
+                                  "fill": "#0A0A0A",
+                                  "content": "Kế toán & Tài chính",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 22,
+                                  "fontWeight": "700",
+                                  "letterSpacing": -0.4
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "qc5OT",
+                                  "fill": "#6B7280",
+                                  "content": "12 SOP · cập nhật tuần này",
+                                  "fontFamily": "Funnel Sans",
+                                  "fontSize": 13,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "8gyra",
+                          "name": "cat1More",
+                          "cornerRadius": 999,
+                          "stroke": {
+                            "align": "inside",
+                            "thickness": 1,
+                            "fill": "#E5E7EB"
+                          },
+                          "gap": 6,
+                          "padding": [
+                            8,
+                            14
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "oGKbg",
+                              "fill": "#0A0A0A",
+                              "content": "Xem tất cả",
+                              "fontFamily": "Geist",
+                              "fontSize": 13,
+                              "fontWeight": "500"
+                            },
+                            {
+                              "type": "icon_font",
+                              "id": "WntP0",
+                              "width": 14,
+                              "height": 14,
+                              "iconFontName": "arrow-right",
+                              "iconFontFamily": "lucide",
+                              "fill": "#0A0A0A"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "N6Hjj",
+                      "name": "cat1Grid",
+                      "width": "fill_container",
+                      "gap": 24,
+                      "children": [
+                        {
+                          "id": "mTsbr",
+                          "type": "ref",
+                          "ref": "r8CjW",
+                          "width": "fill_container",
+                          "descendants": {
+                            "jdczb": {
+                              "fill": "#FEF3C7"
+                            },
+                            "kIxNX": {
+                              "iconFontName": "file-spreadsheet",
+                              "fill": "#D97706"
+                            },
+                            "wSoZa": {
+                              "content": "6:42"
+                            },
+                            "O3Nag": {
+                              "content": "8 bước"
+                            },
+                            "VVWWq": {
+                              "content": "KẾ TOÁN"
+                            },
+                            "bf7xP": {
+                              "content": "Lập báo cáo doanh thu tháng trên Excel"
+                            },
+                            "YUvIQ": {
+                              "content": "Quy trình tổng hợp doanh thu, chi phí và xuất báo cáo PDF gửi giám đốc."
+                            },
+                            "5CzZ6": {
+                              "content": "1.2k lượt xem"
+                            },
+                            "Kr7YZ": {
+                              "content": "Minh Anh"
+                            }
+                          }
+                        },
+                        {
+                          "id": "3cUXq",
+                          "type": "ref",
+                          "ref": "r8CjW",
+                          "width": "fill_container",
+                          "descendants": {
+                            "jdczb": {
+                              "fill": "#ECFDF5"
+                            },
+                            "kIxNX": {
+                              "iconFontName": "landmark",
+                              "fill": "#059669"
+                            },
+                            "wSoZa": {
+                              "content": "4:18"
+                            },
+                            "O3Nag": {
+                              "content": "6 bước"
+                            },
+                            "VVWWq": {
+                              "content": "KẾ TOÁN"
+                            },
+                            "bf7xP": {
+                              "content": "Đối chiếu sao kê ngân hàng hằng tuần"
+                            },
+                            "YUvIQ": {
+                              "content": "So khớp giao dịch trên MISA với sao kê Vietcombank, xử lý chênh lệch."
+                            },
+                            "5CzZ6": {
+                              "content": "834 lượt xem"
+                            },
+                            "Kr7YZ": {
+                              "content": "Thu Hà"
+                            }
+                          }
+                        },
+                        {
+                          "id": "IysJs",
+                          "type": "ref",
+                          "ref": "r8CjW",
+                          "width": "fill_container",
+                          "descendants": {
+                            "jdczb": {
+                              "fill": "#EFF6FF"
+                            },
+                            "kIxNX": {
+                              "iconFontName": "receipt",
+                              "fill": "#2563EB"
+                            },
+                            "wSoZa": {
+                              "content": "3:55"
+                            },
+                            "O3Nag": {
+                              "content": "5 bước"
+                            },
+                            "VVWWq": {
+                              "content": "KẾ TOÁN"
+                            },
+                            "bf7xP": {
+                              "content": "Xuất hoá đơn điện tử trên Viettel Invoice"
+                            },
+                            "YUvIQ": {
+                              "content": "Hướng dẫn tạo và gửi hóa đơn VAT cho khách hàng doanh nghiệp."
+                            },
+                            "5CzZ6": {
+                              "content": "2.1k lượt xem"
+                            },
+                            "Kr7YZ": {
+                              "content": "Quang Huy"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "xsQVm",
+                  "name": "s5Cat2",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 24,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "yrDBi",
+                      "name": "cat2Head",
+                      "width": "fill_container",
+                      "justifyContent": "space_between",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "OLpFZ",
+                          "name": "cat2Left",
+                          "gap": 12,
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "fUIkq",
+                              "name": "cat2Icon",
+                              "width": 40,
+                              "height": 40,
+                              "fill": "#FFF7ED",
+                              "cornerRadius": 10,
+                              "justifyContent": "center",
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "icon_font",
+                                  "id": "dLejO",
+                                  "width": 20,
+                                  "height": 20,
+                                  "iconFontName": "users",
+                                  "iconFontFamily": "lucide",
+                                  "fill": "#EA580C"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "rLwpp",
+                              "name": "cat2TitleCol",
+                              "layout": "vertical",
+                              "gap": 2,
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "Frlar",
+                                  "fill": "#0A0A0A",
+                                  "content": "Nhân sự & Onboarding",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 22,
+                                  "fontWeight": "700",
+                                  "letterSpacing": -0.4
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "oi2uf",
+                                  "fill": "#6B7280",
+                                  "content": "9 SOP · phổ biến trong tháng",
+                                  "fontFamily": "Funnel Sans",
+                                  "fontSize": 13,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "KV7ZP",
+                          "name": "cat2More",
+                          "cornerRadius": 999,
+                          "stroke": {
+                            "align": "inside",
+                            "thickness": 1,
+                            "fill": "#E5E7EB"
+                          },
+                          "gap": 6,
+                          "padding": [
+                            8,
+                            14
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "SN63f",
+                              "fill": "#0A0A0A",
+                              "content": "Xem tất cả",
+                              "fontFamily": "Geist",
+                              "fontSize": 13,
+                              "fontWeight": "500"
+                            },
+                            {
+                              "type": "icon_font",
+                              "id": "xzFgu",
+                              "width": 14,
+                              "height": 14,
+                              "iconFontName": "arrow-right",
+                              "iconFontFamily": "lucide",
+                              "fill": "#0A0A0A"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "eAKEp",
+                      "name": "cat2Grid",
+                      "width": "fill_container",
+                      "gap": 24,
+                      "children": [
+                        {
+                          "id": "lZH3q",
+                          "type": "ref",
+                          "ref": "r8CjW",
+                          "width": "fill_container",
+                          "descendants": {
+                            "jdczb": {
+                              "fill": "#FEF3F2"
+                            },
+                            "kIxNX": {
+                              "iconFontName": "mail",
+                              "fill": "#DC2626"
+                            },
+                            "wSoZa": {
+                              "content": "5:12"
+                            },
+                            "O3Nag": {
+                              "content": "7 bước"
+                            },
+                            "VVWWq": {
+                              "content": "NHÂN SỰ",
+                              "fill": "#EA580C"
+                            },
+                            "bf7xP": {
+                              "content": "Thiết lập tài khoản email Google Workspace"
+                            },
+                            "YUvIQ": {
+                              "content": "Tạo email công ty, cấu hình chữ ký và nhóm cho nhân viên mới."
+                            },
+                            "5CzZ6": {
+                              "content": "3.4k lượt xem"
+                            },
+                            "Kr7YZ": {
+                              "content": "Ngọc Trâm"
+                            }
+                          }
+                        },
+                        {
+                          "id": "vSjed",
+                          "type": "ref",
+                          "ref": "r8CjW",
+                          "width": "fill_container",
+                          "descendants": {
+                            "jdczb": {
+                              "fill": "#F5F3FF"
+                            },
+                            "kIxNX": {
+                              "iconFontName": "user-check",
+                              "fill": "#7C3AED"
+                            },
+                            "wSoZa": {
+                              "content": "8:30"
+                            },
+                            "O3Nag": {
+                              "content": "10 bước"
+                            },
+                            "VVWWq": {
+                              "content": "NHÂN SỰ",
+                              "fill": "#EA580C"
+                            },
+                            "bf7xP": {
+                              "content": "Quy trình phỏng vấn ứng viên vòng 1"
+                            },
+                            "YUvIQ": {
+                              "content": "Chuẩn bị câu hỏi, đánh giá và ghi chú trên Notion cho HR mới."
+                            },
+                            "5CzZ6": {
+                              "content": "612 lượt xem"
+                            },
+                            "Kr7YZ": {
+                              "content": "Đức Long"
+                            }
+                          }
+                        },
+                        {
+                          "id": "4L6ut",
+                          "type": "ref",
+                          "ref": "r8CjW",
+                          "width": "fill_container",
+                          "descendants": {
+                            "jdczb": {
+                              "fill": "#FEF3C7"
+                            },
+                            "kIxNX": {
+                              "iconFontName": "clock-4",
+                              "fill": "#CA8A04"
+                            },
+                            "wSoZa": {
+                              "content": "4:45"
+                            },
+                            "O3Nag": {
+                              "content": "6 bước"
+                            },
+                            "VVWWq": {
+                              "content": "NHÂN SỰ",
+                              "fill": "#EA580C"
+                            },
+                            "bf7xP": {
+                              "content": "Chấm công và tính lương trên Tanca"
+                            },
+                            "YUvIQ": {
+                              "content": "Xuất bảng chấm công cuối tháng, tính OT và gửi phiếu lương."
+                            },
+                            "5CzZ6": {
+                              "content": "1.8k lượt xem"
+                            },
+                            "Kr7YZ": {
+                              "content": "Hải Yến"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "Q2zrE",
+                  "name": "s5Cat3",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 24,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "XnbEA",
+                      "name": "cat3Head",
+                      "width": "fill_container",
+                      "justifyContent": "space_between",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "ymitt",
+                          "name": "cat3Left",
+                          "gap": 12,
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "FpHEM",
+                              "name": "cat3Icon",
+                              "width": 40,
+                              "height": 40,
+                              "fill": "#FDF2F8",
+                              "cornerRadius": 10,
+                              "justifyContent": "center",
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "icon_font",
+                                  "id": "9SW2h",
+                                  "width": 20,
+                                  "height": 20,
+                                  "iconFontName": "megaphone",
+                                  "iconFontFamily": "lucide",
+                                  "fill": "#DB2777"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "MPskd",
+                              "name": "cat3TitleCol",
+                              "layout": "vertical",
+                              "gap": 2,
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "CY9ny",
+                                  "fill": "#0A0A0A",
+                                  "content": "Marketing & Bán hàng",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 22,
+                                  "fontWeight": "700",
+                                  "letterSpacing": -0.4
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "C5mn2",
+                                  "fill": "#6B7280",
+                                  "content": "15 SOP · nhiều lượt xem nhất",
+                                  "fontFamily": "Funnel Sans",
+                                  "fontSize": 13,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "6z6ci",
+                          "name": "cat3More",
+                          "cornerRadius": 999,
+                          "stroke": {
+                            "align": "inside",
+                            "thickness": 1,
+                            "fill": "#E5E7EB"
+                          },
+                          "gap": 6,
+                          "padding": [
+                            8,
+                            14
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "uNJWT",
+                              "fill": "#0A0A0A",
+                              "content": "Xem tất cả",
+                              "fontFamily": "Geist",
+                              "fontSize": 13,
+                              "fontWeight": "500"
+                            },
+                            {
+                              "type": "icon_font",
+                              "id": "1Mzs0",
+                              "width": 14,
+                              "height": 14,
+                              "iconFontName": "arrow-right",
+                              "iconFontFamily": "lucide",
+                              "fill": "#0A0A0A"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "ZOXX8",
+                      "name": "cat3Grid",
+                      "width": "fill_container",
+                      "gap": 24,
+                      "children": [
+                        {
+                          "id": "Kle8O",
+                          "type": "ref",
+                          "ref": "r8CjW",
+                          "width": "fill_container",
+                          "descendants": {
+                            "jdczb": {
+                              "fill": "#EFF6FF"
+                            },
+                            "kIxNX": {
+                              "iconFontName": "facebook",
+                              "fill": "#1D4ED8"
+                            },
+                            "wSoZa": {
+                              "content": "7:08"
+                            },
+                            "O3Nag": {
+                              "content": "9 bước"
+                            },
+                            "VVWWq": {
+                              "content": "MARKETING",
+                              "fill": "#DB2777"
+                            },
+                            "bf7xP": {
+                              "content": "Đăng bài Facebook Page theo lịch tuần"
+                            },
+                            "YUvIQ": {
+                              "content": "Lên nội dung, thiết kế ảnh trên Canva và xếp lịch qua Meta Suite."
+                            },
+                            "5CzZ6": {
+                              "content": "4.7k lượt xem"
+                            },
+                            "Kr7YZ": {
+                              "content": "Thanh Thảo"
+                            }
+                          }
+                        },
+                        {
+                          "id": "hAife",
+                          "type": "ref",
+                          "ref": "r8CjW",
+                          "width": "fill_container",
+                          "descendants": {
+                            "jdczb": {
+                              "fill": "#FFF7ED"
+                            },
+                            "kIxNX": {
+                              "iconFontName": "shopping-bag",
+                              "fill": "#EA580C"
+                            },
+                            "wSoZa": {
+                              "content": "3:24"
+                            },
+                            "O3Nag": {
+                              "content": "5 bước"
+                            },
+                            "VVWWq": {
+                              "content": "BÁN HÀNG",
+                              "fill": "#DB2777"
+                            },
+                            "bf7xP": {
+                              "content": "Chốt đơn trên Shopee và xuất vận đơn"
+                            },
+                            "YUvIQ": {
+                              "content": "Xác nhận đơn, in vận đơn GHN/J&T và cập nhật kho nội bộ."
+                            },
+                            "5CzZ6": {
+                              "content": "5.2k lượt xem"
+                            },
+                            "Kr7YZ": {
+                              "content": "Bảo Ngọc"
+                            }
+                          }
+                        },
+                        {
+                          "id": "6Txfg",
+                          "type": "ref",
+                          "ref": "r8CjW",
+                          "width": "fill_container",
+                          "descendants": {
+                            "jdczb": {
+                              "fill": "#ECFDF5"
+                            },
+                            "kIxNX": {
+                              "iconFontName": "trending-up",
+                              "fill": "#059669"
+                            },
+                            "wSoZa": {
+                              "content": "9:50"
+                            },
+                            "O3Nag": {
+                              "content": "11 bước"
+                            },
+                            "VVWWq": {
+                              "content": "MARKETING",
+                              "fill": "#DB2777"
+                            },
+                            "bf7xP": {
+                              "content": "Chạy quảng cáo Google Ads cho landing page"
+                            },
+                            "YUvIQ": {
+                              "content": "Thiết lập chiến dịch tìm kiếm, đặt ngân sách và theo dõi chuyển đổi."
+                            },
+                            "5CzZ6": {
+                              "content": "2.6k lượt xem"
+                            },
+                            "Kr7YZ": {
+                              "content": "Minh Đức"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "nUqEw",
+                  "name": "s5Cat4",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 24,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "JWskf",
+                      "name": "cat4Head",
+                      "width": "fill_container",
+                      "justifyContent": "space_between",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "mYN99",
+                          "name": "cat4Left",
+                          "gap": 12,
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "SH9J8",
+                              "name": "cat4Icon",
+                              "width": 40,
+                              "height": 40,
+                              "fill": "#F0FDF4",
+                              "cornerRadius": 10,
+                              "justifyContent": "center",
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "icon_font",
+                                  "id": "jJdLx",
+                                  "width": 20,
+                                  "height": 20,
+                                  "iconFontName": "code",
+                                  "iconFontFamily": "lucide",
+                                  "fill": "#059669"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "KzWwJ",
+                              "name": "cat4TitleCol",
+                              "layout": "vertical",
+                              "gap": 2,
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "vQczm",
+                                  "fill": "#0A0A0A",
+                                  "content": "Kỹ thuật & Vận hành",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 22,
+                                  "fontWeight": "700",
+                                  "letterSpacing": -0.4
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "NCPlz",
+                                  "fill": "#6B7280",
+                                  "content": "7 SOP · từ đội kỹ thuật",
+                                  "fontFamily": "Funnel Sans",
+                                  "fontSize": 13,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "jkaC9",
+                          "name": "cat4More",
+                          "cornerRadius": 999,
+                          "stroke": {
+                            "align": "inside",
+                            "thickness": 1,
+                            "fill": "#E5E7EB"
+                          },
+                          "gap": 6,
+                          "padding": [
+                            8,
+                            14
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "yFDuH",
+                              "fill": "#0A0A0A",
+                              "content": "Xem tất cả",
+                              "fontFamily": "Geist",
+                              "fontSize": 13,
+                              "fontWeight": "500"
+                            },
+                            {
+                              "type": "icon_font",
+                              "id": "jSDlh",
+                              "width": 14,
+                              "height": 14,
+                              "iconFontName": "arrow-right",
+                              "iconFontFamily": "lucide",
+                              "fill": "#0A0A0A"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "VxViJ",
+                      "name": "cat4Grid",
+                      "width": "fill_container",
+                      "gap": 24,
+                      "children": [
+                        {
+                          "id": "akwQy",
+                          "type": "ref",
+                          "ref": "r8CjW",
+                          "width": "fill_container",
+                          "descendants": {
+                            "jdczb": {
+                              "fill": "#F3F4F6"
+                            },
+                            "kIxNX": {
+                              "iconFontName": "rocket",
+                              "fill": "#0A0A0A"
+                            },
+                            "wSoZa": {
+                              "content": "6:15"
+                            },
+                            "O3Nag": {
+                              "content": "8 bước"
+                            },
+                            "VVWWq": {
+                              "content": "KỸ THUẬT",
+                              "fill": "#059669"
+                            },
+                            "bf7xP": {
+                              "content": "Deploy ứng dụng Next.js lên Vercel"
+                            },
+                            "YUvIQ": {
+                              "content": "Kết nối GitHub, cấu hình biến môi trường và domain tuỳ chỉnh."
+                            },
+                            "5CzZ6": {
+                              "content": "1.9k lượt xem"
+                            },
+                            "Kr7YZ": {
+                              "content": "Tuấn Kiệt"
+                            }
+                          }
+                        },
+                        {
+                          "id": "clDJB",
+                          "type": "ref",
+                          "ref": "r8CjW",
+                          "width": "fill_container",
+                          "descendants": {
+                            "jdczb": {
+                              "fill": "#EFF6FF"
+                            },
+                            "kIxNX": {
+                              "iconFontName": "database-backup",
+                              "fill": "#2563EB"
+                            },
+                            "wSoZa": {
+                              "content": "4:02"
+                            },
+                            "O3Nag": {
+                              "content": "6 bước"
+                            },
+                            "VVWWq": {
+                              "content": "VẬN HÀNH",
+                              "fill": "#059669"
+                            },
+                            "bf7xP": {
+                              "content": "Sao lưu dữ liệu định kỳ trên Google Drive"
+                            },
+                            "YUvIQ": {
+                              "content": "Thiết lập backup tự động cho thư mục làm việc và kiểm tra khôi phục."
+                            },
+                            "5CzZ6": {
+                              "content": "942 lượt xem"
+                            },
+                            "Kr7YZ": {
+                              "content": "Phương Anh"
+                            }
+                          }
+                        },
+                        {
+                          "id": "R8o31",
+                          "type": "ref",
+                          "ref": "r8CjW",
+                          "width": "fill_container",
+                          "descendants": {
+                            "jdczb": {
+                              "fill": "#FFF7ED"
+                            },
+                            "kIxNX": {
+                              "iconFontName": "shield-check",
+                              "fill": "#EA580C"
+                            },
+                            "wSoZa": {
+                              "content": "5:40"
+                            },
+                            "O3Nag": {
+                              "content": "7 bước"
+                            },
+                            "VVWWq": {
+                              "content": "KỸ THUẬT",
+                              "fill": "#059669"
+                            },
+                            "bf7xP": {
+                              "content": "Cài SSL miễn phí cho website trên Cloudflare"
+                            },
+                            "YUvIQ": {
+                              "content": "Trỏ domain về Cloudflare và bật chế độ Full (strict) cho HTTPS."
+                            },
+                            "5CzZ6": {
+                              "content": "1.3k lượt xem"
+                            },
+                            "Kr7YZ": {
+                              "content": "Đăng Khoa"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "4x4md",
+                  "name": "s5CtaBanner",
+                  "width": "fill_container",
+                  "fill": "#0A0A0A",
+                  "cornerRadius": 20,
+                  "gap": 24,
+                  "padding": [
+                    32,
+                    40
+                  ],
+                  "justifyContent": "space_between",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "PEpmu",
+                      "name": "ctaLeft",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "z8VDS",
+                          "fill": "#FFFFFF",
+                          "content": "Bạn có SOP muốn chia sẻ?",
+                          "fontFamily": "Inter",
+                          "fontSize": 24,
+                          "fontWeight": "700",
+                          "letterSpacing": -0.4
+                        },
+                        {
+                          "type": "text",
+                          "id": "krGnx",
+                          "fill": "#9CA3AF",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Đóng góp SOP của bạn vào thư viện công khai để giúp cộng đồng học hỏi nhanh hơn.",
+                          "lineHeight": 1.5,
+                          "fontFamily": "Geist",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "hUhWy",
+                      "name": "ctaBtn",
+                      "fill": "#FFFFFF",
+                      "cornerRadius": 999,
+                      "gap": 8,
+                      "padding": [
+                        14,
+                        22
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "TYnOO",
+                          "fill": "#0A0A0A",
+                          "content": "Chia sẻ SOP",
+                          "fontFamily": "Geist",
+                          "fontSize": 14,
+                          "fontWeight": "600"
+                        },
+                        {
+                          "type": "icon_font",
+                          "id": "sj7Ef",
+                          "width": 14,
+                          "height": 14,
+                          "iconFontName": "upload",
+                          "iconFontFamily": "lucide",
+                          "fill": "#0A0A0A"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "31Ley",
+              "name": "s5Footer",
+              "width": "fill_container",
+              "fill": "#FAFAFA",
+              "stroke": {
+                "align": "inside",
+                "thickness": {
+                  "top": 1
+                },
+                "fill": "#E5E7EB"
+              },
+              "padding": [
+                32,
+                48
+              ],
+              "justifyContent": "space_between",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "KPqAX",
+                  "name": "s1FootLeft",
+                  "gap": 10,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "tKm1l",
+                      "name": "s1FootLogo",
+                      "width": 24,
+                      "height": 24,
+                      "fill": "#0A0A0A",
+                      "cornerRadius": 6,
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "GWwKY",
+                          "fill": "#FFFFFF",
+                          "content": "S",
+                          "fontFamily": "Inter",
+                          "fontSize": 13,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "hVRU9",
+                      "fill": "#6B7280",
+                      "content": "© 2026 SOP.vn — Made in Hà Nội",
+                      "fontFamily": "Funnel Sans",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "r8CjW",
+      "x": 12400,
+      "y": 0,
+      "name": "component/sopCard",
+      "reusable": true,
+      "clip": true,
+      "width": 400,
+      "fill": "#FFFFFF",
+      "cornerRadius": 16,
+      "stroke": {
+        "align": "inside",
+        "thickness": 1,
+        "fill": "#E5E7EB"
+      },
+      "layout": "vertical",
+      "children": [
+        {
+          "type": "frame",
+          "id": "jdczb",
+          "name": "thumb",
+          "width": "fill_container",
+          "height": 180,
+          "fill": "#F3F4F6",
+          "stroke": {
+            "align": "inside",
+            "thickness": {
+              "bottom": 1
+            },
+            "fill": "#E5E7EB"
+          },
+          "layout": "none",
+          "children": [
+            {
+              "type": "icon_font",
+              "id": "kIxNX",
+              "x": 182,
+              "y": 72,
+              "name": "thumbIcon",
+              "width": 36,
+              "height": 36,
+              "iconFontName": "play",
+              "iconFontFamily": "lucide",
+              "fill": "#9CA3AF"
+            },
+            {
+              "type": "frame",
+              "id": "BrYF3",
+              "x": 16,
+              "y": 144,
+              "name": "pillDur",
+              "fill": "#0A0A0ACC",
+              "cornerRadius": 999,
+              "gap": 6,
+              "padding": [
+                4,
+                10
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon_font",
+                  "id": "apEVb",
+                  "width": 11,
+                  "height": 11,
+                  "iconFontName": "clock",
+                  "iconFontFamily": "lucide",
+                  "fill": "#FFFFFF"
+                },
+                {
+                  "type": "text",
+                  "id": "wSoZa",
+                  "fill": "#FFFFFF",
+                  "content": "6:42",
+                  "fontFamily": "Geist",
+                  "fontSize": 11,
+                  "fontWeight": "500"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "L5ea0",
+              "x": 296,
+              "y": 144,
+              "name": "pillSteps",
+              "fill": "#FFFFFFEE",
+              "cornerRadius": 999,
+              "stroke": {
+                "align": "inside",
+                "thickness": 1,
+                "fill": "#E5E7EB"
+              },
+              "gap": 6,
+              "padding": [
+                4,
+                10
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon_font",
+                  "id": "Aevfd",
+                  "width": 11,
+                  "height": 11,
+                  "iconFontName": "list-ordered",
+                  "iconFontFamily": "lucide",
+                  "fill": "#0A0A0A"
+                },
+                {
+                  "type": "text",
+                  "id": "O3Nag",
+                  "fill": "#0A0A0A",
+                  "content": "8 bước",
+                  "fontFamily": "Geist",
+                  "fontSize": 11,
+                  "fontWeight": "500"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "mqUEH",
+          "name": "cardBody",
+          "width": "fill_container",
+          "fill": "#FFFFFF",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 20,
+          "children": [
+            {
+              "type": "text",
+              "id": "VVWWq",
+              "name": "catLabel",
+              "fill": "#0066FF",
+              "content": "KẾ TOÁN",
+              "fontFamily": "Inter",
+              "fontSize": 11,
+              "fontWeight": "700",
+              "letterSpacing": 1
+            },
+            {
+              "type": "text",
+              "id": "bf7xP",
+              "name": "cardTitle",
+              "fill": "#0A0A0A",
+              "textGrowth": "fixed-width",
+              "width": "fill_container",
+              "content": "Cách lập báo cáo tháng trong Excel",
+              "lineHeight": 1.25,
+              "fontFamily": "Inter",
+              "fontSize": 17,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "YUvIQ",
+              "name": "cardDesc",
+              "fill": "#6B7280",
+              "textGrowth": "fixed-width",
+              "width": "fill_container",
+              "content": "Quy trình tổng hợp doanh thu, chi phí và xuất báo cáo PDF gửi giám đốc.",
+              "lineHeight": 1.5,
+              "fontFamily": "Geist",
+              "fontSize": 13,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "qCXv1",
+              "name": "metaRow",
+              "width": "fill_container",
+              "gap": 14,
+              "padding": [
+                8,
+                0,
+                0,
+                0
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "mrJ5p",
+                  "name": "metaViews",
+                  "gap": 6,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon_font",
+                      "id": "ZRAwD",
+                      "width": 12,
+                      "height": 12,
+                      "iconFontName": "eye",
+                      "iconFontFamily": "lucide",
+                      "fill": "#9CA3AF"
+                    },
+                    {
+                      "type": "text",
+                      "id": "5CzZ6",
+                      "fill": "#6B7280",
+                      "content": "1.2k lượt xem",
+                      "fontFamily": "Funnel Sans",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "4rPWQ",
+                  "name": "metaAuthor",
+                  "gap": 6,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon_font",
+                      "id": "M8L0n",
+                      "width": 12,
+                      "height": 12,
+                      "iconFontName": "user",
+                      "iconFontFamily": "lucide",
+                      "fill": "#9CA3AF"
+                    },
+                    {
+                      "type": "text",
+                      "id": "Kr7YZ",
+                      "fill": "#6B7280",
+                      "content": "Minh Anh",
+                      "fontFamily": "Funnel Sans",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
     }
   ]
 }
