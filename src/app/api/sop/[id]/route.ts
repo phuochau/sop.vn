@@ -14,6 +14,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     category: doc.category,
     createdAt: doc.createdAt,
     shareToken: doc.shareToken,
+    pdf: {
+      status: doc.pdf?.status ?? "idle",
+      url: doc.pdf?.status === "ready" ? `/api/sop/${doc._id.toHexString()}/pdf/file` : null,
+    },
     steps: doc.steps.map((s, i) => ({
       index: i,
       title: s.title,
