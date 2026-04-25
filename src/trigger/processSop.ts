@@ -82,13 +82,18 @@ export const processSop = task({
       // Stage 5
       await setStatus(_id, "clipping", { title: extracted.title });
       let steps;
+      let disposeSrc: (() => Promise<void>) | null = null;
+      let srcPath: string | null = null;
       try {
-        steps = await runClip({
+        const clipResult = await runClip({
           sopId: _id.toHexString(),
           videoR2Key: doc.videoR2Key,
           rawSegments: segments,
           extractedSteps: extracted.steps,
         });
+        steps = clipResult.steps;
+        srcPath = clipResult.srcPath;
+        disposeSrc = clipResult.disposeSrc;
       } catch (e) {
         logger.error("clip failed", { e: String(e) });
         return fail(_id, "clipping_failed");
@@ -98,12 +103,16 @@ export const processSop = task({
       try {
         steps = await runKeyframes({
           sopId: _id.toHexString(),
-          videoR2Key: doc.videoR2Key,
+          srcPath: srcPath!,
           steps,
         });
       } catch (e) {
         logger.warn("keyframes failed; PDF export will fall back to posters", { e: String(e) });
         steps = steps.map(s => ({ ...s, keyframeR2Keys: [] }));
+      } finally {
+        if (disposeSrc) {
+          try { await disposeSrc(); } catch (e) { logger.warn("failed to dispose source video tmp", { e: String(e) }); }
+        }
       }
 
       await (await sops()).updateOne(

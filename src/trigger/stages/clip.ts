@@ -3,9 +3,10 @@ import path from "node:path";
 import os from "node:os";
 import ffmpeg from "fluent-ffmpeg";
 import { logger } from "@trigger.dev/sdk/v3";
-import { presignGet, putObject } from "@/lib/r2";
+import { putObject } from "@/lib/r2";
 import { clipKey, posterKey } from "@/lib/utils";
 import type { Segment, Step } from "@/lib/mongo";
+import { fetchSourceVideo, grabFrame } from "@/trigger/lib/videoTmp";
 
 export function resolveTimes(
   rawSegments: Segment[],
@@ -30,13 +31,6 @@ export function resolveTimes(
   return resolved;
 }
 
-async function downloadTo(tmpPath: string, url: string) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`download failed: ${res.status}`);
-  const buf = Buffer.from(await res.arrayBuffer());
-  await fs.promises.writeFile(tmpPath, buf);
-}
-
 function ffprobeDuration(file: string): Promise<number> {
   return new Promise((resolve, reject) => {
     ffmpeg.ffprobe(file, (err, data) => {
@@ -58,25 +52,14 @@ function cutClip(input: string, out: string, start: number, end: number): Promis
   });
 }
 
-function grabFrame(input: string, out: string, atSec: number): Promise<void> {
-  return new Promise((resolve, reject) => {
-    ffmpeg(input)
-      .screenshots({ timestamps: [atSec], filename: path.basename(out), folder: path.dirname(out), size: "640x?" })
-      .on("end", () => resolve())
-      .on("error", reject);
-  });
-}
-
 export async function runClip(args: {
   sopId: string;
   videoR2Key: string;
   rawSegments: Segment[];
   extractedSteps: { title: string; description: string; startSegmentId: number; endSegmentId: number }[];
-}): Promise<Step[]> {
+}): Promise<{ steps: Step[]; srcPath: string; disposeSrc: () => Promise<void> }> {
+  const { srcPath, dispose } = await fetchSourceVideo(args.videoR2Key);
   const tmp = await fs.promises.mkdtemp(path.join(os.tmpdir(), "sop-"));
-  const srcUrl = await presignGet(args.videoR2Key, 3600);
-  const srcPath = path.join(tmp, "src.mp4");
-  await downloadTo(srcPath, srcUrl);
   const duration = await ffprobeDuration(srcPath);
 
   const resolved = resolveTimes(args.rawSegments, args.extractedSteps, duration);
@@ -106,6 +89,9 @@ export async function runClip(args: {
     });
   }
   await fs.promises.rm(tmp, { recursive: true, force: true });
-  if (steps.length === 0) throw new Error("no clips produced");
-  return steps;
+  if (steps.length === 0) {
+    await dispose();
+    throw new Error("no clips produced");
+  }
+  return { steps, srcPath, disposeSrc: dispose };
 }
