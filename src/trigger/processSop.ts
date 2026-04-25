@@ -1,7 +1,7 @@
 import { task, logger } from "@trigger.dev/sdk/v3";
 import { ObjectId } from "mongodb";
 import { sops, events, type ErrorCode, type SopStatus } from "@/lib/mongo";
-import { config, type Category } from "@/config";
+import { config } from "@/config";
 import { probeDuration } from "./lib/probe";
 import { presignGet } from "@/lib/r2";
 import { fetchSourceVideo } from "./lib/videoTmp";
@@ -90,7 +90,7 @@ export const processSop = task({
         await setStatus(_id, "generating");
         let extracted;
         try {
-          extracted = await runExtract({ segmentsClean, category, language: language! });
+          extracted = await runExtract({ segmentsClean, category, domainSummary, language: language! });
         } catch (e) {
           logger.error("extract failed", { e: String(e) });
           return fail(_id, "generation_failed");
@@ -147,7 +147,7 @@ export const processSop = task({
         try { ctxFrames = await sampleFrames(src.srcPath, durationSec, { mode: "fixed" }); }
         catch (e) { logger.error("frame sampling (context) failed", { ...tag, e: String(e) }); return fail(_id, "frame_sampling_failed"); }
 
-        let category!: Category;
+        let category!: string;
         let domainSummary!: string;
         try {
           const ctx = await runVisualContext({ framePaths: ctxFrames.paths, language: defaultLanguage });
@@ -174,6 +174,7 @@ export const processSop = task({
             frameTimestamps: extFrames.timestamps,
             durationSec,
             category,
+            domainSummary,
             language: defaultLanguage,
           });
         } catch (e) {
