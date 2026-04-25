@@ -101,6 +101,10 @@ export async function llmJsonVision<T extends ZodTypeAny>(opts: {
 
 This wraps the same `/chat/completions` endpoint, but constructs the user message as an array of content parts: a leading `{ type: "text", text: userText }` followed by one `{ type: "image_url", image_url: { url: "data:image/jpeg;base64,..." } }` per frame. Same `response_format: json_schema` and same retry semantics as `llmJson`. **All retries live in this helper** — visual stages call it with `maxRetries: 1` and do not add their own retry loop.
 
+**Schema-constraint propagation.** `zodToJsonSchemaLike` does not propagate Zod refinements like `.min(1)` or `.nonnegative()` into the JSON Schema sent to the model. They are enforced post-parse by `schema.parse(...)`. Implication: any "must contain at least one X" / ordering / range constraint must be **restated in the user prompt** so the model knows about it; otherwise it may emit empties and trigger unnecessary retries. The `runVisualExtract` prompt (below) explicitly states "at least one step, ordered, non-overlapping, timestamps within range".
+
+**Payload size.** `sampleFrames` writes JPEGs at 768px wide, quality ~5 (ffmpeg `-qscale:v 5`). At ~80 KB per frame, the density-mode max of 60 frames is ~5 MB raw, ~6.5 MB base64 — within OpenRouter's per-request limits. If a future model/provider tightens limits, dial `max` down or switch to URL references.
+
 `zodToJsonSchemaLike` may need extension if the new schema introduces types it doesn't yet support; if so, add cases inline (the existing helper already supports object/array/string/number/enum, which is sufficient for the schemas below).
 
 ## Components
@@ -113,15 +117,15 @@ Pure ffmpeg helper.
 
 - Signature: `sampleFrames(srcPath: string, durationSec: number, opts?: { count?: number; targetFps?: number; max?: number }) => Promise<{ paths: string[]; tmpDir: string; dispose: () => Promise<void> }>`.
 - Two modes:
-  - **Fixed-count mode** (used by `runVisualContext`): `count = clamp(2, 8, floor(durationSec))`. Frames at positions `(i + 1) * durationSec / (count + 1)` for `i in [0, count)`.
-  - **Density mode** (used by `runVisualExtract`): `targetFps = 0.5` (one frame every 2 seconds), capped at `max = 60` frames. For long videos this clamps; for very short videos it falls back to fixed-count behavior.
-- Output: writes JPEGs to a tmp dir; returns paths plus a `dispose()` (mirrors `fetchSourceVideo`).
+  - **Fixed-count mode** (used by `runVisualContext`): `count = clamp(2, 8, floor(durationSec))`. Frames at positions `(i + 1) * durationSec / (count + 1)` for `i in [0, count)`. The pre-stage `minVideoDurationSec` gate guarantees `durationSec` is large enough that the lower clamp is never hit in practice.
+  - **Density mode** (used by `runVisualExtract`): `count = clamp(2, 60, ceil(durationSec * 0.5))` (i.e., ~one frame every 2 seconds, between 2 and 60 frames). Spacing uses the same `(i + 1) * durationSec / (count + 1)` formula.
+- Output: writes JPEGs to a tmp dir at 768px wide using ffmpeg `-qscale:v 5`. Returns `{ paths, timestamps, tmpDir, dispose }` (mirrors `fetchSourceVideo`); `timestamps[i]` is the second-offset corresponding to `paths[i]`.
 
 #### `src/trigger/stages/visualContext.ts`
 
 - Signature: `runVisualContext({ framePaths: string[], language: string }) => Promise<{ category: Category; domainSummary: string }>`.
 - Output shape matches `runContext` (`category` from existing enum in `schemas.ts`, `domainSummary: string`).
-- Implementation: calls `llmJsonVision` with `framePaths` (the 2–8 context frames), the existing `ContextOutput` schema, and a vision-friendly prompt asking for category + a one-paragraph domain summary in `language`. Model: a Gemini vision model available on OpenRouter (e.g., `google/gemini-2.5-flash`); exact ID is a config knob.
+- Implementation: calls `llmJsonVision` with `framePaths` (the 2–8 context frames), the existing `ContextOutput` schema, and a vision-friendly prompt asking for category + a one-paragraph domain summary in `language`. Model is read from a shared config knob `config.models.visionModel` (default `google/gemini-2.5-flash`). The same knob is used by `runVisualExtract`.
 
 #### `src/trigger/stages/visualExtract.ts`
 
@@ -138,33 +142,37 @@ Pure ffmpeg helper.
 
 #### `src/trigger/stages/clip.ts`
 
-- Refactor `runClip` to accept already-resolved steps:
+- Refactor: `runClip` no longer manages source-video lifecycle. The caller is always responsible for fetching and disposing the source video.
 
   ```ts
   export async function runClip(args: {
     sopId: string;
-    videoR2Key: string;
+    srcPath: string;          // required: caller-owned, pre-downloaded
     resolvedSteps: { title: string; description: string; startTime: number; endTime: number }[];
-    srcPath?: string;        // optional pre-downloaded source
-  }): Promise<{ steps: Step[]; srcPath: string; disposeSrc: () => Promise<void> }>;
+  }): Promise<{ steps: Step[] }>;
   ```
 
-  - When `srcPath` is provided, skip `fetchSourceVideo`; the caller owns disposal. The returned `disposeSrc` becomes a no-op in that case (or a sentinel the caller knows to ignore).
-  - When `srcPath` is omitted, behavior is unchanged: `fetchSourceVideo` is called and `disposeSrc` returns its `dispose`.
+  - The returned `disposeSrc` and `srcPath` fields are dropped from the result — both branches own these externally.
 - `resolveTimes` remains exported and unchanged. The speech-path call site (`processSop.ts`) calls `resolveTimes` first, then passes the result to `runClip`.
+- **Speech-path duration.** `resolveTimes` requires `videoDurationSec`. Today the pre-stage `probeDuration(signedVideo)` already computes this and discards it; the refactor captures it in a variable (`durationSec`) and reuses it for both `resolveTimes` and any downstream stage that needs it. `fetchSourceVideo` is then called once on the speech path and its `srcPath` passed into `runClip` and `runKeyframes`. The caller disposes in a `finally`.
 
 #### `src/trigger/stages/transcribe.ts`
 
-- Stops treating "no audio stream" or empty ASR result as fatal. Returns `{ transcript: "", segments: [], language: null }` for those cases.
+- Stops treating "no audio stream" or empty ASR result as fatal. The two cases the modified `transcribe.ts` now returns `{ transcript: "", segments: [], language: null }` for:
+  1. `NO_AUDIO_STREAM` — file has no audio track at all.
+  2. fal returns 0 segments (or its `silent_audio` indicator) — has audio, but no transcribable speech.
 - Continues to throw on real ASR API errors (network, 5xx); those still map to `transcription_failed`.
+- `processSop.ts` consequently drops both the `msg.includes("NO_AUDIO_STREAM") → silent_audio` path and the `segments.length === 0 → silent_audio` early failure (lines 50 and 54 in the current file).
 
 #### `src/trigger/processSop.ts`
 
 - Drops the `silent_audio` early failure.
 - After `runTranscribe`, evaluates `hasUsableSpeech`:
-  - **Speech path** (existing logic, with two adjustments):
+  - **Speech path** (existing logic, with adjustments):
     - Sets `inputMode: "speech"` on the SOP doc.
-    - Calls `resolveTimes(rawSegments, extracted.steps, durationSec)` and passes the resolved steps into the refactored `runClip`.
+    - Captures the `durationSec` from the existing pre-stage `probeDuration` call (currently discarded).
+    - Calls `fetchSourceVideo(doc.videoR2Key)` once at the start of the clipping phase; passes `srcPath` into both the refactored `runClip` and the existing `runKeyframes`; disposes in a `finally`.
+    - Calls `resolveTimes(rawSegments, extracted.steps, durationSec)` and passes the resolved steps into `runClip`.
   - **Silent path**:
     1. Sets `inputMode: "silent"`.
     2. Status `analyzing`.
@@ -209,11 +217,10 @@ Used by `runVisualExtract`.
 
 Add `llmJsonVision` (described above). Keep `llmJson` unchanged.
 
-#### Upload UI (in `src/app`) and upload API route
+#### Upload UI and API
 
-- Add a language selector with options `[{ value: "vi", label: "Tiếng Việt" }, { value: "en", label: "English" }]`. Default `"vi"`.
-- Helper text below the selector: *"Only used when no one is speaking in the video."*
-- The upload API persists `defaultLanguage` on the new SOP document.
+- `src/app/upload/page.tsx`: add a language selector with options `[{ value: "vi", label: "Tiếng Việt" }, { value: "en", label: "English" }]`. Default `"vi"`. Helper text below: *"Only used when no one is speaking in the video."* The selected value is included in the request body to the commit route.
+- `src/app/api/upload/commit/route.ts`: accept `defaultLanguage` from the request body, validate against the allowed enum, and include it on the inserted SOP document. (`init` route is unchanged.)
 
 ## Data flow (silent branch)
 
@@ -233,7 +240,7 @@ Add `llmJsonVision` (described above). Keep `llmJson` unchanged.
 `language` semantics:
 - **Speech path**: `language` is the Whisper-detected value from `runTranscribe`.
 - **Silent path**: `language` is `doc.defaultLanguage` (Whisper's `null` is discarded).
-- Downstream readers of `language` (PDF prompts, overview/step rewrite) must continue to treat it as an opaque language tag; no consumer should assume Whisper provenance.
+- Implementation step: audit `synthesizeOverview.ts`, `synthesizeStep.ts`, and `renderPdf.tsx` to confirm `language` is used only as an opaque tag (passed into prompts or rendered as-is), not pattern-matched for Whisper-specific values. If any consumer assumes specific values, normalize the silent-path value to the same domain (e.g., `"vi"` / `"en"`) — the upload-time enum already enforces this.
 
 ## Schema changes summary
 
@@ -245,11 +252,11 @@ Add `llmJsonVision` (described above). Keep `llmJson` unchanged.
 `ErrorCode` changes:
 
 - Remove: `silent_audio`
-- Add: `visual_context_failed`, `visual_extract_failed`, `frame_sampling_failed`
+- Add: `visual_context_failed`, `visual_extract_failed`, `frame_sampling_failed`, `video_download_failed`
 
 ## Error handling
 
-- `fetchSourceVideo` failure on silent branch → `unknown` (mirrors how the speech path treats download failures inside `runClip` today, since `runClip` failures map to `clipping_failed` — for silent we surface a clearer code below).
+- `fetchSourceVideo` failure on either branch → `video_download_failed` (new error code in `ErrorCode`).
 - `sampleFrames` (ffmpeg) failure → `frame_sampling_failed`.
 - `runVisualContext` failure (after retries inside `llmJsonVision`) → `visual_context_failed`.
 - `runVisualExtract` failure or empty `steps[]` (after retries) → `visual_extract_failed`.
@@ -258,9 +265,10 @@ Add `llmJsonVision` (described above). Keep `llmJson` unchanged.
 
 ## Testing
 
-- `src/trigger/lib/sampleFrames.test.ts` — runs ffmpeg against a fixture in `samples/`. Cases:
+- `src/trigger/lib/sampleFrames.test.ts` — runs ffmpeg against the existing `samples/` fixture directory (matching the convention used by `clip.test.ts` and `keyframes.test.ts`; if no silent fixture is present, add a short one). Cases:
   - Fixed-count mode for `durationSec` of 30, 5, 3, 2 → returns `clamp(2, 8, floor(d))` frames.
-  - Density mode with `targetFps: 0.5, max: 60` for a 30s video → 15 frames; for a 200s video → capped at 60.
+  - Density mode for a 5s video → 3 frames (`ceil(5*0.5)=3`), 30s → 15 frames, 200s → capped at 60.
+  - `timestamps[]` is monotonically increasing and within `[0, durationSec]`.
 - `src/trigger/stages/visualContext.test.ts` — mocks `llmJsonVision`; asserts category enum is returned and `framePaths` count is forwarded as given (clamping is `sampleFrames`'s concern, asserted there).
 - `src/trigger/stages/visualExtract.test.ts` — mocks `llmJsonVision`; asserts:
   - Parsed shape passes through.
