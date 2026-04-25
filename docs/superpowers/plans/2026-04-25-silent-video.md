@@ -17,11 +17,12 @@
 **Create:**
 - `src/trigger/lib/sampleFrames.ts` — fixed-count + density frame extractors.
 - `src/trigger/lib/sampleFrames.test.ts`
+- `src/trigger/lib/branchDecision.ts` — pure helper exporting `hasUsableSpeech`.
+- `src/trigger/lib/branchDecision.test.ts`
 - `src/trigger/stages/visualContext.ts`
 - `src/trigger/stages/visualContext.test.ts`
 - `src/trigger/stages/visualExtract.ts`
 - `src/trigger/stages/visualExtract.test.ts`
-- `src/trigger/stages/branchDecision.test.ts` — unit test for `hasUsableSpeech`.
 
 **Modify:**
 - `src/lib/mongo.ts` — `ErrorCode`, `SopDoc` (add `inputMode`, `defaultLanguage`).
@@ -106,7 +107,7 @@ Then inside `prompts`, append two new functions:
 - [ ] **Step 4: Type-check**
 
 Run: `npx tsc --noEmit`
-Expected: Passes (existing call sites are unaffected by *adding* optional fields; the `silent_audio` removal will surface compile errors in `processSop.ts:50`, which is fine — Task 6 fixes it. If this is the only error, proceed; otherwise fix unrelated issues first.)
+Expected: PASS *except* for one known error: `processSop.ts:50` references the removed `"silent_audio"` ErrorCode value. This is intermediate breakage that Task 9 resolves by rewriting `processSop.ts`. Tasks 2–8 may surface a few additional intermediate errors in `processSop.ts` referencing the old shapes; treat any error confined to that single file as expected until Task 9. Stop and investigate if errors appear in *other* files.
 
 - [ ] **Step 5: Commit**
 
@@ -147,7 +148,7 @@ And replace lines 39-42 (the `transcript`/`language`/`return`) with:
 - [ ] **Step 2: Type-check**
 
 Run: `npx tsc --noEmit`
-Expected: Passes (consumers in `transcribe.ts`/`processSop.ts` accept the wider type via inference).
+Expected: PASS *except* for known intermediate errors in `processSop.ts` (the `silent_audio` reference and possibly new `language: string | null` mismatches at calls into `runNormalize`/`runContext`/`runExtract`). Both are resolved by Task 9. Errors outside `processSop.ts` are unexpected — stop and investigate.
 
 - [ ] **Step 3: Commit**
 
@@ -347,13 +348,19 @@ git commit -m "feat(sampleFrames): ffmpeg-based fixed/density frame extractor"
 **Files:**
 - Modify: `src/lib/openrouter.ts` (append)
 
-- [ ] **Step 1: Add the helper**
+- [ ] **Step 1: Add the import**
 
-Append to `src/lib/openrouter.ts`:
+At the top of `src/lib/openrouter.ts` (next to the existing `import { z, ... }` line), add:
 
 ```ts
 import fs from "node:fs";
+```
 
+- [ ] **Step 2: Append the helper**
+
+At the end of `src/lib/openrouter.ts`, append:
+
+```ts
 export async function llmJsonVision<T extends ZodTypeAny>(opts: {
   model: string;
   system: string;
@@ -415,14 +422,14 @@ export async function llmJsonVision<T extends ZodTypeAny>(opts: {
 }
 ```
 
-- [ ] **Step 2: Type-check**
+- [ ] **Step 3: Type-check**
 
 Run: `npx tsc --noEmit`
-Expected: Passes.
+Expected: Passes (modulo the known intermediate error in `processSop.ts:50` referencing `silent_audio` — see Task 1 notes; resolved by Task 9).
 
 (No dedicated unit test for `llmJsonVision`; it is exercised by `visualContext.test.ts` and `visualExtract.test.ts` via mocking `fetch`.)
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add src/lib/openrouter.ts
@@ -484,35 +491,30 @@ Expected: FAIL — module does not exist.
 
 - [ ] **Step 3: Implement `visualContext.ts`**
 
+Note: unlike `runContext` (speech path), this stage does **not** swallow errors — failures propagate so `processSop.ts` can map them to `visual_context_failed` per the spec.
+
 Create `src/trigger/stages/visualContext.ts`:
 
 ```ts
 import { llmJsonVision } from "@/lib/openrouter";
 import { ContextOutput } from "@/lib/schemas";
 import { config, type Category } from "@/config";
-import { logger } from "@trigger.dev/sdk/v3";
 
 export async function runVisualContext(args: {
   framePaths: string[];
   language: string;
 }): Promise<{ category: Category; domainSummary: string }> {
-  try {
-    const out = await llmJsonVision({
-      model: config.ai.visionModel,
-      system: config.ai.prompts.visualContextSystem(args.language),
-      userText:
-        `These ${args.framePaths.length} frames are sampled evenly across a how-to video. ` +
-        `Return { "category": <one of the enum values>, "domainSummary": string }.`,
-      imagePaths: args.framePaths,
-      schema: ContextOutput,
-      schemaName: "context",
-      maxRetries: config.ai.maxRetries,
-    });
-    return out;
-  } catch (e) {
-    logger.warn("visual context detect failed — defaulting to Other", { e: String(e) });
-    return { category: "Other", domainSummary: "" };
-  }
+  return llmJsonVision({
+    model: config.ai.visionModel,
+    system: config.ai.prompts.visualContextSystem(args.language),
+    userText:
+      `These ${args.framePaths.length} frames are sampled evenly across a how-to video. ` +
+      `Return { "category": <one of the enum values>, "domainSummary": string }.`,
+    imagePaths: args.framePaths,
+    schema: ContextOutput,
+    schemaName: "context",
+    maxRetries: config.ai.maxRetries,
+  });
 }
 ```
 
@@ -782,25 +784,27 @@ git commit -m "refactor(clip): runClip takes pre-resolved steps and external src
 
 ---
 
-## Task 9: `processSop` branch logic
+## Task 9a: `branchDecision` helper
 
 **Files:**
-- Modify: `src/trigger/processSop.ts` (full rewrite of the `try` body)
-- Create: `src/trigger/stages/branchDecision.test.ts`
+- Create: `src/trigger/lib/branchDecision.ts`
+- Create: `src/trigger/lib/branchDecision.test.ts`
 
-- [ ] **Step 1: Add a unit test for the `hasUsableSpeech` predicate**
+Extracted into its own file (instead of importing from `processSop.ts`) so the test does not pull in Trigger.dev / Mongo / fal at import time.
 
-Create `src/trigger/stages/branchDecision.test.ts`:
+- [ ] **Step 1: Write the failing test**
+
+Create `src/trigger/lib/branchDecision.test.ts`:
 
 ```ts
 import { test } from "node:test";
 import assert from "node:assert";
-import { hasUsableSpeech } from "@/trigger/processSop";
+import { hasUsableSpeech } from "./branchDecision";
 
 test("hasUsableSpeech: empty", () => {
   assert.equal(hasUsableSpeech({ segments: [], transcript: "" }), false);
 });
-test("hasUsableSpeech: empty segments but long transcript still false", () => {
+test("hasUsableSpeech: empty segments but long transcript → false", () => {
   const t = "word ".repeat(50);
   assert.equal(hasUsableSpeech({ segments: [], transcript: t }), false);
 });
@@ -821,21 +825,54 @@ test("hasUsableSpeech: 50-word transcript with segments → true", () => {
 
 - [ ] **Step 2: Run, verify it fails**
 
-Run: `npx tsx --test src/trigger/stages/branchDecision.test.ts`
-Expected: FAIL — `hasUsableSpeech` not exported.
+Run: `npx tsx --test src/trigger/lib/branchDecision.test.ts`
+Expected: FAIL — module not found.
 
-- [ ] **Step 3: Rewrite `processSop.ts`**
+- [ ] **Step 3: Implement**
+
+Create `src/trigger/lib/branchDecision.ts`:
+
+```ts
+import type { Segment } from "@/lib/mongo";
+
+export function hasUsableSpeech(args: { segments: Segment[]; transcript: string }): boolean {
+  const wordCount = args.transcript.trim().split(/\s+/).filter(Boolean).length;
+  return args.segments.length > 0 && wordCount >= 30;
+}
+```
+
+- [ ] **Step 4: Run, verify pass**
+
+Run: `npx tsx --test src/trigger/lib/branchDecision.test.ts`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/trigger/lib/branchDecision.ts src/trigger/lib/branchDecision.test.ts
+git commit -m "feat(branchDecision): hasUsableSpeech helper"
+```
+
+---
+
+## Task 9: `processSop` branch logic
+
+**Files:**
+- Modify: `src/trigger/processSop.ts` (full rewrite of the `try` body)
+
+- [ ] **Step 1: Rewrite `processSop.ts`**
 
 Replace the entire file `src/trigger/processSop.ts` with:
 
 ```ts
 import { task, logger } from "@trigger.dev/sdk/v3";
 import { ObjectId } from "mongodb";
-import { sops, events, type ErrorCode, type SopStatus, type Segment } from "@/lib/mongo";
-import { config } from "@/config";
+import { sops, events, type ErrorCode, type SopStatus } from "@/lib/mongo";
+import { config, type Category } from "@/config";
 import { probeDuration } from "./lib/probe";
 import { presignGet } from "@/lib/r2";
 import { fetchSourceVideo } from "./lib/videoTmp";
+import { hasUsableSpeech } from "./lib/branchDecision";
 import { runTranscribe } from "./stages/transcribe";
 import { runNormalize } from "./stages/normalize";
 import { runContext } from "./stages/context";
@@ -851,11 +888,6 @@ async function setStatus(id: ObjectId, status: SopStatus, extra: Record<string, 
 }
 async function fail(id: ObjectId, errorCode: ErrorCode) {
   await (await sops()).updateOne({ _id: id }, { $set: { status: "failed", errorCode, updatedAt: new Date() } });
-}
-
-export function hasUsableSpeech(args: { segments: Segment[]; transcript: string }): boolean {
-  const wordCount = args.transcript.trim().split(/\s+/).filter(Boolean).length;
-  return args.segments.length > 0 && wordCount >= 30;
 }
 
 export const processSop = task({
@@ -962,6 +994,7 @@ export const processSop = task({
       }
 
       // ── Silent path ─────────────────────────────────────────────────────
+      const tag = { inputMode };  // attached to every silent-branch log entry
       await (await sops()).updateOne(
         { _id },
         { $set: { transcript: "", segments: [], language: defaultLanguage, inputMode, updatedAt: new Date() } }
@@ -969,7 +1002,7 @@ export const processSop = task({
 
       let src;
       try { src = await fetchSourceVideo(doc.videoR2Key); }
-      catch (e) { logger.error("source download failed", { e: String(e) }); return fail(_id, "video_download_failed"); }
+      catch (e) { logger.error("source download failed", { ...tag, e: String(e) }); return fail(_id, "video_download_failed"); }
 
       let ctxFrames: Awaited<ReturnType<typeof sampleFrames>> | null = null;
       let extFrames: Awaited<ReturnType<typeof sampleFrames>> | null = null;
@@ -977,15 +1010,16 @@ export const processSop = task({
         // Stage 3 (silent): visual context
         await setStatus(_id, "analyzing");
         try { ctxFrames = await sampleFrames(src.srcPath, durationSec, { mode: "fixed" }); }
-        catch (e) { logger.error("frame sampling (context) failed", { e: String(e) }); return fail(_id, "frame_sampling_failed"); }
+        catch (e) { logger.error("frame sampling (context) failed", { ...tag, e: String(e) }); return fail(_id, "frame_sampling_failed"); }
 
-        let category, domainSummary;
+        let category!: Category;
+        let domainSummary!: string;
         try {
-          ({ category, domainSummary } = await runVisualContext({
-            framePaths: ctxFrames.paths, language: defaultLanguage,
-          }));
+          const ctx = await runVisualContext({ framePaths: ctxFrames.paths, language: defaultLanguage });
+          category = ctx.category;
+          domainSummary = ctx.domainSummary;
         } catch (e) {
-          logger.error("visual context failed", { e: String(e) });
+          logger.error("visual context failed", { ...tag, e: String(e) });
           return fail(_id, "visual_context_failed");
         }
         await (await sops()).updateOne(
@@ -996,9 +1030,9 @@ export const processSop = task({
         // Stage 4 (silent): visual extract
         await setStatus(_id, "generating");
         try { extFrames = await sampleFrames(src.srcPath, durationSec, { mode: "density" }); }
-        catch (e) { logger.error("frame sampling (extract) failed", { e: String(e) }); return fail(_id, "frame_sampling_failed"); }
+        catch (e) { logger.error("frame sampling (extract) failed", { ...tag, e: String(e) }); return fail(_id, "frame_sampling_failed"); }
 
-        let extracted;
+        let extracted!: Awaited<ReturnType<typeof runVisualExtract>>;
         try {
           extracted = await runVisualExtract({
             framePaths: extFrames.paths,
@@ -1008,13 +1042,13 @@ export const processSop = task({
             language: defaultLanguage,
           });
         } catch (e) {
-          logger.error("visual extract failed", { e: String(e) });
+          logger.error("visual extract failed", { ...tag, e: String(e) });
           return fail(_id, "visual_extract_failed");
         }
 
         // Stage 5: clip + keyframes
         await setStatus(_id, "clipping", { title: extracted.title });
-        let stepsOut;
+        let stepsOut!: Awaited<ReturnType<typeof runKeyframes>>;
         try {
           stepsOut = (await runClip({
             sopId: _id.toHexString(),
@@ -1022,13 +1056,13 @@ export const processSop = task({
             resolvedSteps: extracted.steps,
           })).steps;
         } catch (e) {
-          logger.error("clip failed", { e: String(e) });
+          logger.error("clip failed", { ...tag, e: String(e) });
           return fail(_id, "clipping_failed");
         }
         try {
           stepsOut = await runKeyframes({ sopId: _id.toHexString(), srcPath: src.srcPath, steps: stepsOut });
         } catch (e) {
-          logger.warn("keyframes failed; PDF export will fall back to posters", { e: String(e) });
+          logger.warn("keyframes failed; PDF export will fall back to posters", { ...tag, e: String(e) });
           stepsOut = stepsOut.map(s => ({ ...s, keyframeR2Keys: [] }));
         }
         await (await sops()).updateOne(
@@ -1051,25 +1085,31 @@ export const processSop = task({
 });
 ```
 
-- [ ] **Step 4: Run the branch-decision test**
-
-Run: `npx tsx --test src/trigger/stages/branchDecision.test.ts`
-Expected: PASS.
-
-- [ ] **Step 5: Type-check the whole project**
+- [ ] **Step 2: Type-check the whole project**
 
 Run: `npx tsc --noEmit`
-Expected: PASS.
+Expected: PASS for all files (intermediate breakage from Tasks 1–8 is now resolved).
 
-- [ ] **Step 6: Run the full test suite**
+- [ ] **Step 3: Run all stage and lib tests** *(explicit list — globs vary by shell)*
 
-Run: `npx tsx --test src/trigger/**/*.test.ts`
+Run:
+```bash
+npx tsx --test \
+  src/trigger/lib/sampleFrames.test.ts \
+  src/trigger/lib/branchDecision.test.ts \
+  src/trigger/stages/clip.test.ts \
+  src/trigger/stages/keyframes.test.ts \
+  src/trigger/stages/synthesizeStep.test.ts \
+  src/trigger/stages/renderPdf.test.ts \
+  src/trigger/stages/visualContext.test.ts \
+  src/trigger/stages/visualExtract.test.ts
+```
 Expected: PASS for all.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add src/trigger/processSop.ts src/trigger/stages/branchDecision.test.ts
+git add src/trigger/processSop.ts
 git commit -m "feat(processSop): branch on hasUsableSpeech; silent path via visual stages"
 ```
 
@@ -1212,7 +1252,7 @@ git commit -m "fix(language): treat language as opaque tag across consumers"
 ## Self-review checklist (run after writing this plan)
 
 - ✅ **Spec coverage:**
-  - Branch decision (`hasUsableSpeech`) → Task 9.
+  - Branch decision (`hasUsableSpeech`) → Tasks 9a + 9.
   - Multimodal calling strategy → Task 5 (`llmJsonVision`).
   - `sampleFrames` two modes → Task 4.
   - `runVisualContext` / `runVisualExtract` → Tasks 6, 7.
@@ -1224,6 +1264,8 @@ git commit -m "fix(language): treat language as opaque tag across consumers"
   - Config knob → Task 1.
   - Upload UI/API → Task 10.
   - Language consumer audit → Task 11.
-  - Tests (sampleFrames, visualContext, visualExtract, branch decision) → Tasks 4, 6, 7, 9.
+  - Tests (sampleFrames, branchDecision, visualContext, visualExtract) → Tasks 4, 9a, 6, 7.
+  - Silent-branch logs tagged with `inputMode` (per spec) → Task 9.
+  - Visual stages bubble errors (per spec) → Task 6 (no internal swallow).
 - ✅ **Placeholder scan:** No "TBD"/"appropriate"/"similar to". Every code step has full code.
 - ✅ **Type consistency:** `runClip` shape `{ sopId, srcPath, resolvedSteps } → { steps: Step[] }` consistent across Tasks 8 and 9. `sampleFrames` return shape `{ paths, timestamps, tmpDir, dispose }` consistent in Tasks 4 and 9. `hasUsableSpeech` exported from `processSop.ts` and consumed in Task 9 test — consistent.
