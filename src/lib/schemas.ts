@@ -24,3 +24,20 @@ export const SopExtractOutput = z.object({
     endSegmentId: z.number().int().nonnegative(),
   })).min(1),
 });
+
+export const OverviewOutput = z.object({
+  purpose: z.string(),
+  audience: z.string(),
+  prerequisites: z.array(z.string()),
+  toolsMaterials: z.array(z.string()),
+  estimatedDuration: z.string(),
+});
+
+export const StepRewriteOutput = z.object({
+  prose: z.string(),
+  subBullets: z.array(z.string()),
+  callouts: z.array(z.object({
+    kind: z.enum(["warning", "tip", "note"]),
+    text: z.string(),
+  })),
+});

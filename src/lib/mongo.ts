@@ -33,6 +33,18 @@ export interface Step {
   endTime: number;
   clipR2Key: string;
   posterR2Key: string;
+  keyframeR2Keys: string[]; // 3 keyframes evenly spaced across [startTime, endTime]
+}
+
+export type PdfStatus = "idle" | "generating" | "ready" | "error";
+
+export interface SopPdfState {
+  status: PdfStatus;
+  r2Key?: string;        // R2 key of the latest generated PDF
+  generatedAt?: Date;    // when status flipped to "ready"
+  startedAt?: Date;      // when status flipped to "generating"; used for staleness
+  errorMessage?: string;
+  runId?: string;        // current Trigger.dev run id, for dedupe
 }
 
 export interface SopDoc {
@@ -49,6 +61,7 @@ export interface SopDoc {
   domainSummary: string | null;
   steps: Step[];
   shareToken: string;
+  pdf?: SopPdfState;
   createdAt: Date;
   updatedAt: Date;
 }
