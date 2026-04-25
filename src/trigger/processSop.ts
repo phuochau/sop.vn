@@ -9,6 +9,7 @@ import { runNormalize } from "./stages/normalize";
 import { runContext } from "./stages/context";
 import { runExtract } from "./stages/extract";
 import { runClip } from "./stages/clip";
+import { runKeyframes } from "./stages/keyframes";
 
 async function setStatus(id: ObjectId, status: SopStatus, extra: Record<string, unknown> = {}) {
   await (await sops()).updateOne({ _id: id }, { $set: { status, updatedAt: new Date(), ...extra } });
@@ -91,6 +92,18 @@ export const processSop = task({
       } catch (e) {
         logger.error("clip failed", { e: String(e) });
         return fail(_id, "clipping_failed");
+      }
+
+      // Stage 5b — extract 3 keyframes per step (non-fatal on failure)
+      try {
+        steps = await runKeyframes({
+          sopId: _id.toHexString(),
+          videoR2Key: doc.videoR2Key,
+          steps,
+        });
+      } catch (e) {
+        logger.warn("keyframes failed; PDF export will fall back to posters", { e: String(e) });
+        steps = steps.map(s => ({ ...s, keyframeR2Keys: [] }));
       }
 
       await (await sops()).updateOne(

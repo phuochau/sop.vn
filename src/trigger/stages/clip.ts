@@ -102,6 +102,7 @@ export async function runClip(args: {
       title: r.title, description: r.description,
       startTime: r.startTime, endTime: r.endTime,
       clipR2Key: ck, posterR2Key: pk,
+      keyframeR2Keys: [],
     });
   }
   await fs.promises.rm(tmp, { recursive: true, force: true });
