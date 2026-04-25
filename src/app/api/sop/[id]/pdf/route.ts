@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { tasks } from "@trigger.dev/sdk/v3";
 import { sops } from "@/lib/mongo";
+import type { generateSopPdf } from "@/trigger/generateSopPdf";
 
 const STALE_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -57,7 +58,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   }
 
   // We won the claim — trigger the run and write its id.
-  const handle = await tasks.trigger("generate-sop-pdf", { sopId: id });
+  const handle = await tasks.trigger<typeof generateSopPdf>("generate-sop-pdf", { sopId: id });
   await col.updateOne({ _id }, { $set: { "pdf.runId": handle.id, updatedAt: new Date() } });
   return NextResponse.json({ status: "generating", runId: handle.id });
 }

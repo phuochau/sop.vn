@@ -1,15 +1,18 @@
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import React from "react";
 import {
   Document, Page, Text, View, Image, Font, StyleSheet,
   renderToBuffer,
 } from "@react-pdf/renderer";
 
+const FONT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../public/fonts");
+
 Font.register({
   family: "BeVietnamPro",
   fonts: [
-    { src: path.join(process.cwd(), "public/fonts/BeVietnamPro-Regular.ttf"), fontWeight: 400 },
-    { src: path.join(process.cwd(), "public/fonts/BeVietnamPro-Bold.ttf"),    fontWeight: 700 },
+    { src: path.join(FONT_DIR, "BeVietnamPro-Regular.ttf"), fontWeight: 400 },
+    { src: path.join(FONT_DIR, "BeVietnamPro-Bold.ttf"),    fontWeight: 700 },
   ],
 });
 

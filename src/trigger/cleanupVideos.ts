@@ -35,7 +35,16 @@ export const cleanupVideos = schedules.task({
       }
       await col.updateOne(
         { _id: d._id },
-        { $set: { "pdf.status": "idle", "pdf.r2Key": null, "pdf.generatedAt": null, updatedAt: now } }
+        {
+          $set: {
+            "pdf.status": "idle",
+            "pdf.r2Key": null,
+            "pdf.generatedAt": null,
+            "pdf.runId": null,
+            "pdf.startedAt": null,
+            updatedAt: now,
+          },
+        }
       );
     }
 

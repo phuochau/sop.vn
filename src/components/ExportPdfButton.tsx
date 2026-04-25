@@ -21,15 +21,20 @@ export function ExportPdfButton({ sopId, initial }: { sopId: string; initial: { 
   useEffect(() => {
     if (state.status !== "generating") return;
     let cancelled = false;
+    let consecutiveFailures = 0;
     const tick = async () => {
       try {
         const r = await fetch(`/api/sop/${sopId}/pdf`, { cache: "no-store" });
-        if (!r.ok) return;
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const j = await r.json();
         if (cancelled) return;
+        consecutiveFailures = 0;
         setState({ status: j.status, url: j.url, errorMessage: j.errorMessage });
       } catch {
-        // ignore transient errors; will retry
+        consecutiveFailures += 1;
+        if (consecutiveFailures >= 5 && !cancelled) {
+          setState({ status: "error", url: null, errorMessage: "Mất kết nối với máy chủ" });
+        }
       }
     };
     const id = setInterval(tick, 2000);
