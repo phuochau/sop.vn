@@ -1,24 +1,26 @@
 import { llmJsonVision } from "@/lib/openrouter";
 import { VisualSopExtractOutput } from "@/lib/schemas";
-import { config, type Category } from "@/config";
+import { config } from "@/config";
 
 export async function runVisualExtract(args: {
   framePaths: string[];
   frameTimestamps: number[];
   durationSec: number;
-  category: Category;
+  category: string;
+  domainSummary: string;
   language: string;
 }): Promise<{ title: string; steps: { title: string; description: string; startTime: number; endTime: number }[] }> {
-  const domainHint = config.ai.domainTerminology[args.category] ?? "";
   const frameLines = args.frameTimestamps
     .map((t, i) => `Frame ${i + 1}: ${t.toFixed(2)}s`)
     .join("\n");
 
   const userText =
     `Video duration: ${args.durationSec.toFixed(2)} seconds.\n` +
-    `Category: ${args.category}.\n` +
+    `Category: ${args.category}\n` +
+    `Domain summary: ${args.domainSummary}\n` +
     `Frame timestamps (frames are attached in this order):\n${frameLines}\n\n` +
     `Return { "title": string, "steps": [{ "title", "description", "startTime", "endTime" }] }. ` +
+    `Each step description must be a 3-6 sentence instructional paragraph. ` +
     `Steps must be ordered chronologically, non-overlapping, with timestamps within [0, ${args.durationSec.toFixed(2)}]. ` +
     `Return at least one step.`;
 
@@ -30,7 +32,7 @@ export async function runVisualExtract(args: {
     try {
       const out = await llmJsonVision({
         model: config.ai.visionModel,
-        system: config.ai.prompts.visualSopSystem(domainHint, args.language),
+        system: config.ai.prompts.visualSopSystem(args.language),
         userText,
         imagePaths: args.framePaths,
         schema: VisualSopExtractOutput,

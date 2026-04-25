@@ -36,6 +36,7 @@ test("runVisualExtract parses valid response", async () => {
         frameTimestamps: [1, 3, 5],
         durationSec: 6,
         category: "Coffee & Drinks",
+        domainSummary: "Test domain summary",
         language: "vi",
       });
       assert.equal(out.title, "Pha espresso");
@@ -54,7 +55,7 @@ test("runVisualExtract rejects when endTime exceeds duration", async () => {
       const { runVisualExtract } = await import("./visualExtract");
       await assert.rejects(() => runVisualExtract({
         framePaths: paths, frameTimestamps: [1, 2], durationSec: 5,
-        category: "Other", language: "vi",
+        category: "Other", domainSummary: "Test domain summary", language: "vi",
       }));
     }
   );
@@ -75,7 +76,7 @@ test("runVisualExtract rejects unsorted steps", async () => {
       const { runVisualExtract } = await import("./visualExtract");
       await assert.rejects(() => runVisualExtract({
         framePaths: paths, frameTimestamps: [1, 2], durationSec: 15,
-        category: "Other", language: "vi",
+        category: "Other", domainSummary: "Test domain summary", language: "vi",
       }));
     }
   );
@@ -90,7 +91,7 @@ test("runVisualExtract rejects empty steps array (schema .min(1))", async () => 
       const { runVisualExtract } = await import("./visualExtract");
       await assert.rejects(() => runVisualExtract({
         framePaths: paths, frameTimestamps: [1, 2], durationSec: 5,
-        category: "Other", language: "vi",
+        category: "Other", domainSummary: "Test domain summary", language: "vi",
       }));
     }
   );
@@ -118,6 +119,7 @@ test("runVisualExtract user prompt includes language, durationSec, and per-frame
       frameTimestamps: [1.25, 3.75],
       durationSec: 5,
       category: "Coffee & Drinks",
+      domainSummary: "Test domain summary",
       language: "vi",
     });
     assert.ok(capturedBody, "fetch was not called");
@@ -161,7 +163,7 @@ test("runVisualExtract retries on assertion failure (out-of-range timestamp)", a
     const { config } = await import("@/config");
     await assert.rejects(() => runVisualExtract({
       framePaths: paths, frameTimestamps: [1, 2], durationSec: 5,
-      category: "Other", language: "vi",
+      category: "Other", domainSummary: "Test domain summary", language: "vi",
     }));
     assert.equal(calls, config.ai.maxRetries + 1, `expected ${config.ai.maxRetries + 1} fetch calls, got ${calls}`);
   } finally {
