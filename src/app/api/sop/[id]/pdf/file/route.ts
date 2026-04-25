@@ -4,11 +4,10 @@ import { sops } from "@/lib/mongo";
 import { presignGetAttachment } from "@/lib/r2";
 
 function slugify(s: string): string {
-  // Vietnamese-aware: keep diacritics out of the filename by stripping them, replace spaces with hyphens
   return s
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/đ/gi, "d")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[đĐ]/g, m => m === "Đ" ? "D" : "d")
     .replace(/[^a-zA-Z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 80) || "sop";
