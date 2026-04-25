@@ -105,11 +105,13 @@ No UI consumers reference `CATEGORIES` or `config.categories` — verified by gr
 
 #### `src/trigger/stages/context.ts`
 
-- Drop the `Category` import; the return value is now `{ category: string; domainSummary: string }`. **The existing try/catch swallow stays** — speech-path callers still tolerate a category-detection failure by getting a graceful default. The default value changes from `category: "Other"` to `category: ""` — empty string means "model didn't produce one"; downstream prompts handle `""` the same way they handle a real value, the model just gets one less piece of context.
+- Drop the `Category` import; the return type becomes `Promise<{ category: string; domainSummary: string }>`. The user prompt currently includes `"category": <enum>` — change to `"category": <freeform string>`.
+- **The existing try/catch swallow stays** — speech-path callers still tolerate a category-detection failure by getting a graceful default. The default value changes from `category: "Other"` to `category: ""` — empty string means "model didn't produce one"; downstream prompts handle `""` the same way they handle a real value, the model just gets one less piece of context.
 
 #### `src/trigger/stages/visualContext.ts`
 
-- Drop the `Category` import; the return value loses its `Category` annotation. **Error-bubbling behavior is unchanged** — `runVisualContext` does not swallow errors; failures continue to propagate so `processSop`'s silent branch can map them to `visual_context_failed`. (Asymmetric with speech-path `runContext` by design — silent path has no fallback "Other" interpretation; if vision can't classify it, treat as a hard failure.)
+- Drop the `Category` import; the return type becomes `Promise<{ category: string; domainSummary: string }>`. The user prompt currently includes `"category": <one of the enum values>` — change to `"category": <freeform string naming the domain/industry>`.
+- **Error-bubbling behavior is unchanged** — `runVisualContext` does not swallow errors; failures continue to propagate so `processSop`'s silent branch can map them to `visual_context_failed`. (Asymmetric with speech-path `runContext` by design — silent path has no fallback "Other" interpretation; if vision can't classify it, treat as a hard failure.)
 
 #### `src/trigger/stages/extract.ts`
 
