@@ -560,6 +560,10 @@ test("runVisualOverview against a real fixture (skipped if missing)", async (t) 
     return;
   }
 
+  // Probe duration so sampleFrames doesn't seek past EOF. Pick a small value
+  // (5 sec) safely within any plausible fixture length to avoid an extra ffprobe.
+  const durationSec = 5;
+
   let capturedBody: { messages: { content: string | { type: string; text?: string }[] }[] } | null = null;
   const originalFetch = global.fetch;
   global.fetch = (async (_url: string, init?: { body?: string }) => {
@@ -581,10 +585,9 @@ test("runVisualOverview against a real fixture (skipped if missing)", async (t) 
 
   try {
     const { runVisualOverview } = await import("./visualOverview");
-    // We can't easily get a real srcPath without ffmpeg; the fixture itself is the srcPath.
     const out = await runVisualOverview({
       srcPath: fixture,
-      durationSec: 60,
+      durationSec,
       title: "Bò lúc lắc",
       category: "Vietnamese stir-fry cooking",
       domainSummary: "Stir-fried beef with onions, a Vietnamese classic.",
@@ -694,7 +697,7 @@ import assert from "node:assert";
 
 const JPEG_HEADER = Buffer.from([0xff, 0xd8, 0xff]);
 
-async function withStubbedFetch(payload: unknown, fn: () => Promise<{ capturedBody: unknown }>): Promise<{ capturedBody: unknown }> {
+async function withStubbedFetch(payload: unknown, fn: () => Promise<void>): Promise<{ capturedBody: unknown }> {
   let capturedBody: unknown = null;
   const original = global.fetch;
   global.fetch = (async (_url: string, init?: { body?: string }) => {
@@ -705,12 +708,12 @@ async function withStubbedFetch(payload: unknown, fn: () => Promise<{ capturedBo
       text: async () => "",
     };
   }) as unknown as typeof fetch;
-  try { const r = await fn(); return { capturedBody, ...r }; }
+  try { await fn(); return { capturedBody }; }
   finally { global.fetch = original; }
 }
 
 test("runVisualStep returns parsed StepRewrite when given image buffers", async () => {
-  const result = await withStubbedFetch(
+  const { capturedBody } = await withStubbedFetch(
     {
       prose: "Trộn thịt với gia vị.",
       subBullets: ["Thái thịt", "Thêm tỏi", "Ướp 10 phút"],
@@ -729,10 +732,9 @@ test("runVisualStep returns parsed StepRewrite when given image buffers", async 
       assert.equal(out.prose, "Trộn thịt với gia vị.");
       assert.equal(out.subBullets.length, 3);
       assert.equal(out.callouts[0].kind, "tip");
-      return {};
     }
   );
-  const body = result.capturedBody as { messages: { content: string | { type: string; text?: string }[] }[] };
+  const body = capturedBody as { messages: { content: string | { type: string; text?: string }[] }[] };
   const userMsg = body.messages.find(m => Array.isArray(m.content));
   const textPart = (userMsg!.content as { type: string; text?: string }[]).find(p => p.type === "text");
   const text = textPart?.text ?? "";
@@ -742,7 +744,7 @@ test("runVisualStep returns parsed StepRewrite when given image buffers", async 
 });
 
 test("runVisualStep includes prevTitle when provided", async () => {
-  await withStubbedFetch(
+  const { capturedBody } = await withStubbedFetch(
     { prose: "x", subBullets: [], callouts: [] },
     async () => {
       const { runVisualStep } = await import("./visualStep");
@@ -752,10 +754,13 @@ test("runVisualStep includes prevTitle when provided", async () => {
         prevTitle: "Bước 1: Ướp thịt",
         category: "x", domainSummary: "y", language: "vi",
       });
-      return {};
     }
   );
-  // (assertion handled inside the stub by capturing the body — this test just verifies no throw)
+  const body = capturedBody as { messages: { content: string | { type: string; text?: string }[] }[] };
+  const userMsg = body.messages.find(m => Array.isArray(m.content));
+  const textPart = (userMsg!.content as { type: string; text?: string }[]).find(p => p.type === "text");
+  const text = textPart?.text ?? "";
+  assert.ok(text.includes("Bước 1: Ướp thịt"), `prompt should include prevTitle — got: ${text}`);
 });
 
 test("runVisualStep short-circuits to fallback when imageBuffers is empty (no LLM call)", async () => {
@@ -1000,7 +1005,7 @@ export const generateSopPdf = task({
       const stepImagesArr = await Promise.all(doc.steps.map((_, i) => loadStepImages(doc, i)));
 
       let overview: Overview | null;
-      let stepRewrites: StepRewrite[];
+      let stepRewrites: (StepRewrite | null)[];
 
       if (isSilent) {
         const durationSec = doc.steps.length > 0
