@@ -39,6 +39,7 @@ export async function runVisualExtract(args: {
       });
       let prevEnd = 0;
       for (const s of out.steps) {
+        if (s.startTime < 0) throw new Error("step startTime is negative");
         if (s.startTime < prevEnd) throw new Error("steps not chronologically ordered");
         if (s.endTime <= s.startTime) throw new Error("step endTime <= startTime");
         if (s.endTime > args.durationSec) throw new Error("step endTime exceeds video duration");

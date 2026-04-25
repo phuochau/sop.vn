@@ -138,3 +138,34 @@ test("runVisualExtract user prompt includes language, durationSec, and per-frame
     await cleanup();
   }
 });
+
+test("runVisualExtract retries on assertion failure (out-of-range timestamp)", async () => {
+  const { paths, cleanup } = await tmpJpegs(2);
+  let calls = 0;
+  const original = global.fetch;
+  global.fetch = (async () => {
+    calls++;
+    return {
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: JSON.stringify({
+          title: "x",
+          steps: [{ title: "s", description: "d", startTime: 0, endTime: 999 }],
+        }) } }],
+      }),
+      text: async () => "",
+    };
+  }) as unknown as typeof fetch;
+  try {
+    const { runVisualExtract } = await import("./visualExtract");
+    const { config } = await import("@/config");
+    await assert.rejects(() => runVisualExtract({
+      framePaths: paths, frameTimestamps: [1, 2], durationSec: 5,
+      category: "Other", language: "vi",
+    }));
+    assert.equal(calls, config.ai.maxRetries + 1, `expected ${config.ai.maxRetries + 1} fetch calls, got ${calls}`);
+  } finally {
+    global.fetch = original;
+    await cleanup();
+  }
+});
