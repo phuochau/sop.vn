@@ -4,6 +4,7 @@ import { Calendar, Clock3, List, Pencil, Info, Plus, ThumbsUp, ThumbsDown } from
 import { StepCard } from "@/components/StepCard";
 import { HeroVideo } from "@/components/HeroVideo";
 import { ShareButton } from "@/components/ShareButton";
+import { ExportPdfButton } from "@/components/ExportPdfButton";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
 import { headers } from "next/headers";
@@ -23,6 +24,7 @@ type Sop = {
   category: string;
   createdAt: string;
   shareToken: string;
+  pdf: { status: string; url: string | null };
   steps: Step[];
 };
 
@@ -90,6 +92,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
           <div className="flex flex-wrap items-center gap-2 pt-2">
             <ShareButton token={sop.shareToken} variant="outline" />
             <ShareButton token={sop.shareToken} variant="primary" />
+            <ExportPdfButton sopId={sop.id} initial={sop.pdf} />
             <button className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-4 py-2.5 text-[13px] font-medium text-[#0A0A0A] hover:bg-gray-50 transition">
               <Pencil className="w-3.5 h-3.5" strokeWidth={2} />
               Chỉnh sửa
