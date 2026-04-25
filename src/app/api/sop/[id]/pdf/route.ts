@@ -58,7 +58,17 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   }
 
   // We won the claim — trigger the run and write its id.
-  const handle = await tasks.trigger<typeof generateSopPdf>("generate-sop-pdf", { sopId: id });
+  let handle;
+  try {
+    handle = await tasks.trigger<typeof generateSopPdf>("generate-sop-pdf", { sopId: id });
+  } catch (e) {
+    const msg = String(e);
+    await col.updateOne(
+      { _id },
+      { $set: { "pdf.status": "error", "pdf.errorMessage": msg, updatedAt: new Date() } }
+    );
+    return NextResponse.json({ error: "trigger_failed", message: msg }, { status: 500 });
+  }
   await col.updateOne({ _id }, { $set: { "pdf.runId": handle.id, updatedAt: new Date() } });
   return NextResponse.json({ status: "generating", runId: handle.id });
 }

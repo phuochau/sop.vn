@@ -1,7 +1,18 @@
 import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { sops } from "@/lib/mongo";
-import { presignGet } from "@/lib/r2";
+import { presignGetAttachment } from "@/lib/r2";
+
+function slugify(s: string): string {
+  // Vietnamese-aware: keep diacritics out of the filename by stripping them, replace spaces with hyphens
+  return s
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/đ/gi, "d")
+    .replace(/[^a-zA-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "sop";
+}
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -13,6 +24,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   if (!doc?.pdf?.r2Key || doc.pdf.status !== "ready") {
     return NextResponse.json({ error: "not_ready" }, { status: 404 });
   }
-  const url = await presignGet(doc.pdf.r2Key, 600); // 10 min
+  const filename = `${slugify(doc.title ?? "sop")}.pdf`;
+  const url = await presignGetAttachment(doc.pdf.r2Key, filename, 600);
   return NextResponse.redirect(url, 302);
 }

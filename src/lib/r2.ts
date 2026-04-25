@@ -30,6 +30,22 @@ export async function presignGet(key: string, expiresIn = 3600) {
   return getSignedUrl(r2, new GetObjectCommand({ Bucket: bucket, Key: key }), { expiresIn });
 }
 
+export async function presignGetAttachment(key: string, filename: string, expiresIn = 3600) {
+  // Encode filename for both legacy (filename=) and RFC 5987 (filename*=) — handles non-ASCII
+  const ascii = filename.replace(/[^\x20-\x7E]/g, "_").replace(/"/g, "");
+  const utf8  = encodeURIComponent(filename);
+  const disposition = `attachment; filename="${ascii}"; filename*=UTF-8''${utf8}`;
+  return getSignedUrl(
+    r2,
+    new GetObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      ResponseContentDisposition: disposition,
+    }),
+    { expiresIn }
+  );
+}
+
 export async function putObject(key: string, body: Buffer, contentType: string) {
   await r2.send(new PutObjectCommand({
     Bucket: bucket, Key: key, Body: body, ContentType: contentType,
