@@ -38,7 +38,6 @@
 - `src/lib/mongo.ts` — extend `SopDoc` with `pdf` subdoc; extend `Step` with `keyframeR2Keys`
 - `src/lib/schemas.ts` — add `OverviewOutput` and `StepRewriteOutput`
 - `src/lib/utils.ts` — add `pdfKey(sopId, ts)` and `keyframeKey(sopId, stepIndex, frameIndex)`
-- `src/lib/openrouter.ts` — extend `zodToJsonSchemaLike` to support `ZodOptional` (callouts may need optional fields)
 - `src/config/index.ts` — add `pdfModel` + prompts for Overview and Step rewrites
 - `src/trigger/processSop.ts` — call `runKeyframes` after `runClip`, persist `keyframeR2Keys` per step
 - `src/trigger/cleanupVideos.ts` — also reset stale `pdf` subdocs on swept SOPs
@@ -53,7 +52,6 @@
 - Modify: `src/lib/mongo.ts`
 - Modify: `src/lib/utils.ts`
 - Modify: `src/lib/schemas.ts`
-- Modify: `src/lib/openrouter.ts`
 - Modify: `src/config/index.ts`
 
 - [ ] **Step 1: Extend `SopDoc` and `Step` types**
@@ -144,13 +142,21 @@ The current `zodToJsonSchemaLike` in `src/lib/openrouter.ts` supports `ZodObject
 
 - [ ] **Step 5: Add PDF model + prompts to config**
 
-In `src/config/index.ts`, inside the `ai` object (between line 24 `sopModel` and line 25 `maxRetries`), add:
+In `src/config/index.ts`, make two text-anchored edits.
+
+**Edit 5a:** Find `sopModel: "anthropic/claude-sonnet-4.5",` and insert a new line immediately after:
 
 ```ts
     pdfModel: "google/gemini-2.5-flash",
 ```
 
-And inside `prompts` (between line 35 `sopSystem` and line 36 `}`), add:
+**Edit 5b:** Find the closing of the `sopSystem` template literal followed by its trailing comma:
+
+```ts
+        }\n\nReturn strict JSON only.`,
+```
+
+and insert immediately after that line (still inside the `prompts` object):
 
 ```ts
       pdfOverviewSystem:
@@ -772,7 +778,7 @@ export function SopPdfDocument(input: RenderInput) {
           ? step.keyframes
           : (step.posterImage ? [step.posterImage] : []);
         return (
-          <Page key={i} size="A4" style={s.page} break={i > 0 ? false : false}>
+          <Page key={i} size="A4" style={s.page}>
             <Text style={s.stepHeader}>
               Bước {String(i + 1).padStart(2, "0")} · {fmtTimestamp(step.startTime)} – {fmtTimestamp(step.endTime)}
             </Text>
@@ -1153,7 +1159,9 @@ export function ExportPdfButton({ sopId, initial }: { sopId: string; initial: { 
     status: (initial.status as PdfState["status"]) ?? "idle",
     url: initial.url,
   });
-  const [autoDownloaded, setAutoDownloaded] = useState(false);
+  // Initialize true when the page already loads with a cached "ready" PDF, so we
+  // don't auto-download on first mount. start() resets this to false on user click.
+  const [autoDownloaded, setAutoDownloaded] = useState(initial.status === "ready");
 
   // Poll while generating
   useEffect(() => {
@@ -1258,9 +1266,34 @@ git commit -m "feat(pdf): export button with idle/generating/ready/error states"
 
 - [ ] **Step 1: Extend the `Sop` type and mount the button**
 
-In `src/app/sop/[id]/page.tsx`:
+In `src/app/sop/[id]/page.tsx`, make three edits. **Apply these in the order listed; do not rely on line numbers (each edit shifts subsequent line numbers).** Use text-anchored matching.
 
-After line 27 (closing brace of `Sop` type), the `Sop` type must include `pdf`. Replace lines 20-27 with:
+**Edit 1a:** Add the import alongside the other component imports. Find:
+
+```ts
+import { ShareButton } from "@/components/ShareButton";
+```
+
+and insert immediately after it:
+
+```ts
+import { ExportPdfButton } from "@/components/ExportPdfButton";
+```
+
+**Edit 1b:** Extend the `Sop` type to include `pdf`. Find:
+
+```ts
+type Sop = {
+  id: string;
+  title: string;
+  category: string;
+  createdAt: string;
+  shareToken: string;
+  steps: Step[];
+};
+```
+
+and replace it with:
 
 ```ts
 type Sop = {
@@ -1274,13 +1307,27 @@ type Sop = {
 };
 ```
 
-Add the import near the top of the file (with the other component imports, after line 5):
+**Edit 1c:** Mount the button in the action-button row. Find the entire existing block:
 
-```ts
-import { ExportPdfButton } from "@/components/ExportPdfButton";
+```tsx
+          <div className="flex flex-wrap items-center gap-2 pt-2">
+            <ShareButton token={sop.shareToken} variant="outline" />
+            <ShareButton token={sop.shareToken} variant="primary" />
+            <button className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-4 py-2.5 text-[13px] font-medium text-[#0A0A0A] hover:bg-gray-50 transition">
+              <Pencil className="w-3.5 h-3.5" strokeWidth={2} />
+              Chỉnh sửa
+            </button>
+            <Link
+              href="/upload"
+              className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-4 py-2.5 text-[13px] font-medium text-[#0A0A0A] hover:bg-gray-50 transition"
+            >
+              <Plus className="w-3.5 h-3.5" strokeWidth={2} />
+              Tạo SOP khác
+            </Link>
+          </div>
 ```
 
-In the action-button row, locate the existing `<ShareButton ... variant="primary" />` (line 92) and add the export button right after it. Replace lines 90-104 (the entire `<div className="flex flex-wrap items-center gap-2 pt-2">` block) with:
+and replace it with the same block plus the new `ExportPdfButton`:
 
 ```tsx
           <div className="flex flex-wrap items-center gap-2 pt-2">
