@@ -5,13 +5,7 @@ export const NormalizeOutput = z.object({
 });
 
 export const ContextOutput = z.object({
-  category: z.enum([
-    "Coffee & Drinks",
-    "Food & Cooking",
-    "Spa & Beauty",
-    "Nail",
-    "Other",
-  ]),
+  category: z.string(),
   domainSummary: z.string(),
 });
 
