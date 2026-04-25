@@ -81,3 +81,60 @@ test("runVisualExtract rejects unsorted steps", async () => {
   );
   await cleanup();
 });
+
+test("runVisualExtract rejects empty steps array (schema .min(1))", async () => {
+  const { paths, cleanup } = await tmpJpegs(2);
+  await withStubbedFetch(
+    { title: "x", steps: [] },
+    async () => {
+      const { runVisualExtract } = await import("./visualExtract");
+      await assert.rejects(() => runVisualExtract({
+        framePaths: paths, frameTimestamps: [1, 2], durationSec: 5,
+        category: "Other", language: "vi",
+      }));
+    }
+  );
+  await cleanup();
+});
+
+test("runVisualExtract user prompt includes language, durationSec, and per-frame timestamps", async () => {
+  const { paths, cleanup } = await tmpJpegs(2);
+  let capturedBody: { messages: { content: string | { type: string; text?: string }[] }[] } | null = null;
+  const original = global.fetch;
+  global.fetch = (async (_url: string, init?: { body?: string }) => {
+    capturedBody = JSON.parse(init?.body ?? "{}");
+    return {
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: JSON.stringify({ title: "t", steps: [{ title: "s", description: "d", startTime: 0, endTime: 1 }] }) } }],
+      }),
+      text: async () => "",
+    };
+  }) as unknown as typeof fetch;
+  try {
+    const { runVisualExtract } = await import("./visualExtract");
+    await runVisualExtract({
+      framePaths: paths,
+      frameTimestamps: [1.25, 3.75],
+      durationSec: 5,
+      category: "Coffee & Drinks",
+      language: "vi",
+    });
+    assert.ok(capturedBody, "fetch was not called");
+    const body = capturedBody as unknown as { messages: { content: string | { type: string; text?: string }[] }[] };
+    const userMsg = body.messages.find((m) => Array.isArray(m.content));
+    assert.ok(userMsg, "user message missing");
+    const textPart = (userMsg!.content as { type: string; text?: string }[]).find(p => p.type === "text");
+    const text = textPart?.text ?? "";
+    assert.ok(text.includes("5.00 seconds"), `prompt should include durationSec — got: ${text}`);
+    assert.ok(text.includes("Frame 1: 1.25s"), `prompt should include first frame timestamp — got: ${text}`);
+    assert.ok(text.includes("Frame 2: 3.75s"), `prompt should include second frame timestamp — got: ${text}`);
+    // Language appears in the system prompt, not the user prompt; confirm via the system message.
+    const sysMsg = body.messages.find((m) => typeof m.content === "string");
+    const sysText = (sysMsg?.content as string) ?? "";
+    assert.ok(sysText.includes("vi"), `system prompt should include language — got: ${sysText}`);
+  } finally {
+    global.fetch = original;
+    await cleanup();
+  }
+});
