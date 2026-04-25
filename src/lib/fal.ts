@@ -10,7 +10,7 @@ fal.config({ credentials: process.env.FAL_API_KEY });
 export async function transcribeAudio(signedUrl: string): Promise<{
   transcript: string;
   segments: Segment[];
-  language: string;
+  language: string | null;
 }> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const result: any = await fal.subscribe("fal-ai/whisper", {
@@ -37,7 +37,8 @@ export async function transcribeAudio(signedUrl: string): Promise<{
     })).filter(s => s.text.length > 0);
 
   const transcript = segments.map(s => s.text).join(" ");
-  const language: string =
-    String(data?.language ?? data?.detected_language ?? data?.inferred_language ?? "vi");
+  const language: string | null = segments.length === 0
+    ? null
+    : String(data?.language ?? data?.detected_language ?? data?.inferred_language ?? "vi");
   return { transcript, segments, language };
 }
