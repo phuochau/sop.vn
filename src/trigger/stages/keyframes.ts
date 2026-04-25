@@ -25,26 +25,28 @@ export async function runKeyframes(args: {
   steps: Step[];
 }): Promise<Step[]> {
   const tmp = await fs.promises.mkdtemp(path.join(os.tmpdir(), "sop-kf-"));
-
-  const out: Step[] = [];
-  for (let i = 0; i < args.steps.length; i++) {
-    const step = args.steps[i];
-    const timestamps = pickKeyframeTimestamps(step.startTime, step.endTime);
-    const keys: string[] = [];
-    for (let f = 0; f < timestamps.length; f++) {
-      const framePath = path.join(tmp, `step-${i}-frame-${f}.jpg`);
-      try {
-        await grabFrame(args.srcPath, framePath, timestamps[f]);
-        const buf = await fs.promises.readFile(framePath);
-        const k = keyframeKey(args.sopId, i, f);
-        await putObject(k, buf, "image/jpeg");
-        keys.push(k);
-      } catch (e) {
-        logger.warn("keyframe failed", { stepIndex: i, frameIndex: f, e: String(e) });
+  try {
+    const out: Step[] = [];
+    for (let i = 0; i < args.steps.length; i++) {
+      const step = args.steps[i];
+      const timestamps = pickKeyframeTimestamps(step.startTime, step.endTime);
+      const keys: string[] = [];
+      for (let f = 0; f < timestamps.length; f++) {
+        const framePath = path.join(tmp, `step-${i}-frame-${f}.jpg`);
+        try {
+          await grabFrame(args.srcPath, framePath, timestamps[f]);
+          const buf = await fs.promises.readFile(framePath);
+          const k = keyframeKey(args.sopId, i, f);
+          await putObject(k, buf, "image/jpeg");
+          keys.push(k);
+        } catch (e) {
+          logger.warn("keyframe failed", { stepIndex: i, frameIndex: f, e: String(e) });
+        }
       }
+      out.push({ ...step, keyframeR2Keys: keys });
     }
-    out.push({ ...step, keyframeR2Keys: keys });
+    return out;
+  } finally {
+    await fs.promises.rm(tmp, { recursive: true, force: true });
   }
-  await fs.promises.rm(tmp, { recursive: true, force: true });
-  return out;
 }
