@@ -6,7 +6,7 @@ import { logger } from "@trigger.dev/sdk/v3";
 import { putObject } from "@/lib/r2";
 import { clipKey, posterKey } from "@/lib/utils";
 import type { Segment, Step } from "@/lib/mongo";
-import { fetchSourceVideo, grabFrame } from "@/trigger/lib/videoTmp";
+import { grabFrame } from "@/trigger/lib/videoTmp";
 
 export function resolveTimes(
   rawSegments: Segment[],
@@ -31,15 +31,6 @@ export function resolveTimes(
   return resolved;
 }
 
-function ffprobeDuration(file: string): Promise<number> {
-  return new Promise((resolve, reject) => {
-    ffmpeg.ffprobe(file, (err, data) => {
-      if (err) return reject(err);
-      resolve(Number(data.format.duration ?? 0));
-    });
-  });
-}
-
 function cutClip(input: string, out: string, start: number, end: number): Promise<void> {
   return new Promise((resolve, reject) => {
     ffmpeg(input)
@@ -54,48 +45,39 @@ function cutClip(input: string, out: string, start: number, end: number): Promis
 
 export async function runClip(args: {
   sopId: string;
-  videoR2Key: string;
-  rawSegments: Segment[];
-  extractedSteps: { title: string; description: string; startSegmentId: number; endSegmentId: number }[];
-}): Promise<{ steps: Step[]; srcPath: string; disposeSrc: () => Promise<void> }> {
-  const { srcPath, dispose } = await fetchSourceVideo(args.videoR2Key);
+  srcPath: string;
+  resolvedSteps: { title: string; description: string; startTime: number; endTime: number }[];
+}): Promise<{ steps: Step[] }> {
+  const tmp = await fs.promises.mkdtemp(path.join(os.tmpdir(), "sop-"));
   try {
-    const tmp = await fs.promises.mkdtemp(path.join(os.tmpdir(), "sop-"));
-    try {
-      const duration = await ffprobeDuration(srcPath);
-      const resolved = resolveTimes(args.rawSegments, args.extractedSteps, duration);
-      const steps: Step[] = [];
-      for (let i = 0; i < resolved.length; i++) {
-        const r = resolved[i];
-        const clipPath = path.join(tmp, `step-${i}.mp4`);
-        const posterPath = path.join(tmp, `step-${i}.jpg`);
-        try {
-          await cutClip(srcPath, clipPath, r.startTime, r.endTime);
-          await grabFrame(srcPath, posterPath, r.startTime + (r.endTime - r.startTime) / 2);
-        } catch (e) {
-          logger.warn("ffmpeg failed for step, skipping", { i, e: String(e) });
-          continue;
-        }
-        const clipBuf = await fs.promises.readFile(clipPath);
-        const posterBuf = await fs.promises.readFile(posterPath);
-        const ck = clipKey(args.sopId, i);
-        const pk = posterKey(args.sopId, i);
-        await putObject(ck, clipBuf, "video/mp4");
-        await putObject(pk, posterBuf, "image/jpeg");
-        steps.push({
-          title: r.title, description: r.description,
-          startTime: r.startTime, endTime: r.endTime,
-          clipR2Key: ck, posterR2Key: pk,
-          keyframeR2Keys: [],
-        });
+    const steps: Step[] = [];
+    for (let i = 0; i < args.resolvedSteps.length; i++) {
+      const r = args.resolvedSteps[i];
+      const clipPath = path.join(tmp, `step-${i}.mp4`);
+      const posterPath = path.join(tmp, `step-${i}.jpg`);
+      try {
+        await cutClip(args.srcPath, clipPath, r.startTime, r.endTime);
+        await grabFrame(args.srcPath, posterPath, r.startTime + (r.endTime - r.startTime) / 2);
+      } catch (e) {
+        logger.warn("ffmpeg failed for step, skipping", { i, e: String(e) });
+        continue;
       }
-      if (steps.length === 0) throw new Error("no clips produced");
-      return { steps, srcPath, disposeSrc: dispose };
-    } finally {
-      await fs.promises.rm(tmp, { recursive: true, force: true });
+      const clipBuf = await fs.promises.readFile(clipPath);
+      const posterBuf = await fs.promises.readFile(posterPath);
+      const ck = clipKey(args.sopId, i);
+      const pk = posterKey(args.sopId, i);
+      await putObject(ck, clipBuf, "video/mp4");
+      await putObject(pk, posterBuf, "image/jpeg");
+      steps.push({
+        title: r.title, description: r.description,
+        startTime: r.startTime, endTime: r.endTime,
+        clipR2Key: ck, posterR2Key: pk,
+        keyframeR2Keys: [],
+      });
     }
-  } catch (e) {
-    await dispose();
-    throw e;
+    if (steps.length === 0) throw new Error("no clips produced");
+    return { steps };
+  } finally {
+    await fs.promises.rm(tmp, { recursive: true, force: true });
   }
 }
