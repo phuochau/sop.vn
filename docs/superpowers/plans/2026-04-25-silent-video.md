@@ -702,7 +702,21 @@ git commit -m "feat(stages): runVisualExtract for silent-path step extraction"
 - Modify: `src/trigger/stages/clip.ts`
 - Modify: `src/trigger/stages/clip.test.ts` (no signature change for `resolveTimes`, just confirm existing test still passes)
 
-- [ ] **Step 1: Replace `runClip` to take pre-resolved steps and an externally-owned srcPath**
+- [ ] **Step 1: Replace the imports block at the top of `src/trigger/stages/clip.ts`** with the trimmed set (drops `fetchSourceVideo`, keeps everything else):
+
+```ts
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
+import ffmpeg from "fluent-ffmpeg";
+import { logger } from "@trigger.dev/sdk/v3";
+import { putObject } from "@/lib/r2";
+import { clipKey, posterKey } from "@/lib/utils";
+import type { Segment, Step } from "@/lib/mongo";
+import { grabFrame } from "@/trigger/lib/videoTmp";
+```
+
+- [ ] **Step 2: Replace `runClip` to take pre-resolved steps and an externally-owned srcPath**
 
 In `src/trigger/stages/clip.ts`, replace the `ffprobeDuration` helper and the `runClip` function (lines 34-101) with:
 
@@ -759,23 +773,17 @@ export async function runClip(args: {
 }
 ```
 
-Also remove the now-unused import `fetchSourceVideo` from the import line (keep `grabFrame`):
-
-```ts
-import { grabFrame } from "@/trigger/lib/videoTmp";
-```
-
-- [ ] **Step 2: Run existing `clip.test.ts`**
+- [ ] **Step 3: Run existing `clip.test.ts`**
 
 Run: `npx tsx --test src/trigger/stages/clip.test.ts`
 Expected: PASS — `resolveTimes` is unchanged.
 
-- [ ] **Step 3: Type-check**
+- [ ] **Step 4: Type-check**
 
 Run: `npx tsc --noEmit`
 Expected: One expected error in `processSop.ts` (it still calls `runClip` with old args). Task 9 fixes it.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add src/trigger/stages/clip.ts
@@ -930,6 +938,8 @@ export const processSop = task({
       logger.info("branch chosen", { inputMode });
 
       if (useSpeech) {
+        // Invariant: hasUsableSpeech requires segments.length > 0, and fal.ts only returns
+        // language: null when segments.length === 0. So language is non-null here.
         await (await sops()).updateOne(
           { _id },
           { $set: { transcript, segments, language, inputMode, updatedAt: new Date() } }
@@ -1169,39 +1179,33 @@ Replace the commit-fetch body (line 53):
 
 - [ ] **Step 2: Update commit route to accept and persist `defaultLanguage`**
 
-Replace `src/app/api/upload/commit/route.ts` with:
+Apply two targeted edits to `src/app/api/upload/commit/route.ts` (preserving everything else exactly as-is):
+
+Edit A — replace the `Body` schema:
 
 ```ts
-import { NextResponse } from "next/server";
-import { ObjectId } from "mongodb";
-import { z } from "zod";
-import { sops, events } from "@/lib/mongo";
-import { tasks } from "@trigger.dev/sdk/v3";
+const Body = z.object({ sopId: z.string().length(24) });
+```
 
+with:
+
+```ts
 const Body = z.object({
   sopId: z.string().length(24),
   defaultLanguage: z.enum(["vi", "en"]).default("vi"),
 });
+```
 
-export async function POST(req: Request) {
-  const parsed = Body.safeParse(await req.json());
-  if (!parsed.success) return NextResponse.json({ error: "bad_request" }, { status: 400 });
-  const _id = new ObjectId(parsed.data.sopId);
+Edit B — extend the `$set` payload in `updateOne`:
 
-  const col = await sops();
-  const res = await col.updateOne(
-    { _id, status: "uploading" },
+```ts
+    { $set: { status: "transcribing", updatedAt: new Date() } }
+```
+
+with:
+
+```ts
     { $set: { status: "transcribing", defaultLanguage: parsed.data.defaultLanguage, updatedAt: new Date() } }
-  );
-  if (res.matchedCount === 0) return NextResponse.json({ error: "not_found_or_wrong_state" }, { status: 404 });
-
-  await (await events()).insertOne({
-    _id: new ObjectId(), type: "upload", sopId: _id, createdAt: new Date(),
-  });
-
-  await tasks.trigger("process-sop", { sopId: _id.toHexString() });
-  return NextResponse.json({ ok: true });
-}
 ```
 
 - [ ] **Step 3: Type-check + lint**
