@@ -61,7 +61,8 @@ The SOP document gains a `pdf` subdocument:
 pdf: {
   status: "idle" | "generating" | "ready" | "error";
   url?: string;          // R2 key or presigned URL
-  generatedAt?: Date;
+  generatedAt?: Date;    // when status flipped to "ready"
+  startedAt?: Date;      // when status flipped to "generating" — used for staleness
   errorMessage?: string;
   runId?: string;        // current Trigger.dev run, used to dedupe double-clicks
 }
@@ -75,13 +76,21 @@ step.keyframes: string[]  // 3 R2 URLs, evenly spaced across [startTime, endTime
 
 The existing `posterUrl` is retained as a fallback for when keyframes are missing.
 
+### Required existing fields
+
+This design assumes two fields already exist (or are added) on the SOP doc:
+
+- `sop.updatedAt: Date` — bumped on any SOP edit. Used for cache invalidation.
+- `sop.transcript` — full transcript with per-segment timestamps, persisted from `stages/transcribe.ts`. The current pipeline produces this; the spec assumes it is **stored on the SOP doc and not discarded** after step generation. Implementation must verify this and add persistence if missing.
+
 ## Pipeline: `generateSopPdf` task
 
 Stages 2 and 3 run in parallel; stage 3's per-step work also fans out in parallel.
 
+Note: `sop.pdf.status = "generating"` and `startedAt` are set by the **POST handler** (atomically with `tasks.trigger`), not by the task itself. The task starts assuming that flag is already in place.
+
 ```
 1. Load                 Mongo: SOP doc + transcript
-                        Mark sop.pdf.status = "generating"
 
 2. Synthesize Overview  LLM call: full transcript + step list →
                         { purpose, audience, prerequisites,
@@ -156,7 +165,7 @@ Two distinct LLM calls via the existing `lib/openrouter.ts`. Small/fast model �
 
 ## PDF layout
 
-A4 portrait. Inter font registered with React-PDF to match web brand. Vietnamese text supported.
+A4 portrait. **Be Vietnam Pro** registered as the primary font (full Vietnamese diacritic support). Inter is not used in the PDF — React-PDF requires explicit font registration, and Inter's Vietnamese coverage is incomplete. Body uses Be Vietnam Pro Regular; headings use Be Vietnam Pro Bold.
 
 ### Page 1 — Cover
 
@@ -203,7 +212,7 @@ Fixed `<View>`: SOP title (left) · page X of Y (right) · subtle hairline rule.
 
 ### Visual language
 
-Match web brand: Inter, `#0A0A0A` body text, `#6B7280` meta, accent color for step number badge and callout borders. Spacing/sizes optimized for print, not screen.
+Match web brand colors: `#0A0A0A` body text, `#6B7280` meta, accent color for step number badge and callout borders. Spacing/sizes optimized for print, not screen. Typography uses Be Vietnam Pro (see PDF layout) rather than the web's Inter.
 
 ## API surface
 
@@ -220,7 +229,7 @@ Returns the current `sop.pdf` doc. Polling fallback if realtime is unavailable.
 
 ### Concurrency guard
 
-If `POST` arrives while `status === "generating"`, return the existing `runId` instead of starting a duplicate job.
+If `POST` arrives while `status === "generating"`, return the existing `runId` instead of starting a duplicate job — **unless the run is stale**. Staleness check: if `sop.pdf.startedAt` is older than 5 minutes (a generous upper bound on a successful PDF run), treat the prior run as dead and start a fresh one. This requires adding `pdf.startedAt: Date` alongside the existing fields.
 
 ## UI: Export button on `/sop/[id]`
 
@@ -244,13 +253,14 @@ Cache-hit path skips `generating` entirely — click → instant download. A sho
 | Overview LLM call              | Omit Overview block. Render PDF anyway. Log warning.                |
 | Missing keyframes on a step    | Fall back to single `posterUrl`.                                    |
 | Render or R2 upload failure    | `sop.pdf.status = "error"` + errorMessage. UI shows "Thử lại".      |
-| Double-click during generating | `POST` returns existing `runId`. No duplicate job.                  |
+| Double-click during generating | `POST` returns existing `runId`. No duplicate job (unless stale).   |
+| Stale "generating" (>5 min)    | Treated as dead. `POST` triggers a fresh run.                       |
 
 ## Cache invalidation
 
 - Cache hit when `sop.updatedAt <= sop.pdf.generatedAt`.
 - Editing the SOP (admin re-run, etc.) bumps `sop.updatedAt` → next click regenerates.
-- Old PDFs in R2 are swept by extending `cleanupVideos` to also clean stale `pdfs/` entries on a TTL.
+- Old PDFs in R2 are swept by extending `cleanupVideos` to also clean stale `pdfs/` entries on a TTL. **When a PDF is swept, the cleanup task must also reset `sop.pdf` to `{ status: "idle" }`** — otherwise the cached URL on the SOP doc would point to a deleted object and the next click would 404.
 
 ## File-level changes (preview)
 
@@ -271,6 +281,5 @@ Modified:
 
 ## Open questions / risks
 
-- **Font registration:** React-PDF needs Inter (and a Vietnamese-supporting fallback) registered with explicit `.ttf` files. Need to verify Inter ships glyphs for Vietnamese diacritics; if not, swap to Be Vietnam Pro or similar.
 - **R2 presigned URL TTL:** PDFs may be downloaded later than they are generated. Either issue long-TTL presigned URLs or proxy through the API route. To be decided in implementation.
 - **LLM latency at scale:** ~10 parallel step rewrites + 1 overview ≈ a few seconds end-to-end at current model speeds. If a SOP has 30+ steps, total time could grow. Acceptable for v1; revisit if it becomes a UX problem.
