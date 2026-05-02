@@ -14,7 +14,7 @@ export async function getDb(): Promise<Db> {
 }
 
 export type SopStatus =
-  | "uploading" | "transcribing" | "normalizing" | "analyzing"
+  | "uploading" | "ingesting" | "transcribing" | "normalizing" | "analyzing"
   | "generating" | "clipping" | "done" | "failed";
 
 export type ErrorCode =
@@ -24,6 +24,7 @@ export type ErrorCode =
   | "generation_failed" | "clipping_failed"
   | "visual_context_failed" | "visual_extract_failed"
   | "frame_sampling_failed" | "video_download_failed"
+  | "loom_ingest_failed"
   | "unknown";
 
 export interface Segment { id: number; start: number; end: number; text: string; }
@@ -56,6 +57,10 @@ export interface SopDoc {
   category: string;                  // AI-detected in Stage 3
   inputMode?: "speech" | "silent";
   defaultLanguage?: string;
+  sourceType?: "upload" | "loom";   // absent ⇒ "upload" (legacy rows)
+  sourceUrl?: string;               // original Loom share URL (sourceType === "loom")
+  videoId?: string;                 // Loom video ID (sourceType === "loom")
+  videoSizeBytes?: number;          // recorded after successful R2 stream
   status: SopStatus;
   errorCode: ErrorCode;
   videoR2Key: string | null;
@@ -74,8 +79,12 @@ export interface SopDoc {
 
 export interface EventDoc {
   _id: ObjectId;
-  type: "upload" | "sop_completed" | "share_view";
+  type: "upload" | "sop_completed" | "share_view" | "loom_ingest_error";
   sopId: ObjectId | null;
+  // Diagnostic fields used by "loom_ingest_error" only. Free-form on purpose:
+  // the SopDoc.errorCode union is strict; this field is just for logs.
+  errorCode?: string;
+  httpStatus?: number;
   createdAt: Date;
 }
 
