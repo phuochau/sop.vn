@@ -84,6 +84,7 @@ export async function resolveLoomMp4(videoId: string): Promise<ResolveResult> {
 
 import { Upload } from "@aws-sdk/lib-storage";
 import { Readable } from "node:stream";
+import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { r2, R2_BUCKET, deleteObject } from "@/lib/r2";
 import { config } from "@/config";
 
@@ -150,7 +151,10 @@ export async function streamLoomToR2(args: {
     },
   });
 
-  const nodeBody = Readable.fromWeb(monitored as never);
+  // The DOM ReadableStream we built is structurally compatible with the
+  // node:stream/web ReadableStream that Readable.fromWeb expects. The cast
+  // bridges the two type domains without a runtime conversion.
+  const nodeBody = Readable.fromWeb(monitored as unknown as NodeReadableStream<Uint8Array>);
 
   try {
     const upload = new Upload({
