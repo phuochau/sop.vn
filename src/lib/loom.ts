@@ -218,6 +218,35 @@ import os from "node:os";
 import path from "node:path";
 import ffmpeg from "fluent-ffmpeg";
 
+/**
+ * Resolve relative URLs in an HLS playlist while preserving the parent's
+ * signed query string. Loom's HLS uses CloudFront signed URLs where the
+ * Policy/Signature/Key-Pair-Id live in the query string and authorize the
+ * entire `resource/*` prefix — but ffmpeg's HLS demuxer resolves children
+ * relatively and drops the query, leading to 403s. We materialize the
+ * playlists locally so ffmpeg only ever opens local files.
+ */
+function rewriteWithSigning(parentUrl: string, line: string): string {
+  if (line.startsWith("http://") || line.startsWith("https://")) return line;
+  const [base, query] = parentUrl.split("?");
+  const dir = base.slice(0, base.lastIndexOf("/") + 1);
+  return `${dir}${line}${query ? "?" + query : ""}`;
+}
+
+async function fetchText(url: string): Promise<string> {
+  const r = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+  if (!r.ok) throw new Error(`fetch ${url}: ${r.status}`);
+  return r.text();
+}
+
+async function fetchToFile(url: string, dest: string): Promise<number> {
+  const r = await fetch(url, { signal: AbortSignal.timeout(60_000) });
+  if (!r.ok || !r.body) throw new Error(`fetch ${url}: ${r.status}`);
+  const buf = Buffer.from(await r.arrayBuffer());
+  await fs.promises.writeFile(dest, buf);
+  return buf.byteLength;
+}
+
 export async function muxLoomHlsToR2(args: {
   hlsUrl: string;
   r2Key: string;
@@ -226,9 +255,53 @@ export async function muxLoomHlsToR2(args: {
   const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "loom-hls-"));
   const out = path.join(tmpDir, "video.mp4");
   try {
+    // 1. Fetch master playlist
+    const masterText = await fetchText(args.hlsUrl);
+    const masterLines = masterText.split(/\r?\n/);
+
+    // 2. Find first non-tag line — that's the child media playlist
+    const childRel = masterLines.find(l => l && !l.startsWith("#"));
+    if (!childRel) return { ok: false, error: "stream_error" };
+
+    const childUrl = rewriteWithSigning(args.hlsUrl, childRel);
+    const childText = await fetchText(childUrl);
+    const childLines = childText.split(/\r?\n/);
+
+    // 3. Fetch every segment .ts file. Track total size for cap.
+    const segDir = path.join(tmpDir, "seg");
+    await fs.promises.mkdir(segDir);
+    let totalBytes = 0;
+    const localSegments: string[] = [];
+    for (let i = 0; i < childLines.length; i++) {
+      const line = childLines[i];
+      if (!line || line.startsWith("#")) continue;
+      const segUrl = rewriteWithSigning(childUrl, line);
+      const localName = `seg-${localSegments.length}.ts`;
+      const localPath = path.join(segDir, localName);
+      const sz = await fetchToFile(segUrl, localPath);
+      totalBytes += sz;
+      if (totalBytes > cap) return { ok: false, error: "size_exceeded" };
+      localSegments.push(localName);
+    }
+
+    // 4. Write a local rewritten child playlist whose segments are local files
+    const localChild = childLines.map(l => {
+      if (!l || l.startsWith("#")) return l;
+      const local = localSegments.shift();
+      return local ?? l;
+    }).join("\n");
+    const localChildPath = path.join(segDir, "child.m3u8");
+    await fs.promises.writeFile(localChildPath, localChild);
+
+    // 5. ffmpeg-mux into a single MP4 using -c copy
     await new Promise<void>((resolve, reject) => {
-      ffmpeg(args.hlsUrl)
-        .outputOptions(["-c", "copy", "-bsf:a", "aac_adtstoasc", "-movflags", "+faststart"])
+      ffmpeg(localChildPath)
+        .outputOptions([
+          "-allowed_extensions", "ALL",
+          "-c", "copy",
+          "-bsf:a", "aac_adtstoasc",
+          "-movflags", "+faststart",
+        ])
         .save(out)
         .on("end", () => resolve())
         .on("error", reject);
