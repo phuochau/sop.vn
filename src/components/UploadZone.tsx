@@ -4,63 +4,94 @@ import { useRouter } from "next/navigation";
 import { UploadCloud, Link2, Lock, Sparkles, Globe } from "lucide-react";
 import { config } from "@/config";
 
+type Source =
+  | { kind: "none" }
+  | { kind: "file"; file: File }
+  | { kind: "url"; url: string };
+
 export function UploadZone() {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
-  const [file, setFile] = useState<File | null>(null);
+  const [source, setSource] = useState<Source>({ kind: "none" });
   const [error, setError] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [progress, setProgress] = useState(0);
   const [isPublic, setIsPublic] = useState(false);
   const [language, setLanguage] = useState<"vi" | "en">("vi");
 
-  function pick(f: File | null) {
+  function pickFile(f: File | null) {
     setError(null);
-    if (!f) { setFile(null); return; }
+    if (!f) { setSource({ kind: "none" }); return; }
     if (f.size > config.limits.maxVideoSizeMB * 1024 * 1024) { setError("File vượt quá 500MB."); return; }
     if (!config.limits.allowedMimeTypes.includes(f.type)) { setError("Định dạng không hỗ trợ. Dùng MP4, MOV, hoặc WEBM."); return; }
-    setFile(f);
+    setSource({ kind: "file", file: f });
+  }
+
+  function setUrl(u: string) {
+    setError(null);
+    if (!u) { setSource({ kind: "none" }); return; }
+    setSource({ kind: "url", url: u });
+  }
+
+  async function submitFile(file: File) {
+    const init = await fetch("/api/upload/init", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename: file.name, sizeBytes: file.size, mimeType: file.type }),
+    }).then(r => r.json());
+    if (init.error) throw new Error(init.error);
+
+    await new Promise<void>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("PUT", init.uploadUrl);
+      xhr.setRequestHeader("Content-Type", file.type);
+      xhr.upload.onprogress = (e) => { if (e.lengthComputable) setProgress(Math.round(e.loaded / e.total * 100)); };
+      xhr.onload = () => (xhr.status >= 200 && xhr.status < 300) ? resolve() : reject(new Error(`R2 ${xhr.status}`));
+      xhr.onerror = () => reject(new Error("network"));
+      xhr.send(file);
+    });
+
+    const commit = await fetch("/api/upload/commit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sopId: init.sopId, defaultLanguage: language }),
+    });
+    if (!commit.ok) throw new Error("commit_failed");
+    return init.sopId as string;
+  }
+
+  async function submitLoomUrl(url: string) {
+    const r = await fetch("/api/ingest/loom", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url, defaultLanguage: language }),
+    });
+    const json = await r.json();
+    if (!r.ok) {
+      if (json.error === "invalid_url") throw new Error("Liên kết Loom không hợp lệ.");
+      throw new Error(json.error ?? "ingest_failed");
+    }
+    return json.sopId as string;
   }
 
   async function submit() {
-    if (!file) return;
-    setUploading(true);
+    if (source.kind === "none") return;
+    setSubmitting(true);
     setError(null);
     try {
-      const init = await fetch("/api/upload/init", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          filename: file.name,
-          sizeBytes: file.size,
-          mimeType: file.type,
-        }),
-      }).then(r => r.json());
-      if (init.error) throw new Error(init.error);
-
-      await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open("PUT", init.uploadUrl);
-        xhr.setRequestHeader("Content-Type", file.type);
-        xhr.upload.onprogress = (e) => { if (e.lengthComputable) setProgress(Math.round(e.loaded / e.total * 100)); };
-        xhr.onload = () => (xhr.status >= 200 && xhr.status < 300) ? resolve() : reject(new Error(`R2 ${xhr.status}`));
-        xhr.onerror = () => reject(new Error("network"));
-        xhr.send(file);
-      });
-
-      const commit = await fetch("/api/upload/commit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sopId: init.sopId, defaultLanguage: language }),
-      });
-      if (!commit.ok) throw new Error("commit_failed");
-
-      router.push(`/processing/${init.sopId}`);
+      const sopId =
+        source.kind === "file"
+          ? await submitFile(source.file)
+          : await submitLoomUrl(source.url);
+      router.push(`/processing/${sopId}`);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Có lỗi xảy ra");
-      setUploading(false);
+      setSubmitting(false);
     }
   }
+
+  const fileDisabled = source.kind === "url";
+  const urlDisabled = source.kind === "file";
 
   return (
     <div className="min-h-[calc(100vh-72px-72px)] bg-[#FAFAFA] flex flex-col items-center justify-center py-10 px-6">
@@ -74,7 +105,7 @@ export function UploadZone() {
             Tải video lên
           </h1>
           <p className="text-[15px] text-[#4B5563] leading-[1.5] max-w-[600px] mx-auto">
-            Chọn nguồn video bạn muốn chuyển thành SOP. Hỗ trợ tệp MP4/MOV và liên kết YouTube, Loom, Vimeo.
+            Chọn nguồn video bạn muốn chuyển thành SOP. Hỗ trợ tệp MP4/MOV và liên kết Loom công khai.
           </p>
         </div>
 
@@ -85,15 +116,16 @@ export function UploadZone() {
         >
           {/* Drop zone */}
           <div
-            onClick={() => inputRef.current?.click()}
-            onDrop={(e) => { e.preventDefault(); pick(e.dataTransfer.files?.[0] ?? null); }}
+            onClick={() => { if (!fileDisabled) inputRef.current?.click(); }}
+            onDrop={(e) => { e.preventDefault(); if (!fileDisabled) pickFile(e.dataTransfer.files?.[0] ?? null); }}
             onDragOver={(e) => e.preventDefault()}
             className="rounded-[20px] border-2 border-dashed border-[#D1D5DB] bg-[#FAFAFA] hover:bg-gray-100 transition px-6 py-10 flex flex-col items-center justify-center gap-3.5 cursor-pointer"
+            style={{ pointerEvents: fileDisabled ? "none" : undefined, opacity: fileDisabled ? 0.5 : 1 }}
           >
-            {file ? (
+            {source.kind === "file" ? (
               <div className="text-center space-y-1">
-                <p className="font-medium text-[#0A0A0A]">{file.name}</p>
-                <p className="text-xs text-gray-500">{(file.size / 1024 / 1024).toFixed(1)} MB</p>
+                <p className="font-medium text-[#0A0A0A]">{source.file.name}</p>
+                <p className="text-xs text-gray-500">{(source.file.size / 1024 / 1024).toFixed(1)} MB</p>
               </div>
             ) : (
               <>
@@ -106,7 +138,7 @@ export function UploadZone() {
                 >
                   Kéo thả video vào đây
                 </p>
-                <p className="text-sm text-[#6B7280]">hoặc dán liên kết YouTube/Loom bên dưới</p>
+                <p className="text-sm text-[#6B7280]">hoặc dán liên kết Loom bên dưới</p>
                 <button
                   type="button"
                   onClick={(e) => { e.stopPropagation(); inputRef.current?.click(); }}
@@ -121,7 +153,7 @@ export function UploadZone() {
               type="file"
               className="hidden"
               accept={config.limits.allowedMimeTypes.join(",")}
-              onChange={(e) => pick(e.target.files?.[0] ?? null)}
+              onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
             />
           </div>
 
@@ -132,21 +164,20 @@ export function UploadZone() {
             <div className="flex-1 h-px bg-gray-200" />
           </div>
 
-          {/* URL input (visual only) */}
-          <div className="flex items-center gap-2 rounded-2xl border border-gray-200 bg-white pl-[18px] pr-1.5 py-1.5">
+          {/* URL input — Loom only for now */}
+          <div className={`flex items-center gap-2 rounded-2xl border border-gray-200 bg-white pl-[18px] pr-1.5 py-1.5 ${urlDisabled ? "opacity-50 pointer-events-none" : ""}`}>
             <Link2 className="w-4.5 h-4.5 text-[#9CA3AF] shrink-0" strokeWidth={2} />
             <input
-              disabled
-              placeholder="https://youtube.com/watch?v=..."
-              className="flex-1 bg-transparent outline-none text-sm placeholder:text-[#9CA3AF] text-[#0A0A0A] disabled:cursor-not-allowed"
+              type="url"
+              value={source.kind === "url" ? source.url : ""}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://www.loom.com/share/..."
+              className="flex-1 bg-transparent outline-none text-sm placeholder:text-[#9CA3AF] text-[#0A0A0A]"
             />
-            <button
-              disabled
-              className="rounded-full bg-[#0A0A0A] text-white text-sm font-medium px-[18px] py-[10px] opacity-50 cursor-not-allowed"
-            >
-              Dán
-            </button>
           </div>
+          <p className="text-[12px] text-[#9CA3AF] -mt-3 px-1">
+            Chỉ dán liên kết Loom công khai bạn có quyền sử dụng.
+          </p>
 
           {/* Options row */}
           <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -184,7 +215,7 @@ export function UploadZone() {
           </div>
 
           {error && <p className="text-sm text-red-600 text-center">{error}</p>}
-          {uploading && (
+          {submitting && source.kind === "file" && (
             <div className="space-y-1.5">
               <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
                 <div className="h-full bg-[#0066FF] transition-all" style={{ width: `${progress}%` }} />
@@ -192,10 +223,13 @@ export function UploadZone() {
               <p className="text-xs text-gray-500 text-center">Đang tải lên… {progress}%</p>
             </div>
           )}
+          {submitting && source.kind === "url" && (
+            <p className="text-xs text-gray-500 text-center">Đang tạo SOP…</p>
+          )}
 
           {/* Submit */}
           <button
-            disabled={!file || uploading}
+            disabled={source.kind === "none" || submitting}
             onClick={submit}
             className="w-full inline-flex items-center justify-center gap-2.5 rounded-full bg-[#0066FF] text-white font-medium text-[15px] px-7 py-4 hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
