@@ -6,7 +6,9 @@
 
 **Architecture:** New `POST /api/ingest/loom` route inserts a SOP doc in status `"ingesting"` and fires a new Trigger.dev task `ingest-loom`. The task resolves the MP4 URL, streams it to R2 via `@aws-sdk/lib-storage`, then `tasks.trigger("process-sop", ...)` with an idempotency key. Cleanup is handled by extending the existing `cleanupVideos` schedule with a stuck-`ingesting` watchdog.
 
-**Tech Stack:** Next.js 16 App Router, Trigger.dev v4, MongoDB driver, AWS SDK v3 + `@aws-sdk/lib-storage` (new dep), zod, Node built-in test runner via `tsx --test`.
+**Tech Stack:** Next.js 16 App Router, `@trigger.dev/sdk/v3` (matches existing repo imports), MongoDB driver, AWS SDK v3 + `@aws-sdk/lib-storage` (new dep), zod, Node built-in test runner via `tsx --test`.
+
+**Note on `inputMode`:** `SopDoc.inputMode` (`"speech" | "silent"`) is set later by `process-sop` after probing the audio. Loom-ingested SOPs do not pre-set it on insert, identical to the direct-upload path in `/api/upload/init`.
 
 **Spec:** `docs/superpowers/specs/2026-05-02-loom-url-ingest-design.md`
 
@@ -315,6 +317,15 @@ test("resolveLoomMp4 maps AbortError to timeout", async () => {
     assert.deepEqual(r, { ok: false, error: "timeout" });
   });
 });
+
+test("resolveLoomMp4 maps TimeoutError to timeout", async () => {
+  // AbortSignal.timeout in modern Node throws DOMException("...", "TimeoutError"),
+  // not "AbortError". Both must map to the same outcome.
+  await withMockedFetch(async () => { throw new DOMException("timed out", "TimeoutError"); }, async () => {
+    const r = await resolveLoomMp4("abcdef0123456789abcdef0123456789");
+    assert.deepEqual(r, { ok: false, error: "timeout" });
+  });
+});
 ```
 
 - [ ] **Step 2: Run tests, expect failure (`resolveLoomMp4` not exported)**
@@ -358,7 +369,8 @@ export async function resolveLoomMp4(videoId: string): Promise<ResolveResult> {
       signal: AbortSignal.timeout(30_000),
     });
   } catch (e) {
-    if ((e as Error).name === "AbortError" || (e as DOMException).name === "AbortError") {
+    const name = (e as { name?: string } | null)?.name;
+    if (name === "AbortError" || name === "TimeoutError") {
       return { ok: false, error: "timeout" };
     }
     return { ok: false, error: "http_error" };
@@ -448,6 +460,20 @@ test("streamLoomToR2 maps non-2xx fetch to stream_error", async () => {
   await withMockedFetch(async () => new Response("", { status: 500 }), async () => {
     const r = await streamLoomToR2({ mp4Url: "https://cdn.loom.com/x.mp4", r2Key: VALID_KEY });
     assert.deepEqual(r, { ok: false, error: "stream_error" });
+  });
+});
+
+test("streamLoomToR2 enforces cap when Content-Length is missing (streamed bytes overflow)", async () => {
+  // No Content-Length header → cap is enforced via running byte counter.
+  // Body emits one giant chunk that exceeds the 500MB cap.
+  const cap = 500 * 1024 * 1024;
+  await withMockedFetch(async () => {
+    const big = new Uint8Array(cap + 1024);
+    return new Response(big, { status: 200, headers: { "Content-Type": "video/mp4" } });
+  }, async () => {
+    const r = await streamLoomToR2({ mp4Url: "https://cdn.loom.com/x.mp4", r2Key: VALID_KEY });
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.equal(r.error, "size_exceeded");
   });
 });
 ```
@@ -956,8 +982,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 
 - [ ] **Step 1: Read the current file**
 
-Run: `cat src/components/UploadZone.tsx | head -50`
-Confirm the structure matches the spec: file pick state, presigned PUT to R2, `/api/upload/init` + `/api/upload/commit` flow.
+Use the `Read` tool on `src/components/UploadZone.tsx` (full file). Confirm the structure: file pick state at the top of the component, presigned PUT to R2 via XHR, `/api/upload/init` + `/api/upload/commit` flow, dropzone JSX, URL-input block, options row, privacy note, error/uploading display, submit button.
 
 - [ ] **Step 2: Replace state and submit logic**
 
@@ -1098,14 +1123,18 @@ Replace the existing submit button block (`disabled={!file || uploading} onClick
             <p className="text-xs text-gray-500 text-center">Đang tạo SOP…</p>
           )}
 
+          {/* Submit */}
           <button
             disabled={source.kind === "none" || submitting}
             onClick={submit}
-            ...rest of original button props...
+            className="w-full inline-flex items-center justify-center gap-2.5 rounded-full bg-[#0066FF] text-white font-medium text-[15px] px-7 py-4 hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
+            <Sparkles className="w-4.5 h-4.5" strokeWidth={2} />
+            Bắt đầu tạo SOP
+          </button>
 ```
 
-(Keep the existing className and Vietnamese label on the button; only the `disabled` expression changes.)
+The button's `className` and label are unchanged from the original; only the `disabled` expression was updated.
 
 - [ ] **Step 6: Typecheck**
 
