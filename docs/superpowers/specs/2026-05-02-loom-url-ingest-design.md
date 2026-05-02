@@ -134,10 +134,16 @@ Implementation:
 ### 3. Streaming downloader — `src/lib/loom.ts`
 
 ```ts
+export type StreamError = "size_exceeded" | "stalled" | "stream_error";
+
+export type StreamResult =
+  | { ok: true; bytes: number }
+  | { ok: false; error: StreamError };
+
 export async function streamLoomToR2(args: {
   mp4Url: string;
   r2Key: string;
-}): Promise<{ bytes: number }>
+}): Promise<StreamResult>
 ```
 
 Uses `@aws-sdk/lib-storage` `Upload` with `Body` set to the response stream from `fetch(mp4Url)`. Multipart upload handles arbitrary sizes without buffering. ContentType `video/mp4`.
