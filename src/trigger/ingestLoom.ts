@@ -1,7 +1,7 @@
 import { task, tasks, logger } from "@trigger.dev/sdk/v3";
 import { ObjectId } from "mongodb";
 import { sops, events, type SopStatus, type ErrorCode } from "@/lib/mongo";
-import { resolveLoomMp4, streamLoomToR2, type StreamError } from "@/lib/loom";
+import { resolveLoomMp4, resolveLoomHls, streamLoomToR2, muxLoomHlsToR2, type StreamError } from "@/lib/loom";
 
 export type Decision =
   | { action: "run" }
@@ -69,14 +69,28 @@ export const ingestLoom = task({
       return;
     }
 
-    const resolved = await resolveLoomMp4(doc.videoId);
-    if (!resolved.ok) {
-      await logIngestError(_id, resolved.error, resolved.httpStatus);
+    const transcoded = await resolveLoomMp4(doc.videoId);
+
+    let streamed: Awaited<ReturnType<typeof streamLoomToR2>>;
+    if (transcoded.ok) {
+      streamed = await streamLoomToR2({ mp4Url: transcoded.mp4Url, r2Key: doc.videoR2Key });
+    } else if (transcoded.error === "transcode_unavailable") {
+      // Loom serves HLS-only for this video. Fall back to /raw-url + ffmpeg-mux.
+      logger.info("ingestLoom: transcoded MP4 unavailable, falling back to HLS");
+      const hls = await resolveLoomHls(doc.videoId);
+      if (!hls.ok) {
+        await logIngestError(_id, `hls:${hls.error}`, hls.httpStatus);
+        await failSop(_id, "loom_ingest_failed");
+        return;
+      }
+      streamed = await muxLoomHlsToR2({ hlsUrl: hls.hlsUrl, r2Key: doc.videoR2Key });
+    } else {
+      await logIngestError(_id, transcoded.error, transcoded.httpStatus);
       await failSop(_id, "loom_ingest_failed");
       return;
     }
 
-    const streamed = await streamLoomToR2({ mp4Url: resolved.mp4Url, r2Key: doc.videoR2Key });
+
     if (!streamed.ok) {
       await logIngestError(_id, streamed.error);
       await failSop(_id, mapStreamErrorToCode(streamed.error));

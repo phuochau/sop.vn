@@ -82,6 +82,44 @@ export async function resolveLoomMp4(videoId: string): Promise<ResolveResult> {
   return { ok: true, mp4Url: url };
 }
 
+export type ResolveHlsResult =
+  | { ok: true; hlsUrl: string }
+  | { ok: false; error: ResolveError; httpStatus?: number };
+
+export async function resolveLoomHls(videoId: string): Promise<ResolveHlsResult> {
+  const endpoint = `https://www.loom.com/api/campaigns/sessions/${videoId}/raw-url`;
+  let res: Response;
+  try {
+    res = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": LOOM_USER_AGENT,
+        "Origin": "https://www.loom.com",
+        "Referer": `https://www.loom.com/share/${videoId}`,
+      },
+      body: "",
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch (e) {
+    const name = (e as { name?: string } | null)?.name;
+    if (name === "AbortError" || name === "TimeoutError") return { ok: false, error: "timeout" };
+    return { ok: false, error: "http_error" };
+  }
+
+  if (res.status === 401 || res.status === 403) return { ok: false, error: "private_or_restricted", httpStatus: res.status };
+  if (res.status === 404) return { ok: false, error: "not_found", httpStatus: res.status };
+  if (res.status >= 400) return { ok: false, error: "http_error", httpStatus: res.status };
+
+  const text = await res.text();
+  if (!text.trim()) return { ok: false, error: "transcode_unavailable" };
+  let parsed: unknown;
+  try { parsed = JSON.parse(text); } catch { return { ok: false, error: "transcode_unavailable" }; }
+  const url = (parsed as { url?: unknown })?.url;
+  if (typeof url !== "string" || !url.startsWith("https://")) return { ok: false, error: "transcode_unavailable" };
+  return { ok: true, hlsUrl: url };
+}
+
 import { Upload } from "@aws-sdk/lib-storage";
 import { Readable } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
@@ -173,4 +211,44 @@ export async function streamLoomToR2(args: {
   }
 
   return { ok: true, bytes };
+}
+
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import ffmpeg from "fluent-ffmpeg";
+
+export async function muxLoomHlsToR2(args: {
+  hlsUrl: string;
+  r2Key: string;
+}): Promise<StreamResult> {
+  const cap = config.limits.maxVideoSizeMB * 1024 * 1024;
+  const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "loom-hls-"));
+  const out = path.join(tmpDir, "video.mp4");
+  try {
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg(args.hlsUrl)
+        .outputOptions(["-c", "copy", "-bsf:a", "aac_adtstoasc", "-movflags", "+faststart"])
+        .save(out)
+        .on("end", () => resolve())
+        .on("error", reject);
+    });
+
+    const stat = await fs.promises.stat(out);
+    if (stat.size > cap) return { ok: false, error: "size_exceeded" };
+
+    const stream = fs.createReadStream(out);
+    const upload = new Upload({
+      client: r2,
+      params: { Bucket: R2_BUCKET, Key: args.r2Key, Body: stream, ContentType: "video/mp4" },
+    });
+    await upload.done();
+
+    return { ok: true, bytes: stat.size };
+  } catch {
+    try { await deleteObject(args.r2Key); } catch { /* swallow */ }
+    return { ok: false, error: "stream_error" };
+  } finally {
+    await fs.promises.rm(tmpDir, { recursive: true, force: true });
+  }
 }
