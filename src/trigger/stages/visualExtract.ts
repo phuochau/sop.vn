@@ -39,12 +39,16 @@ export async function runVisualExtract(args: {
         schemaName: "visual_sop_extract",
         maxRetries: 0,
       });
+      // Normalize timestamps before validating. The vision LLM routinely
+      // rounds endTime slightly past the true duration; clamping is more
+      // useful than rejecting. Hard violations (negative, non-monotonic,
+      // or end <= start) still throw so a retry can recover.
       let prevEnd = 0;
       for (const s of out.steps) {
         if (s.startTime < 0) throw new Error("step startTime is negative");
         if (s.startTime < prevEnd) throw new Error("steps not chronologically ordered");
+        if (s.endTime > args.durationSec) s.endTime = args.durationSec;
         if (s.endTime <= s.startTime) throw new Error("step endTime <= startTime");
-        if (s.endTime > args.durationSec) throw new Error("step endTime exceeds video duration");
         prevEnd = s.endTime;
       }
       return out;
