@@ -20,6 +20,24 @@ export const cleanupVideos = schedules.task({
       await col.updateOne({ _id: d._id }, { $set: { videoR2Key: null, updatedAt: now } });
     }
 
+    // Sweep stuck-"ingesting" SOPs older than 30 minutes.
+    // Threshold > task maxDuration (15 min) so in-flight tasks are not affected.
+    const stuckBefore = new Date(now.getTime() - 30 * 60 * 1000);
+    const stuck = await col.find({
+      status: "ingesting",
+      createdAt: { $lt: stuckBefore },
+    }).toArray();
+    for (const d of stuck) {
+      if (d.videoR2Key) {
+        try { await deleteObject(d.videoR2Key); }
+        catch (e) { logger.warn("r2 delete stuck-ingest failed", { key: d.videoR2Key, e: String(e) }); }
+      }
+      await col.updateOne(
+        { _id: d._id, status: "ingesting" },
+        { $set: { status: "failed", errorCode: "loom_ingest_failed", videoR2Key: null, updatedAt: now } },
+      );
+    }
+
     // Sweep stale PDFs: status=ready and generatedAt older than TTL.
     // Reset pdf state so the next click regenerates rather than 404ing on a deleted object.
     const stalePdfBefore = new Date(now.getTime() - PDF_TTL_MS);
@@ -48,6 +66,6 @@ export const cleanupVideos = schedules.task({
       );
     }
 
-    logger.info(`cleanup: videos=${expired.length} pdfs=${stalePdfs.length}`);
+    logger.info(`cleanup: videos=${expired.length} pdfs=${stalePdfs.length} stuckIngest=${stuck.length}`);
   },
 });
