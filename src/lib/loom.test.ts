@@ -131,3 +131,43 @@ test("resolveLoomMp4 maps TimeoutError to timeout", async () => {
     assert.deepEqual(r, { ok: false, error: "timeout" });
   });
 });
+
+import { streamLoomToR2 } from "./loom";
+
+const VALID_KEY = "videos/test/abc.mp4";
+
+test("streamLoomToR2 rejects pre-download when Content-Length exceeds cap", async () => {
+  const oversize = String(600 * 1024 * 1024);
+  await withMockedFetch(async () =>
+    new Response("", { status: 200, headers: { "Content-Length": oversize, "Content-Type": "video/mp4" } }),
+    async () => {
+      const r = await streamLoomToR2({ mp4Url: "https://cdn.loom.com/x.mp4", r2Key: VALID_KEY });
+      assert.deepEqual(r, { ok: false, error: "size_exceeded" });
+    });
+});
+
+test("streamLoomToR2 maps fetch failure to stream_error", async () => {
+  await withMockedFetch(async () => { throw new Error("net"); }, async () => {
+    const r = await streamLoomToR2({ mp4Url: "https://cdn.loom.com/x.mp4", r2Key: VALID_KEY });
+    assert.deepEqual(r, { ok: false, error: "stream_error" });
+  });
+});
+
+test("streamLoomToR2 maps non-2xx fetch to stream_error", async () => {
+  await withMockedFetch(async () => new Response("", { status: 500 }), async () => {
+    const r = await streamLoomToR2({ mp4Url: "https://cdn.loom.com/x.mp4", r2Key: VALID_KEY });
+    assert.deepEqual(r, { ok: false, error: "stream_error" });
+  });
+});
+
+test("streamLoomToR2 enforces cap when Content-Length is missing (streamed bytes overflow)", async () => {
+  const cap = 500 * 1024 * 1024;
+  await withMockedFetch(async () => {
+    const big = new Uint8Array(cap + 1024);
+    return new Response(big, { status: 200, headers: { "Content-Type": "video/mp4" } });
+  }, async () => {
+    const r = await streamLoomToR2({ mp4Url: "https://cdn.loom.com/x.mp4", r2Key: VALID_KEY });
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.equal(r.error, "size_exceeded");
+  });
+});

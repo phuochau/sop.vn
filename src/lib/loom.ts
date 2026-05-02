@@ -81,3 +81,92 @@ export async function resolveLoomMp4(videoId: string): Promise<ResolveResult> {
   }
   return { ok: true, mp4Url: url };
 }
+
+import { Upload } from "@aws-sdk/lib-storage";
+import { Readable } from "node:stream";
+import { r2, R2_BUCKET, deleteObject } from "@/lib/r2";
+import { config } from "@/config";
+
+export type StreamError = "size_exceeded" | "stalled" | "stream_error";
+
+export type StreamResult =
+  | { ok: true; bytes: number }
+  | { ok: false; error: StreamError };
+
+const STALL_MS = 60_000;
+
+export async function streamLoomToR2(args: {
+  mp4Url: string;
+  r2Key: string;
+}): Promise<StreamResult> {
+  const cap = config.limits.maxVideoSizeMB * 1024 * 1024;
+
+  let res: Response;
+  try {
+    res = await fetch(args.mp4Url, { signal: AbortSignal.timeout(30_000) });
+  } catch {
+    return { ok: false, error: "stream_error" };
+  }
+  if (!res.ok || !res.body) return { ok: false, error: "stream_error" };
+
+  const cl = res.headers.get("content-length");
+  if (cl && Number(cl) > cap) return { ok: false, error: "size_exceeded" };
+
+  let bytes = 0;
+  let lastChunkAt = Date.now();
+  let stallTimer: NodeJS.Timeout | null = null;
+  let outcome: StreamError | null = null;
+
+  const monitored = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const reader = (res.body as ReadableStream<Uint8Array>).getReader();
+      stallTimer = setInterval(() => {
+        if (Date.now() - lastChunkAt > STALL_MS) {
+          outcome = "stalled";
+          controller.error(new Error("stall"));
+        }
+      }, 5_000);
+      try {
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (!value) continue;
+          bytes += value.byteLength;
+          lastChunkAt = Date.now();
+          if (bytes > cap) {
+            outcome = "size_exceeded";
+            controller.error(new Error("cap"));
+            return;
+          }
+          controller.enqueue(value);
+        }
+        controller.close();
+      } catch (e) {
+        if (!outcome) outcome = "stream_error";
+        controller.error(e);
+      } finally {
+        if (stallTimer) clearInterval(stallTimer);
+      }
+    },
+  });
+
+  const nodeBody = Readable.fromWeb(monitored as never);
+
+  try {
+    const upload = new Upload({
+      client: r2,
+      params: {
+        Bucket: R2_BUCKET,
+        Key: args.r2Key,
+        Body: nodeBody,
+        ContentType: "video/mp4",
+      },
+    });
+    await upload.done();
+  } catch {
+    try { await deleteObject(args.r2Key); } catch { /* swallow */ }
+    return { ok: false, error: outcome ?? "stream_error" };
+  }
+
+  return { ok: true, bytes };
+}
