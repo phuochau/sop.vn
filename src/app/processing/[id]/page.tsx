@@ -9,11 +9,11 @@ import { Button } from "@/components/ui/button";
 import { config } from "@/config";
 
 type Status =
-  | "uploading" | "transcribing" | "normalizing" | "analyzing"
+  | "uploading" | "ingesting" | "transcribing" | "normalizing" | "analyzing"
   | "generating" | "clipping" | "done" | "failed";
 
 const STATUS_STEP_INDEX: Record<Status, number> = {
-  uploading: 0, transcribing: 0, normalizing: 1, analyzing: 2,
+  uploading: 0, ingesting: 0, transcribing: 0, normalizing: 1, analyzing: 2,
   generating: 3, clipping: 4, done: 5, failed: 0,
 };
 
@@ -34,6 +34,7 @@ const ERROR_MSG: Record<string, string> = {
   transcription_failed: "Lỗi nhận dạng giọng nói. Vui lòng thử lại.",
   generation_failed: "Lỗi tạo SOP. Vui lòng thử lại.",
   clipping_failed: "Lỗi cắt video. Vui lòng thử lại.",
+  loom_ingest_failed: "Không thể tải video Loom. Hãy đảm bảo liên kết đã đặt 'Anyone with the link can view' rồi thử lại.",
   unknown: "Đã xảy ra lỗi. Vui lòng thử lại.",
 };
 
