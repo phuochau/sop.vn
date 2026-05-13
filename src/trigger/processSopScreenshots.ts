@@ -13,10 +13,17 @@ import { runExtract } from "./stages/extract";
 import { resolveTimes } from "./stages/clip";
 import { runBuildFramePool } from "./stages/buildFramePool";
 import { runExtractClickEvents } from "./stages/extractClickEvents";
-import { anchorClickEventsByStep } from "./stages/anchorClickEvents";
-import { runCaptionClickEvents } from "./stages/captionClickEvents";
+import { runClassifyAndMergeEvents } from "./stages/classifyAndMergeEvents";
+import { runGroundEventsWithGemini } from "./stages/groundEventsWithGemini";
 import { runUploadScreenshots, type UploadEvent } from "./stages/uploadScreenshots";
-import type { StepInput } from "./stages/assignScreenshots";
+
+type StepInput = {
+  stepIndex: number;
+  title: string;
+  narration: string;
+  tStart: number;
+  tEnd: number;
+};
 
 async function setStatus(id: ObjectId, status: SopStatus, extra: Record<string, unknown> = {}) {
   await (await sops()).updateOne({ _id: id }, { $set: { status, updatedAt: new Date(), ...extra } });
@@ -132,23 +139,18 @@ export const processSopScreenshots = task({
           return fail(_id, "click_detect_failed");
         }
 
-        // Cursor anchoring is implemented (anchorClickEventsByStep) but currently
-        // disabled by default — the SVG-rasterized cursor templates aren't accurate
-        // enough to outscore busy-UI false positives in the BEFORE frame, so anchoring
-        // empirically degrades visual quality vs the raw diff-bbox approach.
-        // Re-enable by setting cursorThreshold low; needs real macOS cursor sprites.
-        const anchored = await anchorClickEventsByStep(eventsByStep, { cursorThreshold: 1.01 });
+        const merged = runClassifyAndMergeEvents({ byStep: eventsByStep });
 
-        const captioned = await runCaptionClickEvents({
-          byStep: anchored,
+        const grounded = await runGroundEventsWithGemini({
+          byStep: merged,
           steps: stepInputs,
           language: language!,
         });
 
-        // Stage 7: upload click-event frames to R2.
+        // Stage 7: upload event frames to R2.
         await setStatus(_id, "uploading-screenshots");
         const uploadByStep = new Map<number, UploadEvent[]>();
-        for (const [stepIndex, evs] of captioned.entries()) {
+        for (const [stepIndex, evs] of grounded.entries()) {
           uploadByStep.set(stepIndex, evs.map(e => ({
             displayFramePath: e.displayFramePath,
             t: e.time,

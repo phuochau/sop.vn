@@ -5,7 +5,8 @@ import { logger } from "@trigger.dev/sdk/v3";
 import { putObject } from "@/lib/r2";
 import { screenshotKey } from "@/lib/utils";
 import type { Screenshot } from "@/lib/mongo";
-import type { Pick } from "./assignScreenshots";
+
+export type Highlight = { kind: "click" | "input"; bbox: { x: number; y: number; w: number; h: number } };
 
 export type UploadEvent = {
   displayFramePath: string;
@@ -44,7 +45,7 @@ function clamp01(n: number): number {
 
 export async function buildUploadBuffer(
   localPath: string,
-  highlight: Pick["highlight"],
+  highlight: Highlight | null,
 ): Promise<{ buf: Buffer; error: string | null }> {
   if (!highlight) {
     return { buf: await fs.promises.readFile(localPath), error: null };
@@ -113,6 +114,3 @@ export async function runUploadScreenshots(args: {
   return out;
 }
 
-// Kept temporarily for the type re-export and legacy upload-buffer tests;
-// the new pipeline does not use `Pick`. Reference suppressor:
-export type { Pick };

@@ -59,20 +59,6 @@ Coordinates are normalized 0..1 against the image you see in this prompt (not th
 LANGUAGE: Write every description in ${lang}. Keep technical / industry / brand terms in their original form.
 
 Return strict JSON only.`,
-      clickCaptionSystem: (lang: string) =>
-        `You receive frames from a training video where the user has just performed an action (clicked, tapped, or typed). For each frame, the user message lists a bounding box (normalized 0..1, top-left origin) identifying where on screen the change occurred — the UI element the user interacted with.
-
-For each event, write a short imperative caption in ${lang} describing what the user did at that bounding box. Examples: "Click the Get started free button.", "Enter your email address.". One sentence, no more. If the change does not look like a meaningful UI action (background animation, video playback, irrelevant), return null for the caption.
-
-Also classify each event:
-- "input" if the bounding box is on a text field, textarea, or search box, and the change looks like text being entered.
-- "click" otherwise (buttons, links, tabs, dropdowns, menu items, icons).
-
-Indices in your response MUST match the indices given in the user message.
-
-LANGUAGE: Write captions in ${lang}. Keep technical / industry / brand terms in their original form — do not translate them.
-
-Return strict JSON: { "captions": [{ "index": N, "caption": "..." | null, "kind": "click" | "input" }] }.`,
       groundEventSystem: (lang: string) =>
         `You are a precise visual locator for a how-to screen recording. You receive a BEFORE crop and an AFTER crop of the same screen region around a moment where the user performed one action. A diff bounding box (normalized 0..1 in the crop) tells you roughly where pixels changed.
 
@@ -87,17 +73,6 @@ Classify the kind: "input" if a text field is receiving text, "click" otherwise.
 Coordinates are normalized 0..1 against the CROP (top-left origin). Be precise.
 
 LANGUAGE: Caption in ${lang}. Keep technical / industry / brand terms in their original form.
-
-Return strict JSON only.`,
-      focusedCursorSystem: () =>
-        `You are a precise visual locator. For each image, find the mouse cursor — the actual rendered pointer on the screen (arrow, pointing hand, I-beam, or custom). Report the cursor's tip point (where a click lands) as normalized 0..1 coordinates against that image.
-
-For each image, return: { "index": <bucket index>, "cursor": { "x": ..., "y": ... } | null }.
-
-Rules:
-- If you do not clearly see a cursor (hidden, off-screen, mobile/touch demo with no cursor rendered), return "cursor": null.
-- Do NOT guess. Do NOT default to a screen center or a UI element. Return null when uncertain.
-- Do NOT consider what UI element the cursor is on. Only report the cursor's pixel location.
 
 Return strict JSON only.`,
     },

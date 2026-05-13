@@ -66,24 +66,6 @@ export const ScreenshotPicksOutput = z.object({
   })),
 });
 
-export const CursorSchema = z.object({ x: z.number(), y: z.number() });
-export type Cursor = z.infer<typeof CursorSchema>;
-
-export const FocusedCursorOutput = z.object({
-  cursors: z.array(z.object({
-    index: z.number().int().nonnegative(),
-    cursor: CursorSchema.nullable(),
-  })),
-});
-
-export const CaptionsOutput = z.object({
-  captions: z.array(z.object({
-    index: z.number().int().nonnegative(),
-    caption: z.string().nullable(),
-    kind: z.enum(["click", "input"]),
-  })),
-});
-
 export const GroundedEventOutput = z.object({
   bbox: BBox,
   caption: z.string().nullable(),
