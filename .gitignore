@@ -53,3 +53,4 @@ sop-updated.png
 
 # git worktrees
 .worktrees/
+*.png
