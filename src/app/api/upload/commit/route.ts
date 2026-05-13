@@ -7,6 +7,7 @@ import { tasks } from "@trigger.dev/sdk/v3";
 const Body = z.object({
   sopId: z.string().length(24),
   defaultLanguage: z.enum(["vi", "en"]).default("vi"),
+  mode: z.enum(["clips", "screenshots"]).default("clips"),
 });
 
 export async function POST(req: Request) {
@@ -17,7 +18,12 @@ export async function POST(req: Request) {
   const col = await sops();
   const res = await col.updateOne(
     { _id, status: "uploading" },
-    { $set: { status: "transcribing", defaultLanguage: parsed.data.defaultLanguage, updatedAt: new Date() } }
+    { $set: {
+        status: "transcribing",
+        defaultLanguage: parsed.data.defaultLanguage,
+        mode: parsed.data.mode,
+        updatedAt: new Date(),
+    } },
   );
   if (res.matchedCount === 0) return NextResponse.json({ error: "not_found_or_wrong_state" }, { status: 404 });
 
@@ -25,6 +31,7 @@ export async function POST(req: Request) {
     _id: new ObjectId(), type: "upload", sopId: _id, createdAt: new Date(),
   });
 
-  await tasks.trigger("process-sop", { sopId: _id.toHexString() });
+  const taskId = parsed.data.mode === "screenshots" ? "process-sop-screenshots" : "process-sop";
+  await tasks.trigger(taskId, { sopId: _id.toHexString() });
   return NextResponse.json({ ok: true });
 }

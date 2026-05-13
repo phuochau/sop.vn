@@ -78,6 +78,16 @@ function zodToJsonSchemaLike(schema: ZodTypeAny): unknown {
     case "ZodString": return { type: "string" };
     case "ZodNumber": return { type: "number" };
     case "ZodEnum":   return { type: "string", enum: def.values };
+    case "ZodNullable": {
+      // Unwrap inner schema and union its `type` with "null" so strict JSON-schema
+      // mode accepts `null`. e.g. ZodNullable<ZodString> → { type: ["string", "null"] }.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const inner = zodToJsonSchemaLike(def.innerType) as any;
+      const innerType = inner.type;
+      const types: string[] = Array.isArray(innerType) ? innerType : [innerType];
+      if (!types.includes("null")) types.push("null");
+      return { ...inner, type: types };
+    }
     default:
       throw new Error(`Unsupported Zod type: ${def.typeName}`);
   }

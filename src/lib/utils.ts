@@ -22,6 +22,9 @@ export function posterKey(sopId: string, i: number) {
 export function keyframeKey(sopId: string, stepIndex: number, frameIndex: number) {
   return `sops/${sopId}/step-${stepIndex}-frame-${frameIndex}.jpg`;
 }
+export function screenshotKey(sopId: string, stepIndex: number, frameId: string) {
+  return `sops/${sopId}/screenshots/step-${stepIndex}/${frameId}.jpg`;
+}
 export function pdfKey(sopId: string, ts: number) {
   return `sops/${sopId}/sop-${ts}.pdf`;
 }

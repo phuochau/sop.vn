@@ -34,6 +34,31 @@ export const config = {
         `You are writing the opening of a printed SOP document for a how-to video that has no spoken audio. You receive a few sampled frames, the SOP title, a freeform category, a short domainSummary, and the list of step titles. Produce a concise overview: purpose (2-3 sentences), audience (one sentence), prerequisites (3-5 bullets), tools/materials visible in the frames or implied by the category (3-8 bullets), and estimated duration (a short phrase like "~N minutes" / "~N phút" matching the output language). Base every claim on the frames or the supplied context — do not invent.\n\nLANGUAGE: Output every field in ${lang}. Keep technical / industry / brand terms in their original form (do not translate them).`,
       pdfVisualStepSystem: (lang: string) =>
         `You rewrite a single step of a silent training SOP for a reader who cannot watch the video. You receive the keyframes for this step, the step's title and short description, the previous step's title (for continuity), the SOP's freeform category, and a domainSummary. Output: 1-3 short paragraphs of prose, an ordered list of discrete actions in imperative voice (subBullets), and any warnings/tips/notes as callouts with kind="warning"|"tip"|"note". Describe only what the keyframes show or what the supplied context warrants — do not invent actions. If there are no callouts, return an empty array.\n\nLANGUAGE: Output prose, subBullets, and callouts in ${lang}. Keep technical / industry / brand terms in their original form (do not translate them).`,
+      screenshotPickSystem: (lang: string) =>
+        `You select screenshots from a training video to illustrate one specific step, AND write a short caption or instruction for each picked frame, AND mark where the user is clicking/tapping/typing if the frame shows a UI interaction.
+
+You receive: the step's title and the trainer's narration, plus a list of candidate frames each labeled with a bucket-local index and a timestamp.
+
+Pick the frames a reader would need to actually perform this step — relevant UI before the action, during the action, and the resulting state after the action. Skip redundant frames showing the same UI state. Return an empty array if no frames are useful for this step.
+
+For each picked frame, write a "description":
+- If the frame shows an action moment, write a short imperative instruction ("Cut the bell pepper into thirds").
+- If the frame shows a state/result, write a brief observation ("Sauce is well combined and uniformly red").
+- If the image is self-explanatory and no caption would help the reader, return null.
+- Keep descriptions concise. Match the length to the value added — one short line is usually right, but you may go longer when needed.
+
+For each picked frame, also return a "highlight":
+- If the frame shows the user clicking, tapping, or selecting a specific UI element of a web or mobile app (button, link, tab, menu item, icon), return { "kind": "click", "bbox": { x, y, w, h } } tightly bounding the target element.
+- If the frame shows the user typing into a specific text field, textarea, or search box, return { "kind": "input", "bbox": { ... } } bounding that field.
+- If the frame is not a UI interaction, or the target element is unclear, return "highlight": null.
+
+Coordinates are normalized 0..1 against the image you see in this prompt (not the original video resolution). x and y are the top-left of the rectangle.
+
+Be conservative: only return a bbox when the target is unambiguous. Prefer null over a guess.
+
+LANGUAGE: Write every description in ${lang}. Keep technical / industry / brand terms in their original form.
+
+Return strict JSON only.`,
     },
   },
   limits: {
@@ -49,4 +74,14 @@ export const config = {
   },
   retention: { videoRetentionDays: 30 },
   app: { shareTokenLength: 16, pollIntervalMs: 2000 },
+  screenshots: {
+    sampleFps: 2,
+    motionHammingThreshold: 8,    // <=8/64 between consecutive frames ⇒ stable
+    dedupHammingThreshold: 5,     // <=5/64 within window ⇒ duplicate
+    dedupWindowSeconds: 10,
+    maxPoolSize: 200,
+    overlapBufferSeconds: 2,
+    downscaleMaxEdgePx: 1280,
+    jpegQuality: 85,
+  },
 };
