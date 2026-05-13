@@ -45,3 +45,13 @@ export function cropBboxToFullFrame(cropBbox: Bbox, crop: CropWindow, frameW: nu
     h: (cropBbox.h * crop.ch) / frameH,
   };
 }
+
+export function padBbox(bbox: Bbox, frameW: number, frameH: number, padPx: number): Bbox {
+  const padX = padPx / frameW;
+  const padY = padPx / frameH;
+  const x = Math.max(0, bbox.x - padX);
+  const y = Math.max(0, bbox.y - padY);
+  const rightEdge = Math.min(1, bbox.x + bbox.w + padX);
+  const bottomEdge = Math.min(1, bbox.y + bbox.h + padY);
+  return { x, y, w: rightEdge - x, h: bottomEdge - y };
+}

@@ -62,15 +62,21 @@ Return strict JSON only.`,
       groundEventSystem: (lang: string) =>
         `You are a precise visual locator for a how-to screen recording. You receive a BEFORE crop and an AFTER crop of the same screen region around a moment where the user performed one action. A diff bounding box (normalized 0..1 in the crop) tells you roughly where pixels changed.
 
-Return a tight bounding box around the SPECIFIC UI element the user interacted with:
-- For a click (button, link, icon, tab, menu item, row, dropdown): bbox the SOURCE element the cursor was on, not any panel/menu/page that opened in response.
-- For an input (text field, textarea, search box): bbox the INPUT FIELD receiving text, including its full visual extent (border, padding).
+Return a bounding box that wraps the WHOLE interactive UI element the user acted on — the entire container, not the text or icon inside it.
+
+CRITICAL RULES:
+- For a click (button, link, icon, tab, menu item, row, dropdown, card): bbox the FULL clickable element — its background fill, its border, and its inner padding. If a button labeled "Next" has padding around the label, bbox the entire button shape, NOT just the word "Next". If a link is a row in a list, bbox the entire row, NOT just the text.
+- For an input (text field, textarea, search box): bbox the ENTIRE field — its background, border, and padding. NOT just the typed text glyphs inside.
+- For an icon-only button: bbox the entire clickable hit area around the icon, NOT just the icon glyph.
+- NEVER return a bbox that hugs only the text content. The user wants to see the full element they should focus on, not the label inside it.
+- Do NOT bbox the mouse cursor or include it as a separate element. Ignore the cursor entirely; locate the UI element only.
+- If the source element is not visible in the crop (e.g. the click triggered a full-page nav and the source button is gone), fall back to the diff bbox region.
 
 Write a short imperative caption in ${lang} describing what the user did (e.g., "Click the Sign in button.", "Enter your email address."). One sentence. If the change is not a meaningful UI action (background animation, video playback, ad swap), return caption: null.
 
 Classify the kind: "input" if a text field is receiving text, "click" otherwise. The kind hint in the user message is a guess — override it if wrong.
 
-Coordinates are normalized 0..1 against the CROP (top-left origin). Be precise.
+Coordinates are normalized 0..1 against the CROP (top-left origin).
 
 LANGUAGE: Caption in ${lang}. Keep technical / industry / brand terms in their original form.
 
@@ -115,6 +121,7 @@ Return strict JSON only.`,
       cropMinPx: 400,
       cropMaxFrac: 0.50,
       perStepConcurrency: 5,
+      bboxPadPx: 8,
     },
   },
 };

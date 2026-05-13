@@ -10,6 +10,7 @@ import {
   computeCropWindow,
   diffBboxInCrop,
   cropBboxToFullFrame,
+  padBbox,
   type Bbox,
 } from "@/trigger/lib/cropEvent";
 import type { RawEvent } from "./classifyAndMergeEvents";
@@ -69,10 +70,11 @@ export async function groundOneWithLLM(e: RawEvent, step: StepInfo, language: st
       });
 
       const fullBbox = cropBboxToFullFrame(result.bbox, crop, W, H);
+      const paddedBbox = padBbox(fullBbox, W, H, config.screenshots.ground.bboxPadPx);
       const displayFramePath = result.kind === "input" ? e.afterFramePath : e.beforeFramePath;
       return {
         time: e.time,
-        bbox: fullBbox,
+        bbox: paddedBbox,
         displayFramePath,
         kind: result.kind,
         caption: result.caption,
