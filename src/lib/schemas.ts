@@ -45,3 +45,23 @@ export const VisualSopExtractOutput = z.object({
     endTime: z.number(),
   })).min(1),
 });
+
+export const BBox = z.object({
+  x: z.number(),
+  y: z.number(),
+  w: z.number(),
+  h: z.number(),
+});
+
+export const Highlight = z.object({
+  kind: z.enum(["click", "input"]),
+  bbox: BBox,
+});
+
+export const ScreenshotPicksOutput = z.object({
+  picks: z.array(z.object({
+    index: z.number().int().nonnegative(),
+    description: z.string().nullable(),
+    highlight: Highlight.nullable(),
+  })),
+});

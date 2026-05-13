@@ -15,7 +15,8 @@ export async function getDb(): Promise<Db> {
 
 export type SopStatus =
   | "uploading" | "ingesting" | "transcribing" | "normalizing" | "analyzing"
-  | "generating" | "clipping" | "done" | "failed";
+  | "generating" | "clipping" | "building-pool" | "assigning" | "uploading-screenshots"
+  | "done" | "failed";
 
 export type ErrorCode =
   | null
@@ -24,20 +25,38 @@ export type ErrorCode =
   | "generation_failed" | "clipping_failed"
   | "visual_context_failed" | "visual_extract_failed"
   | "frame_sampling_failed" | "video_download_failed"
+  | "screenshot_pool_failed"
   | "loom_ingest_failed"
   | "unknown";
 
 export interface Segment { id: number; start: number; end: number; text: string; }
 export interface CleanSegment { id: number; text: string; }
 
+export interface Screenshot {
+  frameId: string;
+  r2Key: string;
+  t: number;        // timestamp in source video, seconds
+  order: number;    // display order within the step
+  description?: string;  // optional LLM-written caption/instruction
+  highlight?: {          // optional yellow-rectangle target (baked into JPEG; field kept for future overlay-mode use)
+    kind: "click" | "input";
+    bbox: { x: number; y: number; w: number; h: number };
+  };
+  highlightError?: string; // set when rectangle drawing failed; un-annotated JPEG was uploaded instead
+}
+
 export interface Step {
   title: string;
   description: string;
   startTime: number;
   endTime: number;
+  // Clip-mode (existing — present when SopDoc.mode === "clips" or absent):
   clipR2Key: string;
   posterR2Key: string;
   keyframeR2Keys: string[]; // 3 keyframes evenly spaced across [startTime, endTime]
+  // Screenshot-mode (new — present when SopDoc.mode === "screenshots"):
+  screenshots?: Screenshot[];
+  screenshotsError?: string;
 }
 
 export type PdfStatus = "idle" | "generating" | "ready" | "error";
@@ -56,6 +75,7 @@ export interface SopDoc {
   title: string;                     // AI-generated in Stage 4
   category: string;                  // AI-detected in Stage 3
   inputMode?: "speech" | "silent";
+  mode?: "clips" | "screenshots"; // NEW — set at upload time; absent ⇒ "clips"
   defaultLanguage?: string;
   sourceType?: "upload" | "loom";   // absent ⇒ "upload" (legacy rows)
   sourceUrl?: string;               // original Loom share URL (sourceType === "loom")

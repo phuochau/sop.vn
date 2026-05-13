@@ -18,6 +18,7 @@ export function UploadZone() {
   const [progress, setProgress] = useState(0);
   const [isPublic, setIsPublic] = useState(false);
   const [language, setLanguage] = useState<"vi" | "en">("vi");
+  const [mode, setMode] = useState<"clips" | "screenshots">("clips");
 
   function pickFile(f: File | null) {
     setError(null);
@@ -54,7 +55,7 @@ export function UploadZone() {
     const commit = await fetch("/api/upload/commit", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sopId: init.sopId, defaultLanguage: language }),
+      body: JSON.stringify({ sopId: init.sopId, defaultLanguage: language, mode }),
     });
     if (!commit.ok) throw new Error("commit_failed");
     return init.sopId as string;
@@ -226,6 +227,31 @@ export function UploadZone() {
           {submitting && source.kind === "url" && (
             <p className="text-xs text-gray-500 text-center">Đang tạo SOP…</p>
           )}
+
+          {/* Mode toggle */}
+          <div className="mt-4 flex items-center gap-3 text-sm">
+            <span className="text-[#374151] font-medium">Generate as:</span>
+            <label className="inline-flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="radio"
+                name="mode"
+                value="clips"
+                checked={mode === "clips"}
+                onChange={() => setMode("clips")}
+              />
+              <span>Video clips</span>
+            </label>
+            <label className="inline-flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="radio"
+                name="mode"
+                value="screenshots"
+                checked={mode === "screenshots"}
+                onChange={() => setMode("screenshots")}
+              />
+              <span>Screenshots <span className="text-[#9CA3AF]">(POC)</span></span>
+            </label>
+          </div>
 
           {/* Submit */}
           <button

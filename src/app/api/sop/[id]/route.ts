@@ -8,15 +8,19 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const doc = await (await sops()).findOne({ _id: new ObjectId(id) });
   if (!doc || doc.status !== "done") return NextResponse.json({ error: "not_ready" }, { status: 404 });
 
+  const mode = doc.mode ?? "clips";
+  const sopId = doc._id.toHexString();
+
   return NextResponse.json({
-    id: doc._id.toHexString(),
+    id: sopId,
     title: doc.title,
     category: doc.category,
     createdAt: doc.createdAt,
     shareToken: doc.shareToken,
+    mode,
     pdf: {
       status: doc.pdf?.status ?? "idle",
-      url: doc.pdf?.status === "ready" ? `/api/sop/${doc._id.toHexString()}/pdf/file` : null,
+      url: doc.pdf?.status === "ready" ? `/api/sop/${sopId}/pdf/file` : null,
     },
     steps: doc.steps.map((s, i) => ({
       index: i,
@@ -24,8 +28,17 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       description: s.description,
       startTime: s.startTime,
       endTime: s.endTime,
-      clipUrl: `/api/clips/${doc._id.toHexString()}/step-${i}.mp4`,
-      posterUrl: `/api/clips/${doc._id.toHexString()}/step-${i}.jpg`,
+      clipUrl: `/api/clips/${sopId}/step-${i}.mp4`,
+      posterUrl: `/api/clips/${sopId}/step-${i}.jpg`,
+      screenshots: (s.screenshots ?? []).map(ss => ({
+        frameId: ss.frameId,
+        url: `/api/screenshots/${sopId}/${ss.frameId}.jpg`,
+        t: ss.t,
+        order: ss.order,
+        description: ss.description,
+        highlight: ss.highlight,
+      })),
+      screenshotsError: s.screenshotsError,
     })),
   });
 }

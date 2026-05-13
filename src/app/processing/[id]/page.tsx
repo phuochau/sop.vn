@@ -10,11 +10,14 @@ import { config } from "@/config";
 
 type Status =
   | "uploading" | "ingesting" | "transcribing" | "normalizing" | "analyzing"
-  | "generating" | "clipping" | "done" | "failed";
+  | "generating" | "clipping" | "building-pool" | "assigning" | "uploading-screenshots"
+  | "done" | "failed";
 
 const STATUS_STEP_INDEX: Record<Status, number> = {
   uploading: 0, ingesting: 0, transcribing: 0, normalizing: 1, analyzing: 2,
-  generating: 3, clipping: 4, done: 5, failed: 0,
+  generating: 3, clipping: 4,
+  "building-pool": 4, "assigning": 4, "uploading-screenshots": 4,
+  done: 5, failed: 0,
 };
 
 const STEPS = [
@@ -34,6 +37,7 @@ const ERROR_MSG: Record<string, string> = {
   transcription_failed: "Lỗi nhận dạng giọng nói. Vui lòng thử lại.",
   generation_failed: "Lỗi tạo SOP. Vui lòng thử lại.",
   clipping_failed: "Lỗi cắt video. Vui lòng thử lại.",
+  screenshot_pool_failed: "Lỗi tạo ảnh chụp màn hình. Vui lòng thử lại.",
   loom_ingest_failed: "Không thể tải video Loom. Hãy đảm bảo liên kết đã đặt 'Anyone with the link can view' rồi thử lại.",
   unknown: "Đã xảy ra lỗi. Vui lòng thử lại.",
 };

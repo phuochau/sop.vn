@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { Calendar, Clock3, List, Pencil, Info, Plus, ThumbsUp, ThumbsDown } from "lucide-react";
 import { StepCard } from "@/components/StepCard";
+import { StepCardScreenshots, type ScreenshotItem } from "@/components/StepCardScreenshots";
 import { HeroVideo } from "@/components/HeroVideo";
 import { ShareButton } from "@/components/ShareButton";
 import { ExportPdfButton } from "@/components/ExportPdfButton";
@@ -17,6 +18,8 @@ type Step = {
   endTime?: number;
   clipUrl: string;
   posterUrl: string;
+  screenshots: ScreenshotItem[];
+  screenshotsError?: string;
 };
 type Sop = {
   id: string;
@@ -24,6 +27,7 @@ type Sop = {
   category: string;
   createdAt: string;
   shareToken: string;
+  mode: "clips" | "screenshots";
   pdf: { status: string; url: string | null };
   steps: Step[];
 };
@@ -92,7 +96,9 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
           <div className="flex flex-wrap items-center gap-2 pt-2">
             <ShareButton token={sop.shareToken} variant="outline" />
             <ShareButton token={sop.shareToken} variant="primary" />
-            <ExportPdfButton sopId={sop.id} initial={sop.pdf} />
+            {sop.mode !== "screenshots" && (
+              <ExportPdfButton sopId={sop.id} initial={sop.pdf} />
+            )}
             <button className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-4 py-2.5 text-[13px] font-medium text-[#0A0A0A] hover:bg-gray-50 transition">
               <Pencil className="w-3.5 h-3.5" strokeWidth={2} />
               Chỉnh sửa
@@ -114,7 +120,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
           {/* Main column */}
           <div className="min-w-0 space-y-5">
             {/* Privacy note */}
-            {sop.steps.length > 0 && (
+            {sop.mode !== "screenshots" && sop.steps.length > 0 && (
               <HeroVideo
                 sopId={sop.id}
                 posterUrl={sop.steps[0].posterUrl}
@@ -129,7 +135,18 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
               </p>
             </div>
 
-            {sop.steps.map((s) => <StepCard key={s.index} {...s} />)}
+            {sop.mode === "screenshots"
+              ? sop.steps.map((s) => (
+                  <StepCardScreenshots
+                    key={s.index}
+                    index={s.index}
+                    title={s.title}
+                    description={s.description}
+                    screenshots={s.screenshots}
+                    screenshotsError={s.screenshotsError}
+                  />
+                ))
+              : sop.steps.map((s) => <StepCard key={s.index} {...s} />)}
 
             {/* Feedback card */}
             <div className="rounded-[20px] border border-gray-200 bg-white px-6 py-6 flex flex-col md:flex-row items-center justify-between gap-4">
