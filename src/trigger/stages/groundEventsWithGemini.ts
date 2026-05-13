@@ -23,7 +23,7 @@ export type GroundedEvent = {
   caption: string | null;
 };
 
-type StepInfo = { stepIndex: number; title: string; narration: string };
+type StepInfo = { stepIndex: number; title: string };
 
 export async function groundOneWithLLM(e: RawEvent, step: StepInfo, language: string): Promise<GroundedEvent | null> {
   try {
@@ -54,10 +54,18 @@ export async function groundOneWithLLM(e: RawEvent, step: StepInfo, language: st
       const diffInCrop = diffBboxInCrop(e.bbox, crop, W, H);
       const userText = [
         `Step title: ${step.title}`,
-        `Step narration: ${step.narration}`,
         `Event kind hint: ${e.kindHint}`,
         `Diff bbox in crop (x, y, w, h): ${diffInCrop.x.toFixed(3)}, ${diffInCrop.y.toFixed(3)}, ${diffInCrop.w.toFixed(3)}, ${diffInCrop.h.toFixed(3)}`,
       ].join("\n");
+
+      logger.info("ground.event.start", {
+        stepIndex: step.stepIndex,
+        time: e.time,
+        kindHint: e.kindHint,
+        diffBbox: e.bbox,
+        frameSize: { W, H },
+        crop,
+      });
 
       const result = await llmJsonVision({
         model: config.ai.visionModel,
@@ -71,7 +79,18 @@ export async function groundOneWithLLM(e: RawEvent, step: StepInfo, language: st
 
       const fullBbox = cropBboxToFullFrame(result.bbox, crop, W, H);
       const paddedBbox = padBbox(fullBbox, W, H, config.screenshots.ground.bboxPadPx);
-      const displayFramePath = result.kind === "input" ? e.afterFramePath : e.beforeFramePath;
+      const displayFramePath = result.displayFrame === "after" ? e.afterFramePath : e.beforeFramePath;
+
+      logger.info("ground.event.done", {
+        stepIndex: step.stepIndex,
+        time: e.time,
+        kindHint: e.kindHint,
+        finalKind: result.kind,
+        displayFrame: result.displayFrame,
+        bbox: paddedBbox,
+        caption: result.caption,
+      });
+
       return {
         time: e.time,
         bbox: paddedBbox,
@@ -83,15 +102,23 @@ export async function groundOneWithLLM(e: RawEvent, step: StepInfo, language: st
       await fs.promises.rm(tmpDir, { recursive: true, force: true });
     }
   } catch (err) {
-    logger.warn("groundOneWithLLM failed", {
+    logger.warn("ground.event.failed", {
+      stepIndex: step.stepIndex,
       time: e.time,
+      kindHint: e.kindHint,
       error: err instanceof Error ? err.message : String(err),
     });
     return null;
   }
 }
 
-function fallbackEvent(e: RawEvent): GroundedEvent {
+function fallbackEvent(e: RawEvent, stepIndex: number): GroundedEvent {
+  logger.warn("ground.event.fallback", {
+    stepIndex,
+    time: e.time,
+    kindHint: e.kindHint,
+    bbox: e.bbox,
+  });
   return {
     time: e.time,
     bbox: e.bbox,
@@ -117,7 +144,7 @@ async function runWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T,
 
 export async function runGroundEventsWithGemini(args: {
   byStep: Map<number, RawEvent[]>;
-  steps: Array<{ stepIndex: number; title: string; narration: string }>;
+  steps: Array<{ stepIndex: number; title: string }>;
   language: string;
   groundOne?: (e: RawEvent, step: StepInfo, language: string) => Promise<GroundedEvent | null>;
   concurrency?: number;
@@ -126,17 +153,41 @@ export async function runGroundEventsWithGemini(args: {
   const limit = args.concurrency ?? config.screenshots.ground.perStepConcurrency;
   const out = new Map<number, GroundedEvent[]>();
 
+  let totalEvents = 0;
+  let totalFallbacks = 0;
+
   for (const step of args.steps) {
     const events = args.byStep.get(step.stepIndex) ?? [];
     if (events.length === 0) {
       out.set(step.stepIndex, []);
+      logger.info("ground.step.summary", { stepIndex: step.stepIndex, total: 0, fallbacks: 0 });
       continue;
     }
+    let stepFallbacks = 0;
     const results = await runWithConcurrency(events, limit, async (e) => {
       const grounded = await groundOne(e, step, args.language);
-      return grounded ?? fallbackEvent(e);
+      if (grounded === null) {
+        stepFallbacks++;
+        return fallbackEvent(e, step.stepIndex);
+      }
+      return grounded;
     });
     out.set(step.stepIndex, results);
+    totalEvents += events.length;
+    totalFallbacks += stepFallbacks;
+    logger.info("ground.step.summary", {
+      stepIndex: step.stepIndex,
+      total: events.length,
+      fallbacks: stepFallbacks,
+    });
   }
+
+  logger.info("ground.pipeline.summary", {
+    steps: args.steps.length,
+    totalEvents,
+    totalFallbacks,
+    language: args.language,
+  });
+
   return out;
 }

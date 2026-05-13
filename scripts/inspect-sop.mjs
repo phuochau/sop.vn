@@ -1,0 +1,26 @@
+import { MongoClient, ObjectId } from "mongodb";
+import "dotenv/config";
+const c = new MongoClient(process.env.MONGODB_URI);
+await c.connect();
+const db = c.db();
+const sop = await db.collection("sops").findOne({ _id: new ObjectId("6a04abd616f65270628d088b") });
+if (!sop) { console.log("NOT FOUND"); process.exit(1); }
+console.log("title:", sop.title);
+console.log("status:", sop.status, "lang:", sop.language, "default:", sop.defaultLanguage);
+console.log("steps:", sop.steps?.length);
+const all = [];
+sop.steps?.forEach((s, i) => {
+  (s.screenshots ?? []).forEach(ss => all.push({ stepIndex: i, stepTitle: s.title, ...ss }));
+});
+const matches = all.filter(s => /compan/i.test(s.description ?? ""));
+console.log("matches with 'compan':", matches.length);
+for (const m of matches) console.log(JSON.stringify(m, null, 2));
+console.log("\n--- step 0..5 all screenshots ---");
+for (let i = 0; i < Math.min(6, sop.steps?.length ?? 0); i++) {
+  const s = sop.steps[i];
+  console.log(`Step ${i}: ${s.title}  [t=${s.startTime?.toFixed(1)}-${s.endTime?.toFixed(1)}]`);
+  (s.screenshots ?? []).forEach((ss, j) => {
+    console.log(`  #${j} t=${ss.t?.toFixed(2)} order=${ss.order} bbox=${JSON.stringify(ss.highlight?.bbox)} desc="${ss.description ?? ""}"`);
+  });
+}
+await c.close();

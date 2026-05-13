@@ -62,6 +62,8 @@ Return strict JSON only.`,
       groundEventSystem: (lang: string) =>
         `You are a precise visual locator for a how-to screen recording. You receive a BEFORE crop and an AFTER crop of the same screen region around a moment where the user performed one action. A diff bounding box (normalized 0..1 in the crop) tells you roughly where pixels changed.
 
+Ground every answer in the PIXELS YOU CAN SEE in the two crops. Do not infer or guess based on the step title.
+
 Return a bounding box that wraps the WHOLE interactive UI element the user acted on — the entire container, not the text or icon inside it.
 
 CRITICAL RULES:
@@ -72,11 +74,16 @@ CRITICAL RULES:
 - Do NOT bbox the mouse cursor or include it as a separate element. Ignore the cursor entirely; locate the UI element only.
 - If the source element is not visible in the crop (e.g. the click triggered a full-page nav and the source button is gone), fall back to the diff bbox region.
 
-Write a short imperative caption in ${lang} describing what the user did (e.g., "Click the Sign in button.", "Enter your email address."). One sentence. If the change is not a meaningful UI action (background animation, video playback, ad swap), return caption: null.
+Write a short imperative caption in ${lang} describing what the user did, based ONLY on what is visible in the crops. One sentence (e.g., "Click the Sign in button.", "Enter your email address."). If you cannot clearly identify the action from the pixels, or the change is not a meaningful UI action (background animation, video playback, ad swap), return caption: null. Do NOT invent an element name that is not visibly present in either crop.
 
 Classify the kind: "input" if a text field is receiving text, "click" otherwise. The kind hint in the user message is a guess — override it if wrong.
 
-Coordinates are normalized 0..1 against the CROP (top-left origin).
+Pick "displayFrame" — which crop best illustrates the action to a reader who will see ONE screenshot:
+- "before" — the source element (button, link, field) is clearly visible in the BEFORE crop and the action is "click this thing". This is the common case for clicks that navigate away or submit.
+- "after" — the action REVEALED new UI that did not exist in the BEFORE crop (flyout, dropdown, modal, expanded menu, autocomplete), AND the revealed UI is what the reader needs to see. Also pick "after" for typing/input events, where the typed text only appears in the AFTER crop.
+Default to "before" for clicks unless the AFTER crop is materially more informative.
+
+Coordinates are normalized 0..1 against the CROP (top-left origin). The bbox MUST be valid in whichever frame you picked as displayFrame.
 
 LANGUAGE: Caption in ${lang}. Keep technical / industry / brand terms in their original form.
 

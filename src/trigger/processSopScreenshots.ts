@@ -20,7 +20,6 @@ import { runUploadScreenshots, type UploadEvent } from "./stages/uploadScreensho
 type StepInput = {
   stepIndex: number;
   title: string;
-  narration: string;
   tStart: number;
   tEnd: number;
 };
@@ -128,7 +127,6 @@ export const processSopScreenshots = task({
         const stepInputs: StepInput[] = resolved.map((rs, i) => ({
           stepIndex: i,
           title: rs.title,
-          narration: rs.description,
           tStart: rs.startTime,
           tEnd: rs.endTime,
         }));
@@ -145,7 +143,24 @@ export const processSopScreenshots = task({
           return fail(_id, "click_detect_failed");
         }
 
+        const rawCountByStep = [...eventsByStep.entries()].map(([s, evs]) => ({ stepIndex: s, count: evs.length }));
+        logger.info("pipeline.click_events", {
+          sopId: _id.toHexString(),
+          totalRaw: rawCountByStep.reduce((n, x) => n + x.count, 0),
+          byStep: rawCountByStep,
+        });
+
         const merged = runClassifyAndMergeEvents({ byStep: eventsByStep });
+        const mergedCountByStep = [...merged.entries()].map(([s, evs]) => ({
+          stepIndex: s,
+          count: evs.length,
+          inputs: evs.filter(e => e.kindHint === "input").length,
+          clicks: evs.filter(e => e.kindHint === "click").length,
+        }));
+        logger.info("pipeline.classify_merge", {
+          sopId: _id.toHexString(),
+          byStep: mergedCountByStep,
+        });
 
         const grounded = await runGroundEventsWithGemini({
           byStep: merged,

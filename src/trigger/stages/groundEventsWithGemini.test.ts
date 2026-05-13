@@ -20,7 +20,7 @@ test("groundEvents calls injected groundOne per event and returns mapped output"
   let calls = 0;
   const out = await runGroundEventsWithGemini({
     byStep: new Map([[0, [rev({ time: 1 }), rev({ time: 2 })]]]),
-    steps: [{ stepIndex: 0, title: "t", narration: "n" }],
+    steps: [{ stepIndex: 0, title: "t" }],
     language: "en",
     groundOne: async (e) => {
       calls++;
@@ -42,7 +42,7 @@ test("groundEvents calls injected groundOne per event and returns mapped output"
 test("groundEvents falls back to raw diff bbox when groundOne returns null", async () => {
   const out = await runGroundEventsWithGemini({
     byStep: new Map([[0, [rev({ bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.1 }, kindHint: "input" })]]]),
-    steps: [{ stepIndex: 0, title: "t", narration: "n" }],
+    steps: [{ stepIndex: 0, title: "t" }],
     language: "en",
     groundOne: async () => null,
   });
@@ -55,7 +55,7 @@ test("groundEvents falls back to raw diff bbox when groundOne returns null", asy
 test("groundEvents picks AFTER frame for input events on fallback", async () => {
   const out = await runGroundEventsWithGemini({
     byStep: new Map([[0, [rev({ kindHint: "input" })]]]),
-    steps: [{ stepIndex: 0, title: "t", narration: "n" }],
+    steps: [{ stepIndex: 0, title: "t" }],
     language: "en",
     groundOne: async () => null,
   });
@@ -65,7 +65,7 @@ test("groundEvents picks AFTER frame for input events on fallback", async () => 
 test("groundEvents picks BEFORE frame for click events on fallback", async () => {
   const out = await runGroundEventsWithGemini({
     byStep: new Map([[0, [rev({ kindHint: "click" })]]]),
-    steps: [{ stepIndex: 0, title: "t", narration: "n" }],
+    steps: [{ stepIndex: 0, title: "t" }],
     language: "en",
     groundOne: async () => null,
   });
@@ -78,7 +78,7 @@ test("groundEvents respects concurrency limit", async () => {
   const events = Array.from({ length: 12 }, (_, i) => rev({ time: i }));
   await runGroundEventsWithGemini({
     byStep: new Map([[0, events]]),
-    steps: [{ stepIndex: 0, title: "t", narration: "n" }],
+    steps: [{ stepIndex: 0, title: "t" }],
     language: "en",
     concurrency: 3,
     groundOne: async (e) => {
@@ -102,7 +102,7 @@ test("groundEvents preserves event order within a step", async () => {
   const events = [rev({ time: 1 }), rev({ time: 2 }), rev({ time: 3 })];
   const out = await runGroundEventsWithGemini({
     byStep: new Map([[0, events]]),
-    steps: [{ stepIndex: 0, title: "t", narration: "n" }],
+    steps: [{ stepIndex: 0, title: "t" }],
     language: "en",
     groundOne: async (e) => ({
       time: e.time,

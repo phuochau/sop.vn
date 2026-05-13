@@ -70,4 +70,5 @@ export const GroundedEventOutput = z.object({
   bbox: BBox,
   caption: z.string().nullable(),
   kind: z.enum(["click", "input"]),
+  displayFrame: z.enum(["before", "after"]),
 });
