@@ -1,5 +1,11 @@
 "use client";
+import { useState } from "react";
 import { Camera } from "lucide-react";
+import Lightbox from "yet-another-react-lightbox";
+import { Captions, Counter, Zoom } from "yet-another-react-lightbox/plugins";
+import "yet-another-react-lightbox/styles.css";
+import "yet-another-react-lightbox/plugins/captions.css";
+import "yet-another-react-lightbox/plugins/counter.css";
 
 function fmt(seconds: number) {
   const m = Math.floor(seconds / 60);
@@ -26,6 +32,14 @@ export function StepCardScreenshots({
 }) {
   const n = String(index + 1).padStart(2, "0");
   const sorted = [...screenshots].sort((a, b) => a.order - b.order);
+  const [openIndex, setOpenIndex] = useState<number>(-1);
+
+  const slides = sorted.map(s => ({
+    src: s.url,
+    alt: `${title} — ${fmt(s.t)}`,
+    title: s.description,
+    description: fmt(s.t),
+  }));
 
   return (
     <article
@@ -51,15 +65,22 @@ export function StepCardScreenshots({
 
       {sorted.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {sorted.map(s => (
+          {sorted.map((s, i) => (
             <figure key={s.frameId} className="space-y-1.5">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={s.url}
-                alt={`${title} — ${fmt(s.t)}`}
-                loading="lazy"
-                className="w-full rounded-lg border border-gray-200 object-contain bg-[#FAFAFA]"
-              />
+              <button
+                type="button"
+                onClick={() => setOpenIndex(i)}
+                className="block w-full overflow-hidden rounded-lg border border-gray-200 bg-[#FAFAFA] focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:ring-offset-2 group"
+                aria-label={`Phóng to ảnh tại ${fmt(s.t)}`}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={s.url}
+                  alt={`${title} — ${fmt(s.t)}`}
+                  loading="lazy"
+                  className="w-full object-contain transition-transform duration-200 group-hover:scale-[1.02] cursor-zoom-in"
+                />
+              </button>
               <figcaption className="space-y-1">
                 {s.description && (
                   <p className="text-[13px] text-[#0A0A0A] leading-[1.5] whitespace-pre-line">
@@ -81,6 +102,18 @@ export function StepCardScreenshots({
       ) : (
         <p className="text-[13px] text-[#6B7280] italic">No screenshots needed for this step.</p>
       )}
+
+      <Lightbox
+        open={openIndex >= 0}
+        index={openIndex >= 0 ? openIndex : 0}
+        close={() => setOpenIndex(-1)}
+        slides={slides}
+        plugins={[Captions, Counter, Zoom]}
+        captions={{ showToggle: true, descriptionTextAlign: "end" }}
+        zoom={{ maxZoomPixelRatio: 3, scrollToZoom: true }}
+        controller={{ closeOnBackdropClick: true }}
+        carousel={{ finite: slides.length <= 1 }}
+      />
     </article>
   );
 }
