@@ -47,16 +47,41 @@ For each picked frame, write a "description":
 - If the image is self-explanatory and no caption would help the reader, return null.
 - Keep descriptions concise. Match the length to the value added — one short line is usually right, but you may go longer when needed.
 
-For each picked frame, also return a "highlight":
-- If the frame shows the user clicking, tapping, or selecting a specific UI element of a web or mobile app (button, link, tab, menu item, icon), return { "kind": "click", "bbox": { x, y, w, h } } tightly bounding the target element.
-- If the frame shows the user typing into a specific text field, textarea, or search box, return { "kind": "input", "bbox": { ... } } bounding that field.
-- If the frame is not a UI interaction, or the target element is unclear, return "highlight": null.
+For each picked frame, return a "highlight" identifying the specific UI element the user is interacting with at that moment, ONLY when a cursor is visibly resting on an interactive element:
+- If the user is clicking/tapping a button, link, tab, menu item, or icon, return { "kind": "click", "bbox": { x, y, w, h } } tightly bounding that element.
+- If the user is typing in a text field, textarea, or search box, return { "kind": "input", "bbox": { ... } } bounding the field.
+- Otherwise (no cursor visible, cursor on whitespace, cursor on body text, or target element unclear), return "highlight": null.
 
-Coordinates are normalized 0..1 against the image you see in this prompt (not the original video resolution). x and y are the top-left of the rectangle.
+A separate cursor-detection step will verify your bbox against the actual cursor position in the image. If your bbox doesn't contain the detected cursor, the highlight will be discarded — so be precise, and prefer null over a guess.
 
-Be conservative: only return a bbox when the target is unambiguous. Prefer null over a guess.
+Coordinates are normalized 0..1 against the image you see in this prompt (not the original video resolution). For the bbox, x and y are the top-left.
 
 LANGUAGE: Write every description in ${lang}. Keep technical / industry / brand terms in their original form.
+
+Return strict JSON only.`,
+      clickCaptionSystem: (lang: string) =>
+        `You receive frames from a training video where the user has just performed an action (clicked, tapped, or typed). For each frame, the user message lists a bounding box (normalized 0..1, top-left origin) identifying where on screen the change occurred — the UI element the user interacted with.
+
+For each event, write a short imperative caption in ${lang} describing what the user did at that bounding box. Examples: "Click the Get started free button.", "Enter your email address.". One sentence, no more. If the change does not look like a meaningful UI action (background animation, video playback, irrelevant), return null for the caption.
+
+Also classify each event:
+- "input" if the bounding box is on a text field, textarea, or search box, and the change looks like text being entered.
+- "click" otherwise (buttons, links, tabs, dropdowns, menu items, icons).
+
+Indices in your response MUST match the indices given in the user message.
+
+LANGUAGE: Write captions in ${lang}. Keep technical / industry / brand terms in their original form — do not translate them.
+
+Return strict JSON: { "captions": [{ "index": N, "caption": "..." | null, "kind": "click" | "input" }] }.`,
+      focusedCursorSystem: () =>
+        `You are a precise visual locator. For each image, find the mouse cursor — the actual rendered pointer on the screen (arrow, pointing hand, I-beam, or custom). Report the cursor's tip point (where a click lands) as normalized 0..1 coordinates against that image.
+
+For each image, return: { "index": <bucket index>, "cursor": { "x": ..., "y": ... } | null }.
+
+Rules:
+- If you do not clearly see a cursor (hidden, off-screen, mobile/touch demo with no cursor rendered), return "cursor": null.
+- Do NOT guess. Do NOT default to a screen center or a UI element. Return null when uncertain.
+- Do NOT consider what UI element the cursor is on. Only report the cursor's pixel location.
 
 Return strict JSON only.`,
     },
@@ -83,5 +108,16 @@ Return strict JSON only.`,
     overlapBufferSeconds: 2,
     downscaleMaxEdgePx: 1280,
     jpegQuality: 85,
+    clickDetect: {
+      diffThreshold: 25,
+      minAreaFrac: 0.003,
+      maxAreaFrac: 0.20,
+      minDensity: 0.20,
+      steadinessThreshold: 0.30,
+      mergeWindowSec: 1.5,
+      mergeIouMin: 0.30,
+      maxEventsPerVideo: 60,
+      diffMaxEdge: 640,
+    },
   },
 };

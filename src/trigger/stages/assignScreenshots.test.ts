@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert";
-import { bucketFramesByStep, resolveCrossStepDedup, type StepRange, type PoolFrame, type Pick, type Highlight } from "./assignScreenshots";
+import { bucketFramesByStep, resolveCrossStepDedup, bboxContainsCursor, type StepRange, type PoolFrame, type Pick, type Highlight } from "./assignScreenshots";
 
 function pf(t: number, id: string): PoolFrame {
   return { t, poolId: id, localPath: `/tmp/${id}.jpg`, pHash: "0000000000000000" };
@@ -67,6 +67,44 @@ test("resolveCrossStepDedup preserves timestamp order within each step", () => {
   const pool: PoolFrame[] = [pf(1, "a"), pf(2, "b"), pf(3, "c")];
   const out = resolveCrossStepDedup(steps, picks, pool);
   assert.deepEqual(out.get(0), [pick("a", "first"), pick("b", "second"), pick("c", "third")]);
+});
+
+test("bboxContainsCursor accepts cursor inside bbox", () => {
+  const bbox = { x: 0.2, y: 0.3, w: 0.2, h: 0.1 };
+  assert.equal(bboxContainsCursor(bbox, { x: 0.3, y: 0.35 }), true);
+});
+
+test("bboxContainsCursor rejects cursor far outside bbox", () => {
+  const bbox = { x: 0.2, y: 0.3, w: 0.2, h: 0.1 };
+  assert.equal(bboxContainsCursor(bbox, { x: 0.8, y: 0.9 }), false);
+});
+
+test("bboxContainsCursor allows small margin around bbox", () => {
+  const bbox = { x: 0.2, y: 0.3, w: 0.2, h: 0.1 };
+  // 0.005 past the right edge → within 5% of w=0.2 = 0.01 margin
+  assert.equal(bboxContainsCursor(bbox, { x: 0.405, y: 0.35 }), true);
+});
+
+test("bboxContainsCursor rejects cursor beyond margin", () => {
+  const bbox = { x: 0.2, y: 0.3, w: 0.2, h: 0.1 };
+  // 0.05 past the right edge — well beyond 5% margin of 0.01
+  assert.equal(bboxContainsCursor(bbox, { x: 0.45, y: 0.35 }), false);
+});
+
+test("bboxContainsCursor allows margin on top edge (axis-asymmetric)", () => {
+  const bbox = { x: 0.2, y: 0.3, w: 0.2, h: 0.1 };
+  // 0.003 above the top edge → within 5% of h=0.1 = 0.005 margin (y axis margin differs from x)
+  assert.equal(bboxContainsCursor(bbox, { x: 0.3, y: 0.297 }), true);
+});
+
+test("bboxContainsCursor rejects zero-area bbox", () => {
+  const bbox = { x: 0.2, y: 0.3, w: 0, h: 0.1 };
+  assert.equal(bboxContainsCursor(bbox, { x: 0.2, y: 0.35 }), false);
+});
+
+test("bboxContainsCursor rejects negative-area bbox", () => {
+  const bbox = { x: 0.2, y: 0.3, w: -0.1, h: 0.1 };
+  assert.equal(bboxContainsCursor(bbox, { x: 0.15, y: 0.35 }), false);
 });
 
 test("resolveCrossStepDedup preserves highlight on the winning step", () => {

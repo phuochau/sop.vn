@@ -13,8 +13,14 @@ export interface RawFrame {
   poolId: string;
 }
 
+export interface DenseFrame {
+  t: number;
+  localPath: string;
+}
+
 export interface FramePool {
   frames: RawFrame[];
+  denseFrames: DenseFrame[];
   tmpDir: string;
   dispose: () => Promise<void>;
 }
@@ -117,8 +123,11 @@ export async function runBuildFramePool(args: {
     const filtered = filterFramePool(raw, args.filter);
     logger.info("frame pool: filtered", { before: raw.length, after: filtered.length });
 
+    const denseFrames: DenseFrame[] = sampled.map(s => ({ t: s.t, localPath: s.localPath }));
+
     return {
       frames: filtered,
+      denseFrames,
       tmpDir,
       dispose: () => fs.promises.rm(tmpDir, { recursive: true, force: true }),
     };

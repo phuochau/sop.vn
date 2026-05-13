@@ -12,8 +12,11 @@ import { runContext } from "./stages/context";
 import { runExtract } from "./stages/extract";
 import { resolveTimes } from "./stages/clip";
 import { runBuildFramePool } from "./stages/buildFramePool";
-import { runAssignScreenshots, type StepInput } from "./stages/assignScreenshots";
-import { runUploadScreenshots } from "./stages/uploadScreenshots";
+import { runExtractClickEvents } from "./stages/extractClickEvents";
+import { anchorClickEventsByStep } from "./stages/anchorClickEvents";
+import { runCaptionClickEvents } from "./stages/captionClickEvents";
+import { runUploadScreenshots, type UploadEvent } from "./stages/uploadScreenshots";
+import type { StepInput } from "./stages/assignScreenshots";
 
 async function setStatus(id: ObjectId, status: SopStatus, extra: Record<string, unknown> = {}) {
   await (await sops()).updateOne({ _id: id }, { $set: { status, updatedAt: new Date(), ...extra } });
@@ -107,7 +110,7 @@ export const processSopScreenshots = task({
           return fail(_id, "screenshot_pool_failed");
         }
 
-        // Stage 6: assign per step (LLM).
+        // Stage 6: detect click events and caption them.
         await setStatus(_id, "assigning");
         const stepInputs: StepInput[] = resolved.map((rs, i) => ({
           stepIndex: i,
@@ -116,24 +119,52 @@ export const processSopScreenshots = task({
           tStart: rs.startTime,
           tEnd: rs.endTime,
         }));
-        const assignment = await runAssignScreenshots({
+
+        let eventsByStep;
+        try {
+          eventsByStep = await runExtractClickEvents({
+            steps: stepInputs.map(s => ({ stepIndex: s.stepIndex, tStart: s.tStart, tEnd: s.tEnd })),
+            denseFrames: pool.denseFrames,
+            opts: config.screenshots.clickDetect,
+          });
+        } catch (e) {
+          logger.error("click detect failed", { e: String(e) });
+          return fail(_id, "click_detect_failed");
+        }
+
+        // Cursor anchoring is implemented (anchorClickEventsByStep) but currently
+        // disabled by default — the SVG-rasterized cursor templates aren't accurate
+        // enough to outscore busy-UI false positives in the BEFORE frame, so anchoring
+        // empirically degrades visual quality vs the raw diff-bbox approach.
+        // Re-enable by setting cursorThreshold low; needs real macOS cursor sprites.
+        const anchored = await anchorClickEventsByStep(eventsByStep, { cursorThreshold: 1.01 });
+
+        const captioned = await runCaptionClickEvents({
+          byStep: anchored,
           steps: stepInputs,
-          pool: pool.frames,
           language: language!,
         });
 
-        // Stage 7: upload selected frames to R2.
+        // Stage 7: upload click-event frames to R2.
         await setStatus(_id, "uploading-screenshots");
+        const uploadByStep = new Map<number, UploadEvent[]>();
+        for (const [stepIndex, evs] of captioned.entries()) {
+          uploadByStep.set(stepIndex, evs.map(e => ({
+            displayFramePath: e.displayFramePath,
+            t: e.time,
+            bbox: e.bbox,
+            kind: e.kind,
+            caption: e.caption,
+          })));
+        }
         const screenshotsByStep = await runUploadScreenshots({
           sopId: _id.toHexString(),
-          byStep: assignment.byStep,
-          pool: pool.frames,
+          byStep: uploadByStep,
         });
 
-        // Compose step docs. Clip-mode fields populated with empty placeholders.
+        // Compose step docs.
         const stepsOut: Step[] = resolved.map((rs, i) => {
           const ss = screenshotsByStep.get(i) ?? [];
-          const errMsg = assignment.errors.get(i);
           const base: Step = {
             title: rs.title,
             description: rs.description,
@@ -144,7 +175,6 @@ export const processSopScreenshots = task({
             keyframeR2Keys: [],
             screenshots: ss as Screenshot[],
           };
-          if (errMsg) base.screenshotsError = errMsg;
           return base;
         });
 

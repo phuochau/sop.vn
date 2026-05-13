@@ -26,6 +26,7 @@ export type ErrorCode =
   | "visual_context_failed" | "visual_extract_failed"
   | "frame_sampling_failed" | "video_download_failed"
   | "screenshot_pool_failed"
+  | "click_detect_failed"
   | "loom_ingest_failed"
   | "unknown";
 

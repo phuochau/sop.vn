@@ -5,7 +5,15 @@ import { logger } from "@trigger.dev/sdk/v3";
 import { putObject } from "@/lib/r2";
 import { screenshotKey } from "@/lib/utils";
 import type { Screenshot } from "@/lib/mongo";
-import type { PoolFrame, Pick } from "./assignScreenshots";
+import type { Pick } from "./assignScreenshots";
+
+export type UploadEvent = {
+  displayFramePath: string;
+  t: number;
+  bbox: { x: number; y: number; w: number; h: number };
+  kind: "click" | "input";
+  caption: string | null;
+};
 
 export function rectSvg(
   W: number,
@@ -69,40 +77,34 @@ const newFrameId = customAlphabet("abcdefghijklmnopqrstuvwxyz0123456789", 10);
 
 export async function runUploadScreenshots(args: {
   sopId: string;
-  byStep: Map<number, Pick[]>;
-  pool: PoolFrame[];
+  byStep: Map<number, UploadEvent[]>;
 }): Promise<Map<number, Screenshot[]>> {
-  const byId = new Map<string, PoolFrame>(args.pool.map(f => [f.poolId, f]));
   const out = new Map<number, Screenshot[]>();
 
-  for (const [stepIndex, picks] of args.byStep.entries()) {
+  for (const [stepIndex, events] of args.byStep.entries()) {
     const records: Screenshot[] = [];
-    for (let order = 0; order < picks.length; order++) {
-      const pick = picks[order];
-      const frame = byId.get(pick.poolId);
-      if (!frame) {
-        logger.warn("uploadScreenshots: missing pool frame", { stepIndex, poolId: pick.poolId });
-        continue;
-      }
+    for (let order = 0; order < events.length; order++) {
+      const event = events[order];
+      const highlight = { kind: event.kind, bbox: event.bbox };
       const frameId = newFrameId();
       const r2Key = screenshotKey(args.sopId, stepIndex, frameId);
-      const { buf, error: highlightError } = await buildUploadBuffer(frame.localPath, pick.highlight);
+      const { buf, error: highlightError } = await buildUploadBuffer(event.displayFramePath, highlight);
       if (highlightError) {
         logger.warn("uploadScreenshots: highlight draw failed; uploaded un-annotated frame", {
           stepIndex,
-          poolId: pick.poolId,
+          t: event.t,
           highlightError,
         });
       }
       await putObject(r2Key, buf, "image/jpeg");
-      const desc = pick.description?.trim();
+      const desc = event.caption?.trim();
       records.push({
         frameId,
         r2Key,
-        t: frame.t,
+        t: event.t,
         order,
         ...(desc ? { description: desc } : {}),
-        ...(pick.highlight && !highlightError ? { highlight: pick.highlight } : {}),
+        ...(!highlightError ? { highlight } : {}),
         ...(highlightError ? { highlightError } : {}),
       });
     }
@@ -110,3 +112,7 @@ export async function runUploadScreenshots(args: {
   }
   return out;
 }
+
+// Kept temporarily for the type re-export and legacy upload-buffer tests;
+// the new pipeline does not use `Pick`. Reference suppressor:
+export type { Pick };

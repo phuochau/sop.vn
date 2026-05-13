@@ -6,6 +6,8 @@ import { llmJsonVision } from "@/lib/openrouter";
 import { ScreenshotPicksOutput } from "@/lib/schemas";
 import { config } from "@/config";
 import { downscaleToMaxEdge } from "@/trigger/lib/perceptualHash";
+import type { Cursor } from "@/lib/schemas";
+import { validateHighlights } from "./validateHighlights";
 
 export interface PoolFrame {
   t: number;
@@ -27,6 +29,22 @@ export interface StepInput extends StepRange {
 
 export type Highlight = { kind: "click" | "input"; bbox: { x: number; y: number; w: number; h: number } };
 export type Pick = { poolId: string; description: string | null; highlight: Highlight | null };
+
+export function bboxContainsCursor(
+  bbox: Highlight["bbox"],
+  cursor: Cursor,
+  marginFrac = 0.05,
+): boolean {
+  if (bbox.w <= 0 || bbox.h <= 0) return false;
+  const mx = bbox.w * marginFrac;
+  const my = bbox.h * marginFrac;
+  return (
+    cursor.x >= bbox.x - mx &&
+    cursor.x <= bbox.x + bbox.w + mx &&
+    cursor.y >= bbox.y - my &&
+    cursor.y <= bbox.y + bbox.h + my
+  );
+}
 
 export type AssignmentResult = {
   byStep: Map<number, Pick[]>;
@@ -131,11 +149,35 @@ async function pickForStep(args: {
         valid: validPicks.length,
       });
     }
-    return validPicks.map(p => ({
+
+    const picks: Pick[] = validPicks.map(p => ({
       poolId: args.bucket[p.index].poolId,
       description: p.description,
       highlight: p.highlight,
     }));
+
+    const validationInputs = validPicks
+      .map((p, pickIndex) =>
+        p.highlight
+          ? {
+              pickIndex,
+              bucketIndex: p.index,
+              framePath: downscaledPaths[p.index],
+              timestampSec: args.bucket[p.index].t,
+            }
+          : null,
+      )
+      .filter((x): x is NonNullable<typeof x> => x !== null);
+
+    try {
+      return await validateHighlights({ picks, inputs: validationInputs, stepIndex: args.step.stepIndex });
+    } catch (e) {
+      logger.warn("highlight validation failed; dropping all highlights for step", {
+        stepIndex: args.step.stepIndex,
+        error: e instanceof Error ? e.message : String(e),
+      });
+      return picks.map(p => ({ ...p, highlight: null }));
+    }
   } finally {
     await fs.promises.rm(tmpDir, { recursive: true, force: true });
   }
