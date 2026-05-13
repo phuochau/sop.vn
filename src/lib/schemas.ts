@@ -83,3 +83,9 @@ export const CaptionsOutput = z.object({
     kind: z.enum(["click", "input"]),
   })),
 });
+
+export const GroundedEventOutput = z.object({
+  bbox: BBox,
+  caption: z.string().nullable(),
+  kind: z.enum(["click", "input"]),
+});
