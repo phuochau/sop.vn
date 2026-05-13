@@ -72,7 +72,13 @@ export const processSopScreenshots = task({
         { $set: { transcript, segments, language, inputMode, updatedAt: new Date() } },
       );
 
-      // Stage 2: normalize.
+      // The user's selected language on the upload form takes precedence over
+      // Whisper's detected language for all natural-language output (titles,
+      // step text, captions). Whisper-detected language is still used by
+      // normalize so it cleans the transcript in its source language.
+      const outputLanguage = doc.defaultLanguage ?? language!;
+
+      // Stage 2: normalize (in source language).
       await setStatus(_id, "normalizing");
       const segmentsClean = await runNormalize(segments, language!);
       await (await sops()).updateOne({ _id }, { $set: { segmentsClean, updatedAt: new Date() } });
@@ -81,14 +87,14 @@ export const processSopScreenshots = task({
       await setStatus(_id, "analyzing");
       const { category, domainSummary } = await runContext({
         cleanTranscript: segmentsClean.map(s => s.text).join(" "),
-        language: language!,
+        language: outputLanguage,
       });
       await (await sops()).updateOne({ _id }, { $set: { category, domainSummary, updatedAt: new Date() } });
 
       // Stage 4: extract step list.
       await setStatus(_id, "generating");
       let extracted;
-      try { extracted = await runExtract({ segmentsClean, category, domainSummary, language: language! }); }
+      try { extracted = await runExtract({ segmentsClean, category, domainSummary, language: outputLanguage }); }
       catch (e) { logger.error("extract failed", { e: String(e) }); return fail(_id, "generation_failed"); }
 
       const resolved = resolveTimes(segments, extracted.steps, durationSec);
@@ -144,7 +150,7 @@ export const processSopScreenshots = task({
         const grounded = await runGroundEventsWithGemini({
           byStep: merged,
           steps: stepInputs,
-          language: language!,
+          language: outputLanguage,
         });
 
         // Stage 7: upload event frames to R2.
