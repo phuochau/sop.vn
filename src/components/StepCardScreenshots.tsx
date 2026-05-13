@@ -3,9 +3,6 @@ import { useState } from "react";
 import { Camera } from "lucide-react";
 import Lightbox from "yet-another-react-lightbox";
 import { Captions, Counter, Zoom } from "yet-another-react-lightbox/plugins";
-import "yet-another-react-lightbox/styles.css";
-import "yet-another-react-lightbox/plugins/captions.css";
-import "yet-another-react-lightbox/plugins/counter.css";
 
 function fmt(seconds: number) {
   const m = Math.floor(seconds / 60);
@@ -37,8 +34,7 @@ export function StepCardScreenshots({
   const slides = sorted.map(s => ({
     src: s.url,
     alt: `${title} — ${fmt(s.t)}`,
-    title: s.description,
-    description: fmt(s.t),
+    description: s.description ? `${s.description}  ·  ${fmt(s.t)}` : fmt(s.t),
   }));
 
   return (
@@ -109,10 +105,14 @@ export function StepCardScreenshots({
         close={() => setOpenIndex(-1)}
         slides={slides}
         plugins={[Captions, Counter, Zoom]}
-        captions={{ showToggle: true, descriptionTextAlign: "end" }}
+        captions={{ descriptionTextAlign: "center", descriptionMaxLines: 3 }}
+        counter={{ container: { style: { top: 0, bottom: "unset" } } }}
         zoom={{ maxZoomPixelRatio: 3, scrollToZoom: true }}
         controller={{ closeOnBackdropClick: true }}
         carousel={{ finite: slides.length <= 1 }}
+        styles={{
+          root: { "--yarl__color_backdrop": "rgba(0, 0, 0, 0.92)", zIndex: 9999 },
+        }}
       />
     </article>
   );

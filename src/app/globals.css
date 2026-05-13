@@ -2,6 +2,37 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
+/* Lightbox styles loaded outside Tailwind's layer cascade so caption
+   container/title/description rules win over preflight resets. */
+@import "yet-another-react-lightbox/styles.css" layer(lightbox);
+@import "yet-another-react-lightbox/plugins/captions.css" layer(lightbox);
+@import "yet-another-react-lightbox/plugins/counter.css" layer(lightbox);
+
+@layer lightbox {
+  /* Tailwind preflight zeroes padding on every element; restore caption
+     container padding and a stronger background that reads cleanly over
+     the dark backdrop. */
+  .yarl__slide_captions_container {
+    padding: 16px 24px !important;
+    background: rgba(0, 0, 0, 0.78) !important;
+  }
+  .yarl__slide_description {
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  .yarl__counter {
+    padding: 12px 16px !important;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.85);
+  }
+  /* Hide the Next.js dev tools floating button while the lightbox is
+     open — its z-index sits above the portal otherwise. */
+  body:has(.yarl__portal[aria-hidden="false"]) [data-nextjs-toast],
+  body:has(.yarl__portal[aria-hidden="false"]) [data-nextjs-dev-tools-button] {
+    display: none !important;
+  }
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
