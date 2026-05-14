@@ -1066,6 +1066,56 @@ test("validateAndFilter keeps sub-step when ids become empty but timeWindow is s
   assert.deepEqual(out.subSteps[0].narrationSegmentIds, []);
 });
 
+test("validateAndFilter emits pipeline.plan.low_confidence_dropped for low-confidence sub-steps", () => {
+  const events: Array<{ event: string; attrs: Record<string, unknown> }> = [];
+  validateAndFilter(
+    {
+      subSteps: [
+        { intent: "drop me", verb: "click", narrationSegmentIds: [0], timeWindow: null, visualConfidence: "low" },
+        { intent: "keep me", verb: "click", narrationSegmentIds: [0], timeWindow: null, visualConfidence: "high" },
+      ],
+    },
+    new Set([0]),
+    { stepIndex: 1, log: (event, attrs) => events.push({ event, attrs }) },
+  );
+  const drops = events.filter(e => e.event === "pipeline.plan.low_confidence_dropped");
+  assert.equal(drops.length, 1);
+  assert.equal(drops[0].attrs.intent, "drop me");
+  assert.equal(drops[0].attrs.stepIndex, 1);
+});
+
+test("validateAndFilter emits pipeline.plan.filtered_invalid_ids when ids are partially filtered", () => {
+  const events: Array<{ event: string; attrs: Record<string, unknown> }> = [];
+  validateAndFilter(
+    {
+      subSteps: [
+        { intent: "ok", verb: "click", narrationSegmentIds: [0, 99, 1], timeWindow: null, visualConfidence: "high" },
+      ],
+    },
+    new Set([0, 1]),
+    { stepIndex: 2, log: (event, attrs) => events.push({ event, attrs }) },
+  );
+  const filtered = events.filter(e => e.event === "pipeline.plan.filtered_invalid_ids");
+  assert.equal(filtered.length, 1);
+  assert.deepEqual(filtered[0].attrs.droppedIds, [99]);
+});
+
+test("validateAndFilter emits pipeline.plan.no_temporal_anchor when sub-step is dropped for that reason", () => {
+  const events: Array<{ event: string; attrs: Record<string, unknown> }> = [];
+  validateAndFilter(
+    {
+      subSteps: [
+        { intent: "bad", verb: "click", narrationSegmentIds: [99], timeWindow: null, visualConfidence: "high" },
+      ],
+    },
+    new Set([0, 1]),
+    { stepIndex: 0, log: (event, attrs) => events.push({ event, attrs }) },
+  );
+  const drops = events.filter(e => e.event === "pipeline.plan.no_temporal_anchor");
+  assert.equal(drops.length, 1);
+  assert.equal(drops[0].attrs.intent, "bad");
+});
+
 test("runPlanStep retries once when planner returns 0 sub-steps and narration is non-empty", async () => {
   let calls = 0;
   const planner: PlannerFn = async () => {
@@ -2367,7 +2417,7 @@ test("traceEnabled is false when SOP_PIPELINE_DEBUG === 'false' or other strings
   }
 });
 
-test("makeTrace returns a well-formed doc shape", () => {
+test("makeTrace returns a well-formed doc shape for a happy-path entry", () => {
   const doc = makeTrace({
     sopId: "abc",
     stepIndex: 2,
@@ -2379,11 +2429,49 @@ test("makeTrace returns a well-formed doc shape", () => {
     verifyReasoning: "matches",
     highlightOutcome: "yes",
     finalActionRecorded: true,
+    droppedAt: "none",
   });
   assert.equal(doc.sopId, "abc");
   assert.equal(doc.stepIndex, 2);
   assert.equal(doc.pickedLetter, "B");
+  assert.equal(doc.droppedAt, "none");
   assert.ok(doc.createdAt instanceof Date);
+});
+
+test("makeTrace supports drop-at-pick entries (verify/highlight skipped)", () => {
+  const doc = makeTrace({
+    sopId: "abc",
+    stepIndex: 2,
+    intent: "Click something",
+    pickedLetter: null,
+    runnerUpLetter: null,
+    pickerReasoning: "no candidate matches",
+    verifyMatch: "skipped",
+    verifyReasoning: "",
+    highlightOutcome: "skipped",
+    finalActionRecorded: false,
+    droppedAt: "pick",
+  });
+  assert.equal(doc.droppedAt, "pick");
+  assert.equal(doc.finalActionRecorded, false);
+});
+
+test("makeTrace supports drop-at-verify entries (highlight skipped)", () => {
+  const doc = makeTrace({
+    sopId: "abc",
+    stepIndex: 2,
+    intent: "Click something",
+    pickedLetter: "A",
+    runnerUpLetter: null,
+    pickerReasoning: "A looked right",
+    verifyMatch: "no",
+    verifyReasoning: "wrong screen",
+    highlightOutcome: "skipped",
+    finalActionRecorded: false,
+    droppedAt: "verify",
+  });
+  assert.equal(doc.droppedAt, "verify");
+  assert.equal(doc.verifyMatch, "no");
 });
 ```
 
@@ -2402,18 +2490,26 @@ import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongo";
 import { logger } from "@trigger.dev/sdk/v3";
 
+export type GateOutcome = "skipped" | "no_match" | "yes" | "partially" | "no";
+
 export type PipelineTraceDoc = {
   _id: ObjectId;
   sopId: string;
   stepIndex: number;
   intent: string;
+  // Pick gate
   pickedLetter: string | null;
   runnerUpLetter: string | null;
   pickerReasoning: string;
-  verifyMatch: "yes" | "partially" | "no";
+  // Verify gate (null/"skipped" when not reached because pick was dropped)
+  verifyMatch: GateOutcome;
   verifyReasoning: string;
-  highlightOutcome: "yes" | "no";
+  // Highlight gate (null/"skipped" when not reached)
+  highlightOutcome: "yes" | "no" | "skipped";
+  // True iff a final Action record was produced for this sub-step.
   finalActionRecorded: boolean;
+  // Where the chain ended for this sub-step. Useful for triage queries.
+  droppedAt: "none" | "pick" | "verify" | "highlight";
   createdAt: Date;
 };
 
@@ -2452,7 +2548,55 @@ Expected: 4/4 tests PASS.
 
 - [ ] **Step 11.5.5: Wire into Task 13 orchestration**
 
-This step ADDS to Task 13's wiring (executed as part of Task 13, not separately). In `processSopScreenshots.ts`, inside the per-sub-step loop **right before the `actions.push(...)`** call (and right after the `runLocateHighlight` call), insert:
+This step ADDS to Task 13's wiring (executed as part of Task 13, not separately). Three insertion sites are needed inside the per-sub-step loop. To keep the wiring tractable, persist **on every drop AND on the happy path** — exactly one trace doc per processed sub-step. Insert:
+
+**1. After `if (pick.picked === null) continue;` — before the `continue` fires.** Replace that line with:
+
+```ts
+            if (pick.picked === null) {
+              if (traceEnabled()) {
+                await persistTrace(makeTrace({
+                  sopId: _id.toHexString(),
+                  stepIndex: step.stepIndex,
+                  intent: subStep.intent,
+                  pickedLetter: null,
+                  runnerUpLetter: pick.runnerUp,
+                  pickerReasoning: pick.reasoning,
+                  verifyMatch: "skipped",
+                  verifyReasoning: "",
+                  highlightOutcome: "skipped",
+                  finalActionRecorded: false,
+                  droppedAt: "pick",
+                }));
+              }
+              continue;
+            }
+```
+
+**2. After `if (finalFramePath === null) continue;` — before the `continue` fires.** Replace that line with:
+
+```ts
+            if (finalFramePath === null) {
+              if (traceEnabled()) {
+                await persistTrace(makeTrace({
+                  sopId: _id.toHexString(),
+                  stepIndex: step.stepIndex,
+                  intent: subStep.intent,
+                  pickedLetter: pick.picked,
+                  runnerUpLetter: pick.runnerUp,
+                  pickerReasoning: pick.reasoning,
+                  verifyMatch: verify.match,
+                  verifyReasoning: verify.reasoning,
+                  highlightOutcome: "skipped",
+                  finalActionRecorded: false,
+                  droppedAt: "verify",
+                }));
+              }
+              continue;
+            }
+```
+
+**3. Right before the `actions.push(...)`** call (after `runLocateHighlight` returned), insert:
 
 ```ts
             if (traceEnabled()) {
@@ -2467,11 +2611,10 @@ This step ADDS to Task 13's wiring (executed as part of Task 13, not separately)
                 verifyReasoning: verify.reasoning,
                 highlightOutcome: highlight.highlight,
                 finalActionRecorded: true,
+                droppedAt: "none",
               }));
             }
 ```
-
-Also persist drops: insert one near each `continue` (after pick null, after verify no) with `finalActionRecorded: false` and appropriate placeholder fields. To keep Task 13 wiring tractable, structure it as a single accumulator that emits at every gate.
 
 Add the import to Task 13's import block (alongside the others):
 
