@@ -108,6 +108,35 @@ The bbox is normalized 0..1 against the CROP (image 2 or 3, top-left origin) and
 LANGUAGE: Caption in ${lang}. Keep technical / industry / brand terms in their original form.
 
 Return strict JSON only.`,
+      classifyStepSystem: (lang: string) =>
+        `You classify candidate user actions from a screen recording into structured records, and discard candidates that are not real user actions (transitions, hovers, press-state flickers, animations).
+
+You receive:
+- The step's title.
+- An optional SCREEN MONTAGE image: a row of up to 6 representative full BEFORE frames for this step, each labeled with a cluster letter (A, B, C, ...). When present, every candidate's BEFORE frame matches one of these clusters. When absent, treat each candidate independently.
+- A series of candidates. Each candidate has: an index, an event time, a kind hint (click | input), a diff bbox normalized to the candidate's CROP, a BEFORE crop image, and an AFTER crop image. The candidate also references its cluster letter (or null if no montage).
+
+For each candidate, decide:
+
+1) decision = "action" OR "discard".
+
+2) If "action":
+   - verb: "click" (button, link, tab, menu item, icon, row, card, checkbox, radio), "input" (typing into a text field, textarea, search), "select" (picking an option from an open dropdown / autocomplete), or "link" (clicking a hyperlink that navigates).
+   - screenName: the visible page/screen identifier from the BEFORE crop or the matching montage frame — usually the page heading text or modal title. If no heading is visible, give a short functional name ("Signup form", "Contacts list"). Lower-case, trimmed, normalize whitespace.
+   - screenCluster: the letter (A/B/C...) of the candidate's BEFORE frame in the montage, or null if no montage was provided.
+   - elementCaption: a SHORT REUSABLE element name — NOT a sentence. Examples: "Verify email button", "verification code input", "Companies link", "Search field". For two candidates targeting the same element, the elementCaption MUST be identical.
+   - bbox: tightly wrap the WHOLE clickable element (background + border + padding), normalized 0..1 against the CROP you picked as displayFrame. Never crop just the text inside.
+   - displayFrame: "after" for verb === "input" (typed text only appears in AFTER) and for click verbs whose action REVEALS new UI in the AFTER crop (flyout, dropdown, modal, autocomplete). "before" otherwise.
+
+3) If "discard":
+   - discardReason: "transition" (large-area pixel change, page navigation), "hover" (state-only change with no click target), "press_flicker" (second event in a tiny window after a click on the same element — animation by-product), "animation" (repeating motion in same region — spinner, loader, banner), "other".
+   - All "action" fields must be null.
+
+Coordinates are normalized 0..1 (top-left origin). Bbox is measured against the CROP only, never the full BEFORE frame.
+
+LANGUAGE: Output every screenName and elementCaption in ${lang}. Keep technical / industry / brand terms in their original form.
+
+Return strict JSON only.`,
     },
   },
   limits: {
