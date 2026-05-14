@@ -881,7 +881,15 @@ const VIEW_CAPTION: Record<string, string> = {
 };
 
 function viewCaption(lang: string): string {
-  return VIEW_CAPTION[lang] ?? VIEW_CAPTION.en;
+  const c = VIEW_CAPTION[lang];
+  if (c) return c;
+  // Unknown language — fall back to English. Caller may want to log this; we
+  // don't pull logger in here to keep the module pure.
+  return VIEW_CAPTION.en;
+}
+
+export function hasLocalizedViewCaption(lang: string): boolean {
+  return VIEW_CAPTION[lang] !== undefined;
 }
 
 /**
@@ -1197,20 +1205,31 @@ async function defaultPlanner(args: {
 export function validateAndFilter(
   plan: z.infer<typeof StepPlan>,
   validIds: Set<number>,
+  ctx: { stepIndex?: number; log?: (event: string, attrs: Record<string, unknown>) => void } = {},
 ): z.infer<typeof StepPlan> {
-  const out = plan.subSteps
-    .filter(s => {
-      if (s.visualConfidence === "low") return false;
-      return true;
-    })
-    .map(s => {
-      const filtered = s.narrationSegmentIds.filter(id => validIds.has(id));
-      return { ...s, narrationSegmentIds: filtered };
-    })
-    .filter(s => {
-      if (s.narrationSegmentIds.length === 0 && s.timeWindow === null) return false;
-      return true;
-    });
+  const log = ctx.log ?? ((_event, _attrs) => {});
+  const stepIndex = ctx.stepIndex;
+  const out: z.infer<typeof StepPlan>["subSteps"] = [];
+  for (const s of plan.subSteps) {
+    if (s.visualConfidence === "low") {
+      log("pipeline.plan.low_confidence_dropped", { stepIndex, intent: s.intent });
+      continue;
+    }
+    const filteredIds = s.narrationSegmentIds.filter(id => validIds.has(id));
+    if (filteredIds.length !== s.narrationSegmentIds.length) {
+      log("pipeline.plan.filtered_invalid_ids", {
+        stepIndex,
+        intent: s.intent,
+        droppedIds: s.narrationSegmentIds.filter(id => !validIds.has(id)),
+      });
+    }
+    const next = { ...s, narrationSegmentIds: filteredIds };
+    if (next.narrationSegmentIds.length === 0 && next.timeWindow === null) {
+      log("pipeline.plan.no_temporal_anchor", { stepIndex, intent: next.intent });
+      continue;
+    }
+    out.push(next);
+  }
   return { subSteps: out };
 }
 
@@ -1230,7 +1249,8 @@ export async function runPlanStep(args: PlanStepArgs): Promise<z.infer<typeof St
       language: args.language,
       isRepair: false,
     });
-    let plan = validateAndFilter(raw, validIds);
+    const log = (event: string, attrs: Record<string, unknown>) => logger.info(event, attrs);
+    let plan = validateAndFilter(raw, validIds, { stepIndex: args.stepIndex, log });
 
     if (plan.subSteps.length === 0 && args.narration.length > 0) {
       logger.warn("pipeline.plan.empty", { stepIndex: args.stepIndex });
@@ -2305,6 +2325,169 @@ git commit -m "feat: buildAction — pure assembler combining all four gates"
 
 ---
 
+## Task 11.5: Debug-mode pipeline trace artifact
+
+**Spec ref:** §7 — when `SOP_PIPELINE_DEBUG === "1"`, persist a per-sub-step trace doc to a new `sop_pipeline_traces` Mongo collection capturing the four-gate decision chain.
+
+**Files:**
+- Create: `src/lib/pipelineTrace.ts`
+- Create: `src/lib/pipelineTrace.test.ts`
+
+- [ ] **Step 11.5.1: Write the failing test**
+
+Create `src/lib/pipelineTrace.test.ts`:
+
+```ts
+import { test } from "node:test";
+import assert from "node:assert";
+import { traceEnabled, makeTrace } from "./pipelineTrace";
+
+test("traceEnabled is false when SOP_PIPELINE_DEBUG is unset", () => {
+  delete process.env.SOP_PIPELINE_DEBUG;
+  assert.equal(traceEnabled(), false);
+});
+
+test("traceEnabled is true when SOP_PIPELINE_DEBUG === '1'", () => {
+  process.env.SOP_PIPELINE_DEBUG = "1";
+  try {
+    assert.equal(traceEnabled(), true);
+  } finally {
+    delete process.env.SOP_PIPELINE_DEBUG;
+  }
+});
+
+test("traceEnabled is false when SOP_PIPELINE_DEBUG === 'false' or other strings", () => {
+  for (const v of ["false", "0", "yes", "no", ""]) {
+    process.env.SOP_PIPELINE_DEBUG = v;
+    try {
+      assert.equal(traceEnabled(), false, `value ${JSON.stringify(v)} should be false`);
+    } finally {
+      delete process.env.SOP_PIPELINE_DEBUG;
+    }
+  }
+});
+
+test("makeTrace returns a well-formed doc shape", () => {
+  const doc = makeTrace({
+    sopId: "abc",
+    stepIndex: 2,
+    intent: "Click Sign up.",
+    pickedLetter: "B",
+    runnerUpLetter: "A",
+    pickerReasoning: "B clearly shows the Sign up button",
+    verifyMatch: "yes",
+    verifyReasoning: "matches",
+    highlightOutcome: "yes",
+    finalActionRecorded: true,
+  });
+  assert.equal(doc.sopId, "abc");
+  assert.equal(doc.stepIndex, 2);
+  assert.equal(doc.pickedLetter, "B");
+  assert.ok(doc.createdAt instanceof Date);
+});
+```
+
+- [ ] **Step 11.5.2: Run test to verify it fails**
+
+```bash
+npx tsx --test src/lib/pipelineTrace.test.ts
+```
+
+Expected: FAIL — module does not exist.
+
+- [ ] **Step 11.5.3: Create `src/lib/pipelineTrace.ts`**
+
+```ts
+import { ObjectId } from "mongodb";
+import { getDb } from "@/lib/mongo";
+import { logger } from "@trigger.dev/sdk/v3";
+
+export type PipelineTraceDoc = {
+  _id: ObjectId;
+  sopId: string;
+  stepIndex: number;
+  intent: string;
+  pickedLetter: string | null;
+  runnerUpLetter: string | null;
+  pickerReasoning: string;
+  verifyMatch: "yes" | "partially" | "no";
+  verifyReasoning: string;
+  highlightOutcome: "yes" | "no";
+  finalActionRecorded: boolean;
+  createdAt: Date;
+};
+
+export function traceEnabled(): boolean {
+  return process.env.SOP_PIPELINE_DEBUG === "1";
+}
+
+export function makeTrace(args: Omit<PipelineTraceDoc, "_id" | "createdAt">): PipelineTraceDoc {
+  return {
+    _id: new ObjectId(),
+    createdAt: new Date(),
+    ...args,
+  };
+}
+
+export async function persistTrace(doc: PipelineTraceDoc): Promise<void> {
+  if (!traceEnabled()) return;
+  try {
+    const db = await getDb();
+    await db.collection<PipelineTraceDoc>("sop_pipeline_traces").insertOne(doc);
+  } catch (e) {
+    // Trace persistence is best-effort. Never fail the pipeline on trace error.
+    logger.warn("pipeline.trace.persist_failed", { sopId: doc.sopId, stepIndex: doc.stepIndex, error: String(e) });
+  }
+}
+```
+
+- [ ] **Step 11.5.4: Run tests + typecheck**
+
+```bash
+npx tsx --test src/lib/pipelineTrace.test.ts
+npx tsc --noEmit 2>&1 | grep -v "classifyStepWithLLM\|buildActionsForStep\|extractClickEvents\|classifyAndMergeEvents\|clickEventDetect" | tail -5
+```
+
+Expected: 4/4 tests PASS.
+
+- [ ] **Step 11.5.5: Wire into Task 13 orchestration**
+
+This step ADDS to Task 13's wiring (executed as part of Task 13, not separately). In `processSopScreenshots.ts`, inside the per-sub-step loop **right before the `actions.push(...)`** call (and right after the `runLocateHighlight` call), insert:
+
+```ts
+            if (traceEnabled()) {
+              await persistTrace(makeTrace({
+                sopId: _id.toHexString(),
+                stepIndex: step.stepIndex,
+                intent: subStep.intent,
+                pickedLetter: pick.picked,
+                runnerUpLetter: pick.runnerUp,
+                pickerReasoning: pick.reasoning,
+                verifyMatch: verify.match,
+                verifyReasoning: verify.reasoning,
+                highlightOutcome: highlight.highlight,
+                finalActionRecorded: true,
+              }));
+            }
+```
+
+Also persist drops: insert one near each `continue` (after pick null, after verify no) with `finalActionRecorded: false` and appropriate placeholder fields. To keep Task 13 wiring tractable, structure it as a single accumulator that emits at every gate.
+
+Add the import to Task 13's import block (alongside the others):
+
+```ts
+import { traceEnabled, persistTrace, makeTrace } from "@/lib/pipelineTrace";
+```
+
+- [ ] **Step 11.5.6: Commit**
+
+```bash
+git add src/lib/pipelineTrace.ts src/lib/pipelineTrace.test.ts
+git commit -m "feat: debug-mode pipeline trace artifact (SOP_PIPELINE_DEBUG=1)"
+```
+
+---
+
 ## Task 12: UI render audit
 
 **Files:**
@@ -2318,7 +2501,7 @@ grep -rn 'screenName\|elementCaption' src/components src/app 2>&1 | grep -v test
 
 - [ ] **Step 12.2: Verify the renderer reads `Screenshot.description` directly**
 
-Look at the sub-step rendering component (likely under `src/components/sop/` or `src/app/sop/`). The render should be a direct read of `screenshot.description`. If you find any recomposition logic, update it to read `description` directly and keep `screenName`/`elementCaption` for analytics only.
+The likely renderer is `src/components/StepCardScreenshots.tsx` (flat under `src/components/`, NOT under `src/components/sop/`). Read it and confirm it reads `screenshot.description` directly. If it composes from `screenName + elementCaption + verb`, replace that with a direct `description` read. The new `screenName`/`elementCaption` fields stop being written in Task 13, so old SOPs continue to render via `description` and new SOPs render via `description` as the planner's intent verbatim.
 
 - [ ] **Step 12.3: If no changes required**
 
@@ -2467,12 +2650,15 @@ export async function runUploadScreenshots(args: {
 The file currently calls the old pipeline. Replace the screenshot stages with the new chain. Read the current file first to understand the existing structure:
 
 ```bash
+sed -n '1,30p' src/trigger/processSopScreenshots.ts
 sed -n '120,200p' src/trigger/processSopScreenshots.ts
 ```
 
+The existing file already imports `config` (from `@/config`) and `logger` (from `@trigger.dev/sdk/v3`) at the top. **DO NOT remove those imports** when editing the imports block. Add the new imports alongside the old ones (or insert near other `@/trigger/...` imports).
+
 Identify the block starting around the call to `runExtractClickEvents` and ending after `runUploadScreenshots`. Replace it with the new pipeline. Concretely:
 
-Replace the imports block (around lines 14–22):
+**Remove** these imports:
 
 ```ts
 import { runExtractClickEvents } from "./stages/extractClickEvents";
@@ -2484,14 +2670,14 @@ import { buildScreenClusters } from "@/trigger/lib/screenId";
 import type { Action } from "@/lib/schemas";
 ```
 
-with:
+**Add** these imports (preserving any existing `config` and `logger` imports):
 
 ```ts
 import { runUploadScreenshots } from "./stages/uploadScreenshots";
 import { buildScreenClusters, clusterFor, selectInClusterFrame } from "@/trigger/lib/screenId";
-import { assembleStepNarration, silentStepFallback } from "@/trigger/lib/narration";
+import { assembleStepNarration, silentStepFallback, hasLocalizedViewCaption } from "@/trigger/lib/narration";
 import { runPlanStep } from "./stages/planStep";
-import { runPickFrame } from "./stages/pickFrame";
+import { runPickFrame, computeSearchWindow } from "./stages/pickFrame";
 import { runVerifyFrame } from "./stages/verifyFrame";
 import { runLocateHighlight } from "./stages/locateHighlight";
 import { buildAction } from "./stages/buildAction";
@@ -2539,10 +2725,12 @@ Replace that entire block (from `await setStatus(_id, "assigning")` through the 
 
 ```ts
         await setStatus(_id, "assigning");
+        // `resolved` (from resolveTimes) only carries times. The original segment IDs
+        // are on `extracted.steps[i]`. Pair them by index.
         const stepInputs = resolved.map((rs, i) => {
-          // Derive time bounds from the step's narration.
+          const src = extracted.steps[i];
           const narration = assembleStepNarration(
-            { startSegmentId: rs.startSegmentId ?? 0, endSegmentId: rs.endSegmentId ?? (segments.length - 1) },
+            { startSegmentId: src.startSegmentId, endSegmentId: src.endSegmentId },
             segments,
             segmentsClean,
           );
@@ -2572,6 +2760,9 @@ Replace that entire block (from `await setStatus(_id, "assigning")` through the 
 
           let plan;
           if (step.narration.length === 0) {
+            if (!hasLocalizedViewCaption(outputLanguage)) {
+              logger.warn("pipeline.silent_step.unlocalized_caption", { stepIndex: step.stepIndex, language: outputLanguage });
+            }
             plan = silentStepFallback(clusters, { stepIndex: step.stepIndex }, config.screenshots.screenId.viewMinDurationSec, outputLanguage);
           } else {
             try {
@@ -2604,19 +2795,7 @@ Replace that entire block (from `await setStatus(_id, "assigning")` through the 
             const runnerCluster = clusterFor(pick.runnerUp, shortlist);
             if (!pickedCluster) continue;
 
-            // Compute window inline (same logic as pickFrame.computeSearchWindow).
-            const window = (subStep.narrationSegmentIds.length > 0
-              ? (() => {
-                  const refs = step.narration.filter(n => subStep.narrationSegmentIds.includes(n.id));
-                  return {
-                    start: Math.min(...refs.map(n => n.start)) - 1,
-                    end: Math.max(...refs.map(n => n.end)) + 3,
-                  };
-                })()
-              : subStep.timeWindow
-                ? { start: subStep.timeWindow.start, end: subStep.timeWindow.end + 3 }
-                : { start: step.tStart, end: step.tEnd });
-
+            const window = computeSearchWindow(subStep, step.narration, step);
             const pickedFrame = selectInClusterFrame(pickedCluster, window);
             const runnerFrame = runnerCluster ? selectInClusterFrame(runnerCluster, window) : null;
 
