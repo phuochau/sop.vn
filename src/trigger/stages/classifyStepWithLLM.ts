@@ -15,7 +15,8 @@ import {
   type Bbox,
 } from "@/trigger/lib/cropEvent";
 import type { RawEvent } from "./classifyAndMergeEvents";
-import type { ScreenCluster } from "@/trigger/lib/screenId";
+import { maskedDHash, type ScreenCluster } from "@/trigger/lib/screenId";
+import { hammingDistance } from "@/trigger/lib/perceptualHash";
 
 export type ClassifiedCandidate = z.infer<typeof ClassifiedCandidateSchema>;
 
@@ -242,12 +243,43 @@ export async function classifyAndRemap(args: {
       montageImagePath: montagePath,
     });
 
+    // Cross-screen guard: if displayFrame === "after" but AFTER is on a different
+    // screen than BEFORE (action triggered a page navigation), the AFTER frame is
+    // the destination page — useless for illustrating the action. Force BEFORE.
+    const beforeHashCache = new Map<string, string>();
+    const afterHashCache = new Map<string, string>();
+    async function hashOf(p: string, cache: Map<string, string>): Promise<string> {
+      const cached = cache.get(p);
+      if (cached) return cached;
+      const h = await maskedDHash(p);
+      cache.set(p, h);
+      return h;
+    }
+
     const records: ClassifiedActionRecord[] = [];
     for (const cc of classified) {
       const cand = candidates.find(c => c.index === cc.index);
       if (!cand) {
         logger.warn("pipeline.classifier.unknown_index", { index: cc.index });
         continue;
+      }
+      let displayFrame = cc.displayFrame;
+      if (cc.decision === "action" && displayFrame === "after") {
+        const bh = await hashOf(cand.event.beforeFramePath, beforeHashCache);
+        const ah = await hashOf(cand.event.afterFramePath, afterHashCache);
+        const dist = hammingDistance(bh, ah);
+        if (dist > config.screenshots.screenId.hammingThreshold) {
+          logger.info("pipeline.classifier.displayframe_overridden", {
+            index: cc.index,
+            time: cand.time,
+            verb: cc.verb,
+            llmChoice: "after",
+            override: "before",
+            hammingDistance: dist,
+            reason: "after frame is a different screen (navigation)",
+          });
+          displayFrame = "before";
+        }
       }
       let fullBbox: Bbox | null = null;
       if (cc.decision === "action" && cc.bbox) {
@@ -256,6 +288,7 @@ export async function classifyAndRemap(args: {
       }
       records.push({
         ...cc,
+        displayFrame,
         fullFrameBbox: fullBbox,
         beforeFramePath: cand.event.beforeFramePath,
         afterFramePath: cand.event.afterFramePath,
