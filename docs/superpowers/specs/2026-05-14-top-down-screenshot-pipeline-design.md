@@ -55,11 +55,14 @@ The dense frame pool (`runBuildFramePool`) is unchanged. The pixel-diff detector
 
 Replaces today's step-extraction-then-detect flow. Combines step-level structure with sub-step planning in one stage per step.
 
-**Upstream contract & narration assembly.** `runExtract` (kept) produces steps shaped `{ title, description, startSegmentId, endSegmentId }` — no times. Time bounds must be derived. Convention applied before `planStep` is called:
+**Upstream contract & narration assembly.** `runExtract` (kept) produces steps shaped `{ title, description, startSegmentId, endSegmentId }` — no times and no index. The orchestrator in `processSopScreenshots.ts` enriches each step with a `stepIndex` (its position in the array) and `tStart` / `tEnd` (computed) before calling `planStep`. Convention applied:
 
-- `assembleStepNarration(step, segments, segmentsClean)` returns an array of `{ id, start, end, text }` by inner-joining `segments[].id` (source of `start`/`end`) with `segmentsClean[].id` (source of cleaned `text`), filtered to `[step.startSegmentId, step.endSegmentId]`.
+- `assembleStepNarration(step, segments, segmentsClean)` returns an array of `{ id, start, end, text }`:
+  - Source `start` / `end` from `SopDoc.segments[]` (always present after transcription).
+  - Source `text` from `SopDoc.segmentsClean[]` when non-null; **fall back to `segments[].text` when `segmentsClean === null`** (e.g., normalize stage hasn't completed for this doc).
+  - Filter to `[step.startSegmentId, step.endSegmentId]`.
 - The step's effective time range is `[min(narration[].start), max(narration[].end)]`, exposed as `step.tStart` / `step.tEnd` (computed, not stored).
-- Silent step (zero narration segments) is handled separately — see §1.5.
+- Silent step (zero `segments[]` matching the filter) is handled separately — see §1.5. A null `segmentsClean` alone does NOT trigger silent-step fallback because the raw `segments[]` still provides text.
 
 **Input** (one call per step):
 
@@ -165,7 +168,19 @@ Two selection contexts:
 
 **Context 1 — Cluster representative for the montage.** Used in Phase 1 and Phase 2a shortlist construction. Rule: the member whose dHash has the **smallest sum-Hamming distance to every other member** (the cluster centroid). Ties broken by earliest `t`. Intuition: the centroid frame is the most "typical" appearance of this screen, less likely to be a transient or transition.
 
-**Implementation note.** Today's `ScreenCluster.representative` field uses the member nearest the median timestamp. This task replaces that field's computation in `screenId.ts`'s `buildScreenClusters` to use the centroid rule. Existing callers (the deprecated bottom-up pipeline) are being deleted in this rework, so the behavior change is bounded to the new pipeline.
+**`ScreenCluster` shape change required.** The current `ScreenCluster.members: DensePoolFrame[]` exposes only `{ t, localPath }` per member — no per-member dHash, so the centroid rule can't be computed downstream. This task changes the shape to:
+
+```ts
+export type ScreenCluster = {
+  letter: string;
+  representative: DensePoolFrame;   // now the centroid, not the median-time member
+  members: { frame: DensePoolFrame; dHash: string }[];   // shape change
+  timeSpan: { start: number; end: number };
+  dHash: string;                    // cluster's seed hash, unchanged
+};
+```
+
+Callers of `ScreenCluster.members` must be updated. Audit before landing: `git grep -nE "cluster\.members|ScreenCluster\b"`. Today's only consumer (the bottom-up classifier in `classifyStepWithLLM.ts`) is being deleted in this rework. Any **View-card** path that today depends on `representative` (currently the median frame) will see a different frame after this change — but those code paths are all inside the bottom-up pipeline being deleted, so the change is bounded. Audit step listed under §6 rollout.
 
 **Context 2 — Frame chosen for a specific sub-step.** Used after Phase 2a returns `picked`. Rule: among the chosen cluster's members, pick the one whose timestamp falls inside the sub-step's search window (see §2). If multiple, prefer the centroid. If none (the picker selected a cluster all of whose members fall outside the sub-step's window — e.g., the cluster overlapped at the edges but its members are outside the window), fall back to the cluster's centroid.
 
@@ -173,7 +188,7 @@ Two selection contexts:
 
 **Known limitation — same screen revisited within one step.** Hubspot-style flow where the user fills Form X → navigates to Y → returns to X to click Next. dHash will cluster X-visit-1 and X-visit-2 together. The pickFrame call sees one letter for X with a timeSpan spanning the whole detour. Mitigation: Context-2 frame selection prefers a member inside the sub-step's narration-derived search window, so a sub-step whose narration falls in X-visit-2 picks a member from that revisit. The picker can still mis-attribute, but only when narration timing is wrong. Documented limitation; not blocking.
 
-**Files:** new `src/trigger/stages/pickFrame.ts` + test; new `pickFrameSystem` prompt. **Modified:** `src/trigger/lib/screenId.ts` — change representative-selection to centroid rule.
+**Files:** new `src/trigger/stages/pickFrame.ts` + test; new `pickFrameSystem` prompt. **Modified:** `src/trigger/lib/screenId.ts` — `ScreenCluster.members` shape change + centroid representative rule + `selectInClusterFrame(cluster, searchWindow)` exported utility for Context 2.
 
 ## Section 3 — Phase 2b: `verifyFrame`
 
@@ -272,6 +287,14 @@ type Action = {
 **MongoDB `Screenshot` field cleanup.** New docs carry `description`, `verb`, `highlight`. The previously-added `screenName` and `elementCaption` fields are no longer written. The Screenshot interface keeps them as optional for backward compatibility (no migration).
 
 **UI render contract verification.** The UI must read `Screenshot.description` directly — it must NOT recompose from `screenName + verb + elementCaption` at render time. Verified by grepping the renderer in `src/components/sop/` (or wherever screenshots are rendered) and asserting it reads `description`. If a recomposition path is found, the rendering code is updated in this same rework to read `description` and treat `screenName`/`elementCaption` as analytics fields only. A test in `processSopScreenshots.test.ts` asserts a Screenshot doc with no `screenName`/`elementCaption` renders correctly.
+
+**New utilities required by the wiring** (file paths used in the snippet below):
+
+- `assembleStepNarration` — `src/trigger/lib/narration.ts` (new).
+- `silentStepFallback` — `src/trigger/lib/narration.ts` (new, alongside above).
+- `runWithConcurrency` — `src/lib/concurrency.ts` (new). Generic helper `runWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]>`. The bottom-up pipeline used an in-file implementation in `classifyStepWithLLM.ts`; lifting it out makes it reusable and independently testable.
+- `clusterFor`, `selectInClusterFrame` — both in `src/trigger/lib/screenId.ts` (new exports alongside `buildScreenClusters`).
+- `buildAction` — `src/trigger/stages/buildAction.ts` (new): pure assembler that combines a step + sub-step + pick + verify + highlight + frame path into one `Action` record.
 
 **Pipeline wiring in `processSopScreenshots.ts`:**
 
@@ -396,20 +419,25 @@ Total ≈ 105–115 vision calls per video, up from ~30 today. Per-step concurre
 2. The presenter-intro section produces no actionable sub-steps. At most one `verb: "view"` card may cover the intro.
 3. Every sub-step with `verb: "view"` has no bbox. Every sub-step with `verb !== "view"` either has a bbox OR was dropped.
 4. For the verification-code → Next sequence on the *Check your email* screen, both sub-steps exist as distinct cards with correct screen identity and bboxes on the correct elements.
-5. **Sub-step stability:** the count of sub-steps within each step varies by at most ±1 across two consecutive runs. (Total step count is governed by `runExtract`, which is outside this rework; stability there is governed by the prior spec.)
+5. **Sub-step stability:** the count of sub-steps within each step varies by at most ±1 across two consecutive runs. Temperature is `0.0` in all four stages, but hosted-LLM determinism is not guaranteed at temp 0 (provider may still vary on tie-breaks). The ±1 looseness absorbs that variance; exact equality is not promised. Total step count is governed by `runExtract`, outside this rework.
 
 **Rollout strategy.** Single branch, single coherent rewrite. Land in this order:
 
 1. Add new schema types in `schemas.ts` (additive — old union still present).
 2. Add new `ErrorCode` values in `mongo.ts`.
 3. Add four new prompts in `config/index.ts`.
-4. Implement `planStep` + tests.
-5. Implement `pickFrame` + tests.
-6. Implement `verifyFrame` + tests.
-7. Implement `locateHighlight` + tests.
-8. Rewrite `processSopScreenshots.ts` to use the new chain. Rewrite `uploadScreenshots.ts` to consume the new `Action` shape.
-9. Delete obsolete stages and schema types in one commit.
-10. Smoke test against the live SOP; iterate knobs (search-window buffer, max-shortlist size, downscale resolution).
+4. Extract `runWithConcurrency` to `src/lib/concurrency.ts` + tests.
+5. Modify `src/trigger/lib/screenId.ts`: `ScreenCluster.members` shape change, centroid representative rule, new `clusterFor` / `selectInClusterFrame` exports + tests.
+6. Add `assembleStepNarration` and `silentStepFallback` in `src/trigger/lib/narration.ts` + tests.
+7. Implement `planStep` + tests.
+8. Implement `pickFrame` + tests.
+9. Implement `verifyFrame` + tests.
+10. Implement `locateHighlight` + tests.
+11. Implement `buildAction` (pure assembler) + tests.
+12. **UI render audit:** grep `src/components/sop/` for any composition of `description` from `screenName + verb + elementCaption`. Replace with reading `description` directly.
+13. Rewrite `processSopScreenshots.ts` to use the new chain. Rewrite `uploadScreenshots.ts` to consume the new `Action` shape.
+14. Delete obsolete stages and schema types in one commit. Audit `ScreenCluster.members` callers before this deletion to ensure no surviving code uses the old shape.
+15. Smoke test against the live SOP; iterate knobs (search-window buffer, max-shortlist size, downscale resolution).
 
 ## Section 7 — Debugging & triage
 
