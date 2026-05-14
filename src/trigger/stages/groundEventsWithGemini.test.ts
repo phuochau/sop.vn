@@ -39,37 +39,48 @@ test("groundEvents calls injected groundOne per event and returns mapped output"
   assert.equal(list[0].caption, "c1");
 });
 
-test("groundEvents falls back to raw diff bbox when groundOne returns null", async () => {
+test("groundEvents drops events when groundOne returns null (fallback caption is null)", async () => {
   const out = await runGroundEventsWithGemini({
     byStep: new Map([[0, [rev({ bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.1 }, kindHint: "input" })]]]),
     steps: [{ stepIndex: 0, title: "t" }],
     language: "en",
     groundOne: async () => null,
   });
-  const e = out.get(0)![0];
-  assert.deepEqual(e.bbox, { x: 0.1, y: 0.1, w: 0.2, h: 0.1 });
-  assert.equal(e.caption, null);
-  assert.equal(e.kind, "input");
+  assert.equal(out.get(0)!.length, 0);
 });
 
-test("groundEvents picks AFTER frame for input events on fallback", async () => {
+test("groundEvents drops events with null caption from groundOne", async () => {
   const out = await runGroundEventsWithGemini({
-    byStep: new Map([[0, [rev({ kindHint: "input" })]]]),
+    byStep: new Map([[0, [rev({ time: 1 }), rev({ time: 2 })]]]),
     steps: [{ stepIndex: 0, title: "t" }],
     language: "en",
-    groundOne: async () => null,
+    groundOne: async (e) => ({
+      time: e.time,
+      bbox: e.bbox,
+      displayFramePath: e.beforeFramePath,
+      kind: "click",
+      caption: e.time === 1 ? "Click foo" : null,
+    }),
   });
-  assert.equal(out.get(0)![0].displayFramePath, "/after.jpg");
+  const list = out.get(0)!;
+  assert.equal(list.length, 1);
+  assert.equal(list[0].time, 1);
 });
 
-test("groundEvents picks BEFORE frame for click events on fallback", async () => {
+test("groundEvents drops events with empty/whitespace caption", async () => {
   const out = await runGroundEventsWithGemini({
-    byStep: new Map([[0, [rev({ kindHint: "click" })]]]),
+    byStep: new Map([[0, [rev()]]]),
     steps: [{ stepIndex: 0, title: "t" }],
     language: "en",
-    groundOne: async () => null,
+    groundOne: async (e) => ({
+      time: e.time,
+      bbox: e.bbox,
+      displayFramePath: e.beforeFramePath,
+      kind: "click",
+      caption: "   ",
+    }),
   });
-  assert.equal(out.get(0)![0].displayFramePath, "/before.jpg");
+  assert.equal(out.get(0)!.length, 0);
 });
 
 test("groundEvents respects concurrency limit", async () => {
@@ -91,7 +102,7 @@ test("groundEvents respects concurrency limit", async () => {
         bbox: e.bbox,
         displayFramePath: e.beforeFramePath,
         kind: "click",
-        caption: null,
+        caption: "x",
       };
     },
   });
@@ -109,7 +120,7 @@ test("groundEvents preserves event order within a step", async () => {
       bbox: e.bbox,
       displayFramePath: e.beforeFramePath,
       kind: "click",
-      caption: null,
+      caption: "x",
     }),
   });
   const list = out.get(0)!;

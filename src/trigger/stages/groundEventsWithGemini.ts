@@ -164,7 +164,7 @@ export async function runGroundEventsWithGemini(args: {
       continue;
     }
     let stepFallbacks = 0;
-    const results = await runWithConcurrency(events, limit, async (e) => {
+    const raw = await runWithConcurrency(events, limit, async (e) => {
       const grounded = await groundOne(e, step, args.language);
       if (grounded === null) {
         stepFallbacks++;
@@ -172,12 +172,30 @@ export async function runGroundEventsWithGemini(args: {
       }
       return grounded;
     });
-    out.set(step.stepIndex, results);
+    const kept: GroundedEvent[] = [];
+    let dropped = 0;
+    for (let i = 0; i < raw.length; i++) {
+      const g = raw[i];
+      const caption = g.caption?.trim();
+      if (!caption) {
+        dropped++;
+        logger.info("ground.event.dropped", {
+          stepIndex: step.stepIndex,
+          time: g.time,
+          reason: "null_or_empty_caption",
+        });
+        continue;
+      }
+      kept.push({ ...g, caption });
+    }
+    out.set(step.stepIndex, kept);
     totalEvents += events.length;
     totalFallbacks += stepFallbacks;
     logger.info("ground.step.summary", {
       stepIndex: step.stepIndex,
       total: events.length,
+      kept: kept.length,
+      dropped,
       fallbacks: stepFallbacks,
     });
   }

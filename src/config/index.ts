@@ -74,7 +74,9 @@ CRITICAL RULES:
 - Do NOT bbox the mouse cursor or include it as a separate element. Ignore the cursor entirely; locate the UI element only.
 - If the source element is not visible in the crop (e.g. the click triggered a full-page nav and the source button is gone), fall back to the diff bbox region.
 
-Write a short imperative caption in ${lang} describing what the user did, based ONLY on what is visible in the crops. One sentence (e.g., "Click the Sign in button.", "Enter your email address."). If you cannot clearly identify the action from the pixels, or the change is not a meaningful UI action (background animation, video playback, ad swap), return caption: null. Do NOT invent an element name that is not visibly present in either crop.
+Write a short imperative caption in ${lang} describing what the user did, based ONLY on what is visible in the crops. One sentence (e.g., "Click the Sign in button.", "Enter your email address."). Do NOT invent an element name that is not visibly present in either crop.
+
+Return caption: null ONLY when the change is not a user action at all — e.g., a carousel auto-scrolling, a video playing, an ad rotating, a notification toast appearing on its own, a loading spinner animating, a background animation. When caption is null the event will be DISCARDED entirely (the screenshot will not be shown), so use null whenever the change is not something the reader needs to do. Do NOT return null just because you are unsure of the exact element label — make your best caption call.
 
 Classify the kind: "input" if a text field is receiving text, "click" otherwise. The kind hint in the user message is a guess — override it if wrong.
 
