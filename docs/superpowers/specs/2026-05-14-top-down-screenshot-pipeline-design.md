@@ -55,11 +55,17 @@ The dense frame pool (`runBuildFramePool`) is unchanged. The pixel-diff detector
 
 Replaces today's step-extraction-then-detect flow. Combines step-level structure with sub-step planning in one stage per step.
 
+**Upstream contract & narration assembly.** `runExtract` (kept) produces steps shaped `{ title, description, startSegmentId, endSegmentId }` — no times. Time bounds must be derived. Convention applied before `planStep` is called:
+
+- `assembleStepNarration(step, segments, segmentsClean)` returns an array of `{ id, start, end, text }` by inner-joining `segments[].id` (source of `start`/`end`) with `segmentsClean[].id` (source of cleaned `text`), filtered to `[step.startSegmentId, step.endSegmentId]`.
+- The step's effective time range is `[min(narration[].start), max(narration[].end)]`, exposed as `step.tStart` / `step.tEnd` (computed, not stored).
+- Silent step (zero narration segments) is handled separately — see §1.5.
+
 **Input** (one call per step):
 
 - Step title + description (from upstream `runExtract`).
-- Step's narration: cleaned transcript segments inside `[step.startSegmentId, step.endSegmentId]`, each as `{ id, start, end, text }`.
-- Step's pHash cluster montage (≤ 6 representative frames labeled A/B/C/…), from `buildScreenClusters` over `[step.startTime, step.endTime]`.
+- Step's narration assembled as above.
+- Step's pHash cluster montage (≤ 6 representative frames labeled A/B/C/…), from `buildScreenClusters` over `[step.tStart, step.tEnd]`. Cluster-selection rule when >6 clusters exist: keep the 6 with the **longest in-window dwell** (defined in §3a). **Same shortlist rule used in Phase 2a — the planner and the picker see the same letters for the same step.** When ≤6, all clusters are passed.
 
 **Output schema:**
 
@@ -87,9 +93,22 @@ const StepPlan = z.object({
 **Post-call processing:**
 
 - Drop sub-steps where `visualConfidence === "low"`. Log `pipeline.plan.low_confidence_dropped { stepIndex, intent }`.
-- Drop sub-steps that reference segment IDs outside the input set. Log `pipeline.plan.invalid_segment_id`.
+- **Filter** out-of-range `narrationSegmentIds` instead of dropping the whole sub-step: keep only IDs that are in the input set. If the filtered list becomes empty AND `timeWindow` is null, drop the sub-step and log `pipeline.plan.no_temporal_anchor`. Log filtered-out IDs at warn level.
+- Drop sub-steps where `narrationSegmentIds === []` AND `timeWindow === null` (schema-valid but unfit for Phase 2 search-window derivation). Log `pipeline.plan.no_temporal_anchor`.
 
 **Determinism:** temperature `0.0`. Repair-on-drift safety net: if the planner returns 0 sub-steps for a step that has narration, re-run once with a stricter addendum; if still 0, accept and log `pipeline.plan.empty_after_repair`.
+
+## Section 1.5 — Silent-step fallback
+
+When `assembleStepNarration` returns zero segments (the step has visual activity but no transcript — silent screenshare, music-only stretch), the planner is **not** called. Instead, the runtime emits one `verb: "view"` sub-step per pHash cluster in the step whose timeSpan exceeds `viewMinDurationSec` (default 4s, reusing the existing config knob from `screenId.viewMinDurationSec`). Each fallback sub-step has:
+
+- `intent`: a localized fixed string ("Review this screen before continuing." / "Hãy xem màn hình này trước khi tiếp tục."). Same string used by today's View card.
+- `verb: "view"`.
+- `narrationSegmentIds: []`.
+- `timeWindow`: the cluster's timeSpan.
+- `visualConfidence: "high"` (the cluster's existence is the visual evidence).
+
+The pipeline continues through Phase 2 / 3 normally for these. Phase 3 will return no bbox for `verb: "view"`. This guarantees silent stretches still get screenshots, just without an action overlay.
 
 **Files:**
 
@@ -107,11 +126,12 @@ For each surviving sub-step from Phase 1, pick the single best frame to show the
 
 - `intent` and `verb`.
 - The step's pHash clusters (already computed once per step in Phase 1; reused).
-- **Search window:**
+- **Search window** (post-Phase-1 invariant: at least one of `narrationSegmentIds` or `timeWindow` is non-empty / non-null):
   - If `narrationSegmentIds` is non-empty: `[min(segment.start) - 1s, max(segment.end) + 3s]`. The +3s buffer captures the visual landing after the narration ends.
-  - Else if `timeWindow` is set: use `[timeWindow.start, timeWindow.end + 3s]`.
-  - Else: the whole step's time range (last-resort fallback).
-- **Shortlist:** pHash clusters whose `timeSpan` overlaps the search window. Cap at 6 clusters; if more overlap, keep the 6 with the longest in-window dwell. Compose into a single labeled montage image (letters A/B/C/…).
+  - Else `timeWindow` is set: use `[timeWindow.start, timeWindow.end + 3s]`.
+- **Shortlist:** pHash clusters whose `timeSpan` overlaps the search window. Cap at 6 clusters; if more overlap, keep the 6 with the longest **in-window dwell** (see §3a). Compose into a single labeled montage image (letters A/B/C/…). The letter→cluster map is the only authoritative set of valid `picked` / `runnerUp` values.
+
+**Frame chosen from cluster.** Once a cluster is picked, the runtime selects a specific dense-pool frame from that cluster's members — **not** by median timestamp. The selection rule is in §3a.
 
 **Output schema:**
 
@@ -133,18 +153,37 @@ const FramePick = z.object({
 **Post-call processing:**
 
 - `picked === null` → drop sub-step. Log `pipeline.pick.no_match { stepIndex, intent, reasoning }` at info level.
-- Map the picked letter to its cluster's representative frame (a dense-pool frame path on disk). That path is the sub-step's tentative `displayFramePath`.
+- **Membership check:** if `picked` is a string but not in the montage's letter set, treat as `null` and drop the sub-step. Log `pipeline.pick.invalid_letter`. Same check for `runnerUp` — if invalid, set to `null` (don't drop, just disables the verifier fallback).
+- **Equality check:** if `runnerUp === picked`, set `runnerUp` to `null` (no useful retry available).
+- Map the picked letter to its cluster, then select the in-cluster frame via the **§3a rule** (not raw median). That path is the sub-step's tentative `displayFramePath`.
 
-**Files:** new `src/trigger/stages/pickFrame.ts` + test; new `pickFrameSystem` prompt.
+## Section 3a — In-cluster frame selection
+
+A pHash cluster has multiple members (sampled dense-pool frames). The runtime picks a single member as the cluster's `representative` when a frame is needed for the picker's montage AND when the picker selects this cluster for a sub-step.
+
+Two selection contexts:
+
+**Context 1 — Cluster representative for the montage.** Used in Phase 1 and Phase 2a shortlist construction. Rule: the member whose dHash has the **smallest sum-Hamming distance to every other member** (the cluster centroid). Ties broken by earliest `t`. Intuition: the centroid frame is the most "typical" appearance of this screen, less likely to be a transient or transition.
+
+**Implementation note.** Today's `ScreenCluster.representative` field uses the member nearest the median timestamp. This task replaces that field's computation in `screenId.ts`'s `buildScreenClusters` to use the centroid rule. Existing callers (the deprecated bottom-up pipeline) are being deleted in this rework, so the behavior change is bounded to the new pipeline.
+
+**Context 2 — Frame chosen for a specific sub-step.** Used after Phase 2a returns `picked`. Rule: among the chosen cluster's members, pick the one whose timestamp falls inside the sub-step's search window (see §2). If multiple, prefer the centroid. If none (the picker selected a cluster all of whose members fall outside the sub-step's window — e.g., the cluster overlapped at the edges but its members are outside the window), fall back to the cluster's centroid.
+
+**In-window dwell (used for cluster ranking in §1 and §2a).** Defined as `max(0, min(cluster.timeSpan.end, window.end) - max(cluster.timeSpan.start, window.start))`. This is an approximation — the cluster's `timeSpan` is sampled-extent, not actual visible dwell, and a screen visited at t=10 + t=40 with nothing between gets a 30s timeSpan even though it wasn't continuously visible. Accepted limitation; documented under §6 "Known limitations".
+
+**Known limitation — same screen revisited within one step.** Hubspot-style flow where the user fills Form X → navigates to Y → returns to X to click Next. dHash will cluster X-visit-1 and X-visit-2 together. The pickFrame call sees one letter for X with a timeSpan spanning the whole detour. Mitigation: Context-2 frame selection prefers a member inside the sub-step's narration-derived search window, so a sub-step whose narration falls in X-visit-2 picks a member from that revisit. The picker can still mis-attribute, but only when narration timing is wrong. Documented limitation; not blocking.
+
+**Files:** new `src/trigger/stages/pickFrame.ts` + test; new `pickFrameSystem` prompt. **Modified:** `src/trigger/lib/screenId.ts` — change representative-selection to centroid rule.
 
 ## Section 3 — Phase 2b: `verifyFrame`
 
-Independent validation gate. Sends only the picked frame + the intent back to the LLM.
+Independent validation gate. Sends the picked frame + the intent back to the LLM, plus a small amount of disambiguating context.
 
 **Input** (one call per sub-step):
 
 - `intent`, `verb`.
 - The picked frame as a single full image, downscaled to max 1280px on its longest edge to control token cost.
+- The picker's `reasoning` string (one short sentence) for context — labeled in the prompt as "picker's rationale". This nudges the verifier to evaluate whether the rationale actually holds against the picked frame, rather than evaluating the frame in isolation.
 
 **Output schema:**
 
@@ -230,36 +269,53 @@ type Action = {
 
 `Action.description` is what the reader sees — no further composition in the upload adapter. This eliminates the localization-templating awkwardness of today's `composeDescription` and removes the `screenName + verb + elementCaption` reconstruction logic.
 
-**MongoDB `Screenshot` field cleanup.** New docs carry `description`, `verb`, `highlight`. The previously-added `screenName` and `elementCaption` fields are no longer written. Old SOPs still render fine (UI reads `description`).
+**MongoDB `Screenshot` field cleanup.** New docs carry `description`, `verb`, `highlight`. The previously-added `screenName` and `elementCaption` fields are no longer written. The Screenshot interface keeps them as optional for backward compatibility (no migration).
+
+**UI render contract verification.** The UI must read `Screenshot.description` directly — it must NOT recompose from `screenName + verb + elementCaption` at render time. Verified by grepping the renderer in `src/components/sop/` (or wherever screenshots are rendered) and asserting it reads `description`. If a recomposition path is found, the rendering code is updated in this same rework to read `description` and treat `screenName`/`elementCaption` as analytics fields only. A test in `processSopScreenshots.test.ts` asserts a Screenshot doc with no `screenName`/`elementCaption` renders correctly.
 
 **Pipeline wiring in `processSopScreenshots.ts`:**
 
 ```ts
-for (const step of stepInputs) {
-  const clusters = await buildScreenClusters({ /* step.timeWindow, dense pool */ });
-  const plan = await runPlanStep({ stepTitle, narration, clusters });
+// Steps run concurrently up to `config.screenshots.classify.perStepConcurrency`.
+// Sub-steps within a step run serially (each depends on the previous gate's outcome).
+await runWithConcurrency(stepInputs, perStepConcurrency, async (step) => {
+  const narration = assembleStepNarration(step, segments, segmentsClean);
+  const clusters = await buildScreenClusters({
+    denseFrames: pool.denseFrames,
+    stepStart: step.tStart,
+    stepEnd: step.tEnd,
+    samplingSec: config.screenshots.screenId.samplingSec,
+    hammingThreshold: config.screenshots.screenId.hammingThreshold,
+  });
+
+  const plan = narration.length === 0
+    ? silentStepFallback(clusters, step)
+    : await runPlanStep({ stepTitle: step.title, narration, clusters });
 
   const actions: Action[] = [];
   for (const subStep of plan.subSteps) {
     if (subStep.visualConfidence === "low") continue;
 
-    const pick = await runPickFrame({ subStep, clusters, denseFrames });
+    const pick = await runPickFrame({ subStep, clusters, step });
     if (pick.picked === null) continue;
 
-    let frame = clusterFor(pick.picked).representative;
-    let verify = await runVerifyFrame({ subStep, frame });
+    const pickedFramePath = selectInClusterFrame(clusterFor(pick.picked, clusters), subStep);
+    let verify = await runVerifyFrame({ subStep, framePath: pickedFramePath, pickerReasoning: pick.reasoning });
+    let finalFramePath = pickedFramePath;
     if (verify.match === "no" && pick.runnerUp) {
-      frame = clusterFor(pick.runnerUp).representative;
-      verify = await runVerifyFrame({ subStep, frame });
+      finalFramePath = selectInClusterFrame(clusterFor(pick.runnerUp, clusters), subStep);
+      verify = await runVerifyFrame({ subStep, framePath: finalFramePath, pickerReasoning: pick.reasoning });
     }
     if (verify.match === "no") continue;
 
-    const hi = await runLocateHighlight({ subStep, frame });
-    actions.push(buildAction(step, subStep, pick, verify, hi, frame));
+    const hi = await runLocateHighlight({ subStep, framePath: finalFramePath });
+    actions.push(buildAction({ step, subStep, pick, verify, hi, framePath: finalFramePath }));
   }
   actionsByStep.set(step.stepIndex, actions);
-}
+});
 ```
+
+**Parallelism boundary** is explicit: steps run concurrently up to the existing config knob; sub-steps within a step run serially because each gate depends on the previous. For an 8-step / 4-sub-step video at concurrency 5, wall-clock is roughly `ceil(8/5) × 4 × LLM_round_trip_p50 ≈ 2 × 4 × 8s ≈ 64s` of LLM time per slot, plus retries. Faster than the prior estimate when steps are short; the §6 estimate assumed worst-case sub-step counts.
 
 **Stages deleted:**
 
@@ -282,7 +338,7 @@ for (const step of stepInputs) {
 - Add: `SubStepPlan`, `StepPlan`, `FramePick`, `FrameVerification`, `HighlightDecision`, new `Action` type.
 - Remove: `ClassifiedCandidate`, `StepClassification`, `ElementAction`, `ViewAction`, old `Action` union.
 
-**`ErrorCode` additions (`src/lib/mongo.ts`):** `"plan_failed"`, `"frame_pick_failed"`, `"verify_failed"`, `"highlight_failed"`. Keep `"classify_failed"` in the union for backward-compat with old failed docs.
+**`ErrorCode` additions (`src/lib/mongo.ts`):** `"plan_failed"`, `"frame_pick_failed"`, `"verify_failed"`, `"highlight_failed"`. Keep `"classify_failed"` in the union for backward-compat with old failed docs — newly written failed SOPs in this pipeline never use it. Document in code comment which codes are produced by which pipeline (old vs. new) for dashboard queries.
 
 **Failure-handling policy change.** Today, a single step's classifier failure aborts the whole SOP (`classify_failed`). New policy: `plan_failed` still aborts (the step has no structure). But Phase 2 / Phase 3 failures per sub-step only **drop the sub-step**, not the whole SOP. Losing one card is recoverable; failing the whole SOP for one bad frame is not.
 
@@ -307,21 +363,30 @@ Total ≈ 105–115 vision calls per video, up from ~30 today. Per-step concurre
 
 - `planStep.test.ts`:
   - Drops sub-steps with `visualConfidence: "low"`.
-  - Drops sub-steps with out-of-range `narrationSegmentIds`.
+  - Filters out-of-range `narrationSegmentIds` but keeps the sub-step (unless ID list becomes empty AND `timeWindow` is null).
+  - Drops sub-step when `narrationSegmentIds: []` AND `timeWindow: null` (no temporal anchor).
   - Passes `temperature: 0.0` to `llmJsonVision`.
   - Repair-on-empty runs at most one retry.
 - `pickFrame.test.ts`:
   - Builds shortlist from clusters overlapping the search window (segment-derived and fallback paths).
-  - Honors max-6 cap; keeps longest dwell when over-cap.
-  - Search window ends `step.end + 3s`.
+  - Honors max-6 cap; keeps longest in-window dwell when over-cap.
+  - Search window ends `step.tEnd + 3s` for timeWindow path; `narrationEnd + 3s` for segments path.
   - `picked: null` returns through and signals drop.
+  - `picked: "Z"` not in montage letters → treated as null, sub-step dropped.
+  - `runnerUp === picked` → runnerUp coerced to null.
 - `verifyFrame.test.ts`:
   - `"yes"` → keep; `"partially"` → keep + warn log; `"no"` with `runnerUp` → retry once on runner-up; `"no"` without `runnerUp` → drop.
   - No infinite retry loops (maximum one fallback).
+  - `pickerReasoning` is included in the user-message text body.
 - `locateHighlight.test.ts`:
   - `verb: "view"` → always returns `highlight: "no"`, even if the LLM erroneously returns `"yes"` (post-process override).
   - Bbox coords are remapped from downscaled-image coords to full-frame coords correctly.
-- `processSopScreenshots.test.ts` (new): integration test with all four LLM stages mocked, asserts the for-each-sub-step loop drops appropriately at each gate.
+- `screenId.test.ts`: extend existing tests for the centroid-based representative selection (replacing median-timestamp).
+- `assembleStepNarration.test.ts` (new utility): inner-join `segments[]` + `segmentsClean[]` on `id`; missing IDs in one or the other are skipped; preserves order.
+- `processSopScreenshots.test.ts` (new): integration test with all four LLM stages mocked, asserts the for-each-sub-step loop drops appropriately at each gate; asserts silent-step fallback emits one view sub-step per long cluster; asserts old-Screenshot-shape rendering compatibility via a stub render call.
+- Regression fixture in `__fixtures__/synthetic-frames/` includes:
+  - A multi-visit scenario (Screen X visited at t=10 and t=40, with Screen Y between).
+  - A >6-cluster step to validate dwell-based ranking.
 
 **Regression fixture.** Capture frozen dense-pool frames for one synthetic step (12–15 frames covering: an intro-with-presenter at the start, a form page mid-step, a confirmation screen). Drive the whole pipeline with injected LLM responses and assert end-to-end behavior without hitting Gemini.
 
@@ -330,8 +395,8 @@ Total ≈ 105–115 vision calls per video, up from ~30 today. Per-step concurre
 1. No sub-step's description names an element not visible in its picked screenshot. (Visual eye-check on the live SOP — currently the top-priority failure pattern.)
 2. The presenter-intro section produces no actionable sub-steps. At most one `verb: "view"` card may cover the intro.
 3. Every sub-step with `verb: "view"` has no bbox. Every sub-step with `verb !== "view"` either has a bbox OR was dropped.
-4. Step count stable across two consecutive runs (±2 steps).
-5. For the verification-code → Next sequence on the *Check your email* screen, both sub-steps exist as distinct cards with correct screen identity and bboxes on the correct elements.
+4. For the verification-code → Next sequence on the *Check your email* screen, both sub-steps exist as distinct cards with correct screen identity and bboxes on the correct elements.
+5. **Sub-step stability:** the count of sub-steps within each step varies by at most ±1 across two consecutive runs. (Total step count is governed by `runExtract`, which is outside this rework; stability there is governed by the prior spec.)
 
 **Rollout strategy.** Single branch, single coherent rewrite. Land in this order:
 
@@ -345,6 +410,23 @@ Total ≈ 105–115 vision calls per video, up from ~30 today. Per-step concurre
 8. Rewrite `processSopScreenshots.ts` to use the new chain. Rewrite `uploadScreenshots.ts` to consume the new `Action` shape.
 9. Delete obsolete stages and schema types in one commit.
 10. Smoke test against the live SOP; iterate knobs (search-window buffer, max-shortlist size, downscale resolution).
+
+## Section 7 — Debugging & triage
+
+With four gates per sub-step, a missing card has 4+ possible drop reasons (low visualConfidence, no temporal anchor, pickFrame null, verify no). To make postmortem tractable:
+
+**Structured logs at every drop.** Each drop emits one log line:
+
+- `pipeline.plan.low_confidence_dropped { sopId, stepIndex, intent }`
+- `pipeline.plan.no_temporal_anchor { sopId, stepIndex, intent }`
+- `pipeline.pick.no_match { sopId, stepIndex, intent, reasoning }`
+- `pipeline.pick.invalid_letter { sopId, stepIndex, intent, picked }`
+- `pipeline.verify.partial { sopId, stepIndex, intent, reasoning }` (kept, but logged)
+- `pipeline.verify.no { sopId, stepIndex, intent, reasoning, hadRunnerUp }`
+
+**Per-sub-step trace artifact (Mongo, debug-mode only).** When `process.env.SOP_PIPELINE_DEBUG === "1"`, the runtime persists a per-sub-step trace doc to a new `sop_pipeline_traces` Mongo collection containing: `{ sopId, stepIndex, intent, pickedLetter, runnerUpLetter, pickerReasoning, verifyMatch, verifyReasoning, highlightOutcome, finalAction }`. Off by default; not exposed in production. Lets us replay the four-gate decision chain for a problem sub-step without re-running the full video.
+
+**Smoke-test triage script.** Extend `scripts/inspect-sop.mjs` (already used for the prior smoke) to print drop reasons by stepIndex when a previously-present sub-step is missing. Format: `step N: dropped K sub-steps — reasons: { no_match: 2, no_temporal_anchor: 1 }`.
 
 ## Out of scope
 
