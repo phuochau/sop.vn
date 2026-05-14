@@ -150,5 +150,15 @@ Return strict JSON only.`,
       perStepConcurrency: 5,
       bboxPadPx: 8,
     },
+    screenId: {
+      samplingSec: 1.5,
+      hammingThreshold: 10,
+      viewMinDurationSec: 4.0,
+      maxMontageClusters: 6,
+    },
+    classify: {
+      maxCandidatesPerCall: 12,
+      perStepConcurrency: 5,
+    },
   },
 };
