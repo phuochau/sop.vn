@@ -107,3 +107,50 @@ export type ViewAction = {
 };
 
 export type Action = ElementAction | ViewAction;
+
+// Top-down pipeline schemas (replaces ClassifiedCandidate/StepClassification/ElementAction/ViewAction)
+
+export const SubStepPlan = z.object({
+  intent: z.string(),
+  verb: z.enum(["click", "input", "select", "link", "view"]),
+  narrationSegmentIds: z.array(z.number().int()).min(0),
+  timeWindow: z.object({ start: z.number(), end: z.number() }).nullable(),
+  visualConfidence: z.enum(["high", "low"]),
+});
+
+export const StepPlan = z.object({
+  subSteps: z.array(SubStepPlan),
+});
+
+export const FramePick = z.object({
+  picked: z.string().nullable(),
+  runnerUp: z.string().nullable(),
+  reasoning: z.string(),
+});
+
+export const FrameVerification = z.object({
+  match: z.enum(["yes", "partially", "no"]),
+  reasoning: z.string(),
+});
+
+export const HighlightDecision = z.object({
+  highlight: z.enum(["yes", "no"]),
+  bbox: BBox.nullable(),
+  elementCaption: z.string().nullable(),
+  noHighlightReason: z.enum(["view_action", "no_specific_target", "non_ui_frame"]).nullable(),
+});
+
+export type TopDownAction = {
+  stepIndex: number;
+  order: number;
+  verb: "click" | "input" | "select" | "link" | "view";
+  description: string;
+  displayFramePath: string;
+  time: number;
+  highlight?: {
+    kind: "click" | "input";
+    bbox: { x: number; y: number; w: number; h: number };
+  };
+  verifyMatch: "yes" | "partially";
+  pickedClusterLetter: string;
+};
