@@ -44,33 +44,31 @@ test("rectSvg rejects strongly negative origin", () => {
 
 import fs from "node:fs";
 import path from "node:path";
-import { buildUploadBuffer } from "./uploadScreenshots";
+import { buildBufferWithOptionalHighlight } from "./uploadScreenshots";
 
 const FIXTURE = path.join(__dirname, "__fixtures__", "sample-1080p.jpg");
 
-test("buildUploadBuffer returns raw bytes when highlight is null", async () => {
+test("buildBufferWithOptionalHighlight returns raw bytes when bbox is null", async () => {
   const raw = await fs.promises.readFile(FIXTURE);
-  const { buf, error } = await buildUploadBuffer(FIXTURE, null);
+  const { buf, error } = await buildBufferWithOptionalHighlight(FIXTURE, null);
   assert.equal(error, null);
   assert.ok(buf.equals(raw), "should return byte-identical raw file when no highlight");
 });
 
-test("buildUploadBuffer returns re-encoded bytes when highlight is valid", async () => {
+test("buildBufferWithOptionalHighlight returns re-encoded bytes when bbox is valid", async () => {
   const raw = await fs.promises.readFile(FIXTURE);
-  const { buf, error } = await buildUploadBuffer(FIXTURE, {
-    kind: "click",
-    bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.1 },
+  const { buf, error } = await buildBufferWithOptionalHighlight(FIXTURE, {
+    x: 0.1, y: 0.1, w: 0.2, h: 0.1,
   });
   assert.equal(error, null);
   assert.ok(!buf.equals(raw), "should differ from raw (rectangle composited)");
   assert.ok(buf.length > 100, "should be a non-empty JPEG");
 });
 
-test("buildUploadBuffer falls back to raw on degenerate bbox and records the error", async () => {
+test("buildBufferWithOptionalHighlight falls back to raw on degenerate bbox and records the error", async () => {
   const raw = await fs.promises.readFile(FIXTURE);
-  const { buf, error } = await buildUploadBuffer(FIXTURE, {
-    kind: "click",
-    bbox: { x: 0.1, y: 0.1, w: 0.001, h: 0.1 },
+  const { buf, error } = await buildBufferWithOptionalHighlight(FIXTURE, {
+    x: 0.1, y: 0.1, w: 0.001, h: 0.1,
   });
   assert.equal(error, "bbox out of range");
   assert.ok(buf.equals(raw), "should return raw bytes when bbox is invalid");

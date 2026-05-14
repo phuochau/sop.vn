@@ -5,33 +5,21 @@ import { logger } from "@trigger.dev/sdk/v3";
 import { putObject } from "@/lib/r2";
 import { screenshotKey } from "@/lib/utils";
 import type { Screenshot } from "@/lib/mongo";
-
-export type Highlight = { kind: "click" | "input"; bbox: { x: number; y: number; w: number; h: number } };
-
-export type UploadEvent = {
-  displayFramePath: string;
-  t: number;
-  bbox: { x: number; y: number; w: number; h: number };
-  kind: "click" | "input";
-  caption: string | null;
-};
+import type { Action } from "@/lib/schemas";
 
 export function rectSvg(
   W: number,
   H: number,
   bbox: { x: number; y: number; w: number; h: number },
 ): string | null {
-  // Reject degenerate or wildly out-of-range bboxes before clamping
   if (bbox.w < 0.005 || bbox.h < 0.005) return null;
   if (bbox.x + bbox.w > 1.05 || bbox.y + bbox.h > 1.05) return null;
   if (bbox.x < -0.05 || bbox.y < -0.05) return null;
   const x = clamp01(bbox.x);
   const y = clamp01(bbox.y);
-  // Clip width/height to the remaining space so a bbox at x=0.9 with w=0.15 ends at the right edge
   const w = Math.min(1 - x, Math.max(0, bbox.w));
   const h = Math.min(1 - y, Math.max(0, bbox.h));
   const stroke = Math.max(4, Math.round(H * 0.005));
-  // SVG strokes are centered on the path edge. Insetting by stroke/2 keeps the outer edge of the stroke aligned with the bbox the LLM picked.
   const px = Math.round(x * W) + Math.round(stroke / 2);
   const py = Math.round(y * H) + Math.round(stroke / 2);
   const pw = Math.max(1, Math.round(w * W) - stroke);
@@ -43,24 +31,20 @@ function clamp01(n: number): number {
   return Math.max(0, Math.min(1, n));
 }
 
-export async function buildUploadBuffer(
+export async function buildBufferWithOptionalHighlight(
   localPath: string,
-  highlight: Highlight | null,
+  bbox: { x: number; y: number; w: number; h: number } | null,
 ): Promise<{ buf: Buffer; error: string | null }> {
-  if (!highlight) {
+  if (!bbox) {
     return { buf: await fs.promises.readFile(localPath), error: null };
   }
   try {
     const meta = await sharp(localPath).metadata();
     const W = meta.width ?? 0;
     const H = meta.height ?? 0;
-    if (!W || !H) {
-      return { buf: await fs.promises.readFile(localPath), error: "missing image metadata" };
-    }
-    const svg = rectSvg(W, H, highlight.bbox);
-    if (!svg) {
-      return { buf: await fs.promises.readFile(localPath), error: "bbox out of range" };
-    }
+    if (!W || !H) return { buf: await fs.promises.readFile(localPath), error: "missing image metadata" };
+    const svg = rectSvg(W, H, bbox);
+    if (!svg) return { buf: await fs.promises.readFile(localPath), error: "bbox out of range" };
     const buf = await sharp(localPath)
       .composite([{ input: Buffer.from(svg), top: 0, left: 0 }])
       .jpeg({ quality: 85 })
@@ -76,41 +60,75 @@ export async function buildUploadBuffer(
 
 const newFrameId = customAlphabet("abcdefghijklmnopqrstuvwxyz0123456789", 10);
 
+// Localized templates for the composed description. Falls back to English.
+const DESCRIPTION_TEMPLATES: Record<string, { click: (s: string, e: string) => string; input: (s: string, e: string) => string }> = {
+  en: {
+    click: (s, e) => `On the "${s}" screen, click the ${e}.`,
+    input: (s, e) => `On the "${s}" screen, enter text in the ${e}.`,
+  },
+  vi: {
+    click: (s, e) => `Trên màn hình "${s}", nhấp vào ${e}.`,
+    input: (s, e) => `Trên màn hình "${s}", nhập văn bản vào ${e}.`,
+  },
+};
+
+function composeDescription(action: Action, language: string): string {
+  if (action.verb === "view") return action.caption;
+  const tpl = DESCRIPTION_TEMPLATES[language] ?? DESCRIPTION_TEMPLATES.en;
+  const fn = action.verb === "input" ? tpl.input : tpl.click;
+  return fn(action.screenName, action.elementCaption);
+}
+
+function coerceHighlightKind(verb: "click" | "input" | "select" | "link"): "click" | "input" {
+  return verb === "input" ? "input" : "click";
+}
+
 export async function runUploadScreenshots(args: {
   sopId: string;
-  byStep: Map<number, UploadEvent[]>;
+  byStep: Map<number, Action[]>;
+  language: string;
 }): Promise<Map<number, Screenshot[]>> {
   const out = new Map<number, Screenshot[]>();
 
-  for (const [stepIndex, events] of args.byStep.entries()) {
+  for (const [stepIndex, actions] of args.byStep.entries()) {
     const records: Screenshot[] = [];
-    for (let order = 0; order < events.length; order++) {
-      const event = events[order];
-      const highlight = { kind: event.kind, bbox: event.bbox };
+    for (let order = 0; order < actions.length; order++) {
+      const action = actions[order];
       const frameId = newFrameId();
       const r2Key = screenshotKey(args.sopId, stepIndex, frameId);
-      const { buf, error: highlightError } = await buildUploadBuffer(event.displayFramePath, highlight);
-      if (highlightError) {
+      const description = composeDescription(action, args.language);
+      const bboxForOverlay = action.verb === "view" ? null : action.bbox;
+      const { buf, error } = await buildBufferWithOptionalHighlight(action.displayFramePath, bboxForOverlay);
+      if (error) {
         logger.warn("uploadScreenshots: highlight draw failed; uploaded un-annotated frame", {
           stepIndex,
-          t: event.t,
-          highlightError,
+          t: action.time,
+          error,
         });
       }
       await putObject(r2Key, buf, "image/jpeg");
-      const desc = event.caption?.trim();
-      records.push({
+      const rec: Screenshot = {
         frameId,
         r2Key,
-        t: event.t,
+        t: action.time,
         order,
-        ...(desc ? { description: desc } : {}),
-        ...(!highlightError ? { highlight } : {}),
-        ...(highlightError ? { highlightError } : {}),
-      });
+        description,
+        verb: action.verb,
+      };
+      if (action.verb !== "view") {
+        rec.screenName = action.screenName;
+        rec.elementCaption = action.elementCaption;
+        if (!error) {
+          rec.highlight = { kind: coerceHighlightKind(action.verb), bbox: action.bbox };
+        } else {
+          rec.highlightError = error;
+        }
+      } else {
+        rec.screenName = action.screenName;
+      }
+      records.push(rec);
     }
     out.set(stepIndex, records);
   }
   return out;
 }
-

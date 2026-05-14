@@ -14,8 +14,11 @@ import { resolveTimes } from "./stages/clip";
 import { runBuildFramePool } from "./stages/buildFramePool";
 import { runExtractClickEvents } from "./stages/extractClickEvents";
 import { runClassifyAndMergeEvents } from "./stages/classifyAndMergeEvents";
-import { runGroundEventsWithGemini } from "./stages/groundEventsWithGemini";
-import { runUploadScreenshots, type UploadEvent } from "./stages/uploadScreenshots";
+import { runUploadScreenshots } from "./stages/uploadScreenshots";
+import { classifyAndRemap } from "./stages/classifyStepWithLLM";
+import { buildActionsForStep } from "./stages/buildActionsForStep";
+import { buildScreenClusters } from "@/trigger/lib/screenId";
+import type { Action } from "@/lib/schemas";
 
 type StepInput = {
   stepIndex: number;
@@ -162,27 +165,47 @@ export const processSopScreenshots = task({
           byStep: mergedCountByStep,
         });
 
-        const grounded = await runGroundEventsWithGemini({
-          byStep: merged,
-          steps: stepInputs,
-          language: outputLanguage,
-        });
-
-        // Stage 7: upload event frames to R2.
-        await setStatus(_id, "uploading-screenshots");
-        const uploadByStep = new Map<number, UploadEvent[]>();
-        for (const [stepIndex, evs] of grounded.entries()) {
-          uploadByStep.set(stepIndex, evs.map(e => ({
-            displayFramePath: e.displayFramePath,
-            t: e.time,
-            bbox: e.bbox,
-            kind: e.kind,
-            caption: e.caption,
-          })));
+        // Stage 7: per-step classification, dedup, View emission.
+        const actionsByStep = new Map<number, Action[]>();
+        for (const step of stepInputs) {
+          const events = merged.get(step.stepIndex) ?? [];
+          const clusters = await buildScreenClusters({
+            denseFrames: pool.denseFrames,
+            stepStart: step.tStart,
+            stepEnd: step.tEnd,
+            samplingSec: config.screenshots.screenId.samplingSec,
+            hammingThreshold: config.screenshots.screenId.hammingThreshold,
+          });
+          let classified;
+          try {
+            classified = await classifyAndRemap({
+              stepTitle: step.title,
+              language: outputLanguage,
+              events,
+              screenClusters: clusters,
+            });
+          } catch (e) {
+            logger.error("classify failed", { stepIndex: step.stepIndex, e: String(e) });
+            return fail(_id, "classify_failed");
+          }
+          const eventTimes = events.map(e => e.time);
+          const actions = buildActionsForStep({
+            stepIndex: step.stepIndex,
+            classified,
+            screenClusters: clusters,
+            eventTimes,
+            viewMinDurationSec: config.screenshots.screenId.viewMinDurationSec,
+            language: outputLanguage,
+          });
+          actionsByStep.set(step.stepIndex, actions);
         }
+
+        // Stage 8: upload screenshots.
+        await setStatus(_id, "uploading-screenshots");
         const screenshotsByStep = await runUploadScreenshots({
           sopId: _id.toHexString(),
-          byStep: uploadByStep,
+          byStep: actionsByStep,
+          language: outputLanguage,
         });
 
         // Compose step docs.
