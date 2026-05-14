@@ -77,7 +77,7 @@ export const ClassifiedCandidate = z.object({
   elementCaption: z.string().nullable(),
   bbox: BBox.nullable(),
   displayFrame: z.enum(["before", "after"]).nullable(),
-  discardReason: z.enum(["transition", "hover", "press_flicker", "animation", "other"]).nullable(),
+  discardReason: z.enum(["transition", "hover", "press_flicker", "animation", "not_a_ui", "other"]).nullable(),
 });
 
 export const StepClassification = z.object({

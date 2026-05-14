@@ -94,8 +94,10 @@ For each candidate, decide:
    - displayFrame: "after" for verb === "input" (typed text only appears in AFTER) and for click verbs whose action REVEALS new UI in the AFTER crop (flyout, dropdown, modal, autocomplete). "before" otherwise.
 
 3) If "discard":
-   - discardReason: "transition" (large-area pixel change, page navigation), "hover" (state-only change with no click target), "press_flicker" (second event in a tiny window after a click on the same element — animation by-product), "animation" (repeating motion in same region — spinner, loader, banner), "other".
+   - discardReason: "transition" (large-area pixel change, page navigation), "hover" (state-only change with no click target), "press_flicker" (second event in a tiny window after a click on the same element — animation by-product), "animation" (repeating motion in same region — spinner, loader, banner), "not_a_ui" (the BEFORE crop is NOT an application UI — e.g., a person on camera / webcam talking-head, a presenter holding props or illustrative icons, a title slide, an intro/outro animation, a generic stock graphic, a logo bug overlaid on non-UI content), "other".
    - All "action" fields must be null.
+
+IMPORTANT: Many training videos open with a presenter on camera or an animated intro before any real application screen is shown. Icons or graphics appearing in those segments (e.g., a HubSpot logo being held up by the presenter, a spreadsheet icon animating onto a stage) are NOT clickable UI elements. They MUST be discarded with discardReason: "not_a_ui". Only emit verb: "click" / "input" / "select" / "link" when the BEFORE crop clearly shows an application interface that the user is interacting with.
 
 Coordinates are normalized 0..1 (top-left origin). Bbox is measured against the CROP only, never the full BEFORE frame.
 
