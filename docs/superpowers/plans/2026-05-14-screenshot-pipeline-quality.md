@@ -194,25 +194,45 @@ test("llmJson retries on network errors (thrown)", async () => {
   assert.equal(out.x, 1);
 });
 
-test("llmJsonVision retries with exponential backoff (delays grow)", async () => {
+test("llmJsonVision sleeps between retries with growing upper bound", async () => {
   const timestamps: number[] = [];
   const fakeFetch: typeof fetch = async () => {
     timestamps.push(Date.now());
     return new Response("nope", { status: 503 });
   };
+  // base 100ms → attempt 0→1 sleep <=100, attempt 1→2 sleep <=200, attempt 2→3 sleep <=400.
+  // Hard upper bound on total elapsed = 700ms.
   await assert.rejects(() => llmJsonVision({
     model: "m", system: "s", userText: "u",
     imagePaths: [],
     schema: z.object({ x: z.number() }),
-    schemaName: "n", maxRetries: 2,
-    retryDelayMs: 50,
+    schemaName: "n", maxRetries: 3,
+    retryDelayMs: 100,
     fetcher: fakeFetch,
   }));
-  assert.equal(timestamps.length, 3);
-  // delay between attempt 0 and 1 should be 0..100ms; between 1 and 2 should be 0..200ms.
-  // Loose assertion: the sum of delays should be > 0.
-  const totalElapsed = timestamps[2] - timestamps[0];
-  assert.ok(totalElapsed >= 0, "elapsed >= 0");
+  assert.equal(timestamps.length, 4);
+  const totalElapsed = timestamps[3] - timestamps[0];
+  // Lower bound: it actually slept at least once. With jitter, the strict lower bound is 0,
+  // so assert it doesn't exceed the worst-case ceiling instead.
+  assert.ok(totalElapsed <= 700 + 200 /* slack */, `elapsed ${totalElapsed} should be within budget`);
+});
+
+test("llmJson retries on 408 (request timeout)", async () => {
+  let calls = 0;
+  const fakeFetch: typeof fetch = async () => {
+    calls++;
+    if (calls < 2) return new Response("timeout", { status: 408 });
+    return okResponse(llmContent({ x: 1 }));
+  };
+  const out = await llmJson({
+    model: "m", system: "s", user: "u",
+    schema: z.object({ x: z.number() }),
+    schemaName: "n", maxRetries: 2,
+    retryDelayMs: 1,
+    fetcher: fakeFetch,
+  });
+  assert.equal(out.x, 1);
+  assert.equal(calls, 2);
 });
 
 test("llmJsonVision defaults maxRetries to 3 when not specified", async () => {
@@ -646,6 +666,7 @@ type ExtractInput = {
   category: string;
   domainSummary: string;
   language: string;
+  sopId?: string;  // optional; passed to sanity logs when available
 };
 
 type ExtractResult = z.infer<typeof SopExtractOutput>;
@@ -682,7 +703,7 @@ export function pickBetterExtraction(a: ExtractResult, b: ExtractResult): Extrac
 export async function runExtractWith(input: ExtractInput, call: LlmExtractCall): Promise<ExtractResult> {
   const system = config.ai.prompts.sopSystem(input.language);
   const first = await call({ system, user: buildUserPrompt(input, ""), temperature: 0.0 });
-  logger.info("pipeline.step_extract.count", { count: first.steps.length, attempt: 1 });
+  logger.info("pipeline.step_extract.count", { sopId: input.sopId ?? null, count: first.steps.length, attempt: 1 });
   if (isInRange(first)) return first;
 
   logger.warn("pipeline.step_extract.repair", { firstCount: first.steps.length });
@@ -690,11 +711,12 @@ export async function runExtractWith(input: ExtractInput, call: LlmExtractCall):
     `Your previous attempt produced ${first.steps.length} steps, which is outside the ${STEP_COUNT_MIN}-${STEP_COUNT_MAX} range. ` +
     `Re-segment with the granularity rules above.`;
   const second = await call({ system, user: buildUserPrompt(input, addendum), temperature: 0.0 });
-  logger.info("pipeline.step_extract.count", { count: second.steps.length, attempt: 2 });
+  logger.info("pipeline.step_extract.count", { sopId: input.sopId ?? null, count: second.steps.length, attempt: 2 });
 
   const chosen = pickBetterExtraction(first, second);
   if (!isInRange(chosen)) {
     logger.error("pipeline.step_extract.out_of_range", {
+      sopId: input.sopId ?? null,
       firstCount: first.steps.length,
       secondCount: second.steps.length,
       chosenCount: chosen.steps.length,
@@ -1120,6 +1142,8 @@ Expected: FAIL — `screenId.ts` module does not exist.
 
 - [ ] **Step 5.3: Create `src/trigger/lib/screenId.ts`**
 
+Note: the spec says "reuses `dHash` from `perceptualHash.ts`", but masking the URL/tab/chrome regions requires intercepting the 9×8 grayscale buffer before the bit-comparison step. The existing `dHash` does not expose that intermediate buffer. This file implements `maskedDHash` independently, sharing `hammingDistance` from `perceptualHash.ts`. The intended reuse is the *technique* (8×8 dHash bits) and the comparator, not the function body.
+
 ```ts
 import sharp from "sharp";
 import { hammingDistance } from "./perceptualHash";
@@ -1230,9 +1254,15 @@ export async function buildScreenClusters(args: {
     const members = c.members.map(m => m.frame);
     const start = members[0].t;
     const end = members[members.length - 1].t;
+    // Representative = the cluster member nearest the median sampled timestamp.
+    // Spec §5 step 4 uses this for View card displayFramePath.
+    const median = (start + end) / 2;
+    const representative = [...members].sort(
+      (a, b) => Math.abs(a.t - median) - Math.abs(b.t - median),
+    )[0];
     return {
       letter: String.fromCharCode("A".charCodeAt(0) + i),
-      representative: members[0],
+      representative,
       members,
       timeSpan: { start, end },
       dHash: c.hash,
@@ -1364,8 +1394,11 @@ export interface Screenshot {
   verb?: "click" | "input" | "select" | "link" | "view";
   screenName?: string;
   elementCaption?: string;
+  // highlight.kind stays narrow ("click" | "input") so the existing UI renderer continues
+  // to work without changes. The upload adapter (Task 9) coerces select/link verbs → "click"
+  // when populating highlight.kind. The full verb is captured in the new top-level `verb` field.
   highlight?: {
-    kind: "click" | "input" | "select" | "link";
+    kind: "click" | "input";
     bbox: { x: number; y: number; w: number; h: number };
   };
   highlightError?: string;
@@ -1747,7 +1780,11 @@ export async function classifyAndRemap(args: {
       await sharp(e.beforeFramePath).extract({ left: crop.cx, top: crop.cy, width: crop.cw, height: crop.ch }).jpeg({ quality: 90 }).toFile(beforeCropPath);
       await sharp(e.afterFramePath).extract({ left: crop.cx, top: crop.cy, width: crop.cw, height: crop.ch }).jpeg({ quality: 90 }).toFile(afterCropPath);
 
-      const cluster = nearestCluster(args.screenClusters, e.time);
+      // When clusters exceed the montage cap, the montage is omitted (see buildMontage).
+      // In that case the LLM has no letter→frame mapping to interpret, so every candidate
+      // passes screenCluster=null. Spec §3 montage-overflow edge case.
+      const overCap = args.screenClusters.length > config.screenshots.screenId.maxMontageClusters;
+      const cluster = overCap ? null : nearestCluster(args.screenClusters, e.time);
       candidates.push({
         index: i,
         time: e.time,
@@ -2209,6 +2246,8 @@ git commit -m "feat: dedup + view emission post-pass"
 - Modify: `src/trigger/processSopScreenshots.ts`
 - Modify: `src/trigger/stages/uploadScreenshots.ts`
 
+**Heads-up:** Steps 9.1 and 9.2 are intentionally a single commit. The new `uploadScreenshots.ts` drops `UploadEvent` from its exports; the old `processSopScreenshots.ts` still imports it. Typecheck only goes green after both files land. Do not split into two commits.
+
 - [ ] **Step 9.1: Update `uploadScreenshots.ts` to consume the Action union**
 
 Replace `src/trigger/stages/uploadScreenshots.ts`:
@@ -2276,15 +2315,33 @@ async function buildBufferWithOptionalHighlight(
 
 const newFrameId = customAlphabet("abcdefghijklmnopqrstuvwxyz0123456789", 10);
 
-function composeDescription(action: Action): string {
+// Localized templates for the composed description. Falls back to English.
+const DESCRIPTION_TEMPLATES: Record<string, { click: (s: string, e: string) => string; input: (s: string, e: string) => string }> = {
+  en: {
+    click: (s, e) => `On the "${s}" screen, click the ${e}.`,
+    input: (s, e) => `On the "${s}" screen, enter text in the ${e}.`,
+  },
+  vi: {
+    click: (s, e) => `Trên màn hình "${s}", nhấp vào ${e}.`,
+    input: (s, e) => `Trên màn hình "${s}", nhập văn bản vào ${e}.`,
+  },
+};
+
+function composeDescription(action: Action, language: string): string {
   if (action.verb === "view") return action.caption;
-  const verbWord = action.verb === "input" ? "enter text in" : "click";
-  return `On the "${action.screenName}" screen, ${verbWord} the ${action.elementCaption}.`;
+  const tpl = DESCRIPTION_TEMPLATES[language] ?? DESCRIPTION_TEMPLATES.en;
+  const fn = action.verb === "input" ? tpl.input : tpl.click;
+  return fn(action.screenName, action.elementCaption);
+}
+
+function coerceHighlightKind(verb: "click" | "input" | "select" | "link"): "click" | "input" {
+  return verb === "input" ? "input" : "click";
 }
 
 export async function runUploadScreenshots(args: {
   sopId: string;
   byStep: Map<number, Action[]>;
+  language: string;
 }): Promise<Map<number, Screenshot[]>> {
   const out = new Map<number, Screenshot[]>();
 
@@ -2294,7 +2351,7 @@ export async function runUploadScreenshots(args: {
       const action = actions[order];
       const frameId = newFrameId();
       const r2Key = screenshotKey(args.sopId, stepIndex, frameId);
-      const description = composeDescription(action);
+      const description = composeDescription(action, args.language);
       const bboxForOverlay = action.verb === "view" ? null : action.bbox;
       const { buf, error } = await buildBufferWithOptionalHighlight(action.displayFramePath, bboxForOverlay);
       if (error) {
@@ -2317,7 +2374,7 @@ export async function runUploadScreenshots(args: {
         rec.screenName = action.screenName;
         rec.elementCaption = action.elementCaption;
         if (!error) {
-          rec.highlight = { kind: action.verb, bbox: action.bbox };
+          rec.highlight = { kind: coerceHighlightKind(action.verb), bbox: action.bbox };
         } else {
           rec.highlightError = error;
         }
@@ -2395,6 +2452,7 @@ In `processSopScreenshots.ts`, locate the contiguous block that starts with `con
         const screenshotsByStep = await runUploadScreenshots({
           sopId: _id.toHexString(),
           byStep: actionsByStep,
+          language: outputLanguage,
         });
 ```
 
@@ -2479,20 +2537,26 @@ git commit -m "chore: remove obsolete per-event grounding stage"
 **Files:**
 - No code changes. Operational task.
 
-- [ ] **Step 11.1: Start the dev server**
+- [ ] **Step 11.1: Start the Trigger.dev dev server**
+
+In a separate terminal, from the repo root:
 
 ```bash
-# Trigger.dev dev server (via the MCP tool — or in a shell:)
 npx trigger.dev@latest dev
 ```
 
+Wait until the output shows `Local worker ready` before continuing.
+
 - [ ] **Step 11.2: Trigger the task against the live SOP**
 
-Via the trigger MCP tool or the dashboard, run `process-sop-screenshots` with payload:
+The repo doesn't ship a CLI invoke command. Two options:
+- Open the Trigger.dev dashboard at https://cloud.trigger.dev/, find the `process-sop-screenshots` task, click "Test", paste:
+  ```json
+  { "sopId": "6a04abd616f65270628d088b" }
+  ```
+- Or, if you have the Trigger MCP tool, call `mcp__trigger__trigger_task` with `taskId: "process-sop-screenshots"` and the payload above.
 
-```json
-{ "sopId": "6a04abd616f65270628d088b" }
-```
+Wait for the run to reach `status: completed` (typically 10–15 minutes for this 17-min video).
 
 - [ ] **Step 11.3: Inspect the result**
 
@@ -2514,7 +2578,13 @@ Each unique caption should appear at most once per (step, screen).
 
 3. The step's `description` (the LLM-extracted text) mentions social login as an alternative.
 
-4. Run the task a second time; assert `steps.length` is within ±2 of the first run.
+4. Run the task a second time, then capture both step counts and compare:
+
+```bash
+# After both runs complete:
+node --experimental-vm-modules ./scripts/inspect-sop.mjs 2>&1 | grep -E "^steps:"
+# Expect a line like "steps: N". Run twice (once after each pipeline run) and confirm |N1 - N2| <= 2.
+```
 
 - [ ] **Step 11.4: Open in Playwright and visually confirm**
 
