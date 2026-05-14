@@ -1050,20 +1050,36 @@ import fs from "node:fs";
 import sharp from "sharp";
 import { buildScreenClusters, type DensePoolFrame } from "./screenId";
 
-async function makeFrame(tmp: string, name: string, rgb: [number, number, number]): Promise<string> {
+/**
+ * Generate a frame with a distinctive light/dark pattern.
+ * dHash compares adjacent pixels, so a uniform-color image hashes to all zeros
+ * (every left>=right). We composite a contrasting block at `blockX` so the
+ * hash varies with position.
+ */
+async function makeFrame(tmp: string, name: string, blockX: 0 | 1): Promise<string> {
   const p = path.join(tmp, name);
+  // 320x200 dark background, with a bright block on the left (blockX=0) or right (blockX=1).
+  const W = 320, H = 200, blockW = 80, blockH = 80;
+  const left = blockX === 0 ? 20 : W - blockW - 20;
+  const top = (H - blockH) / 2;
+  const blockSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${blockW}" height="${blockH}">
+    <rect width="${blockW}" height="${blockH}" fill="#fff"/>
+  </svg>`;
   await sharp({
-    create: { width: 320, height: 200, channels: 3, background: { r: rgb[0], g: rgb[1], b: rgb[2] } },
-  }).jpeg().toFile(p);
+    create: { width: W, height: H, channels: 3, background: { r: 20, g: 20, b: 20 } },
+  })
+    .composite([{ input: Buffer.from(blockSvg), top, left }])
+    .jpeg()
+    .toFile(p);
   return p;
 }
 
 test("buildScreenClusters groups visually-similar frames into one cluster", async () => {
   const tmp = await fs.promises.mkdtemp(path.join(os.tmpdir(), "sid-"));
   try {
-    const fA1 = await makeFrame(tmp, "a1.jpg", [200, 50, 50]);
-    const fA2 = await makeFrame(tmp, "a2.jpg", [200, 50, 50]);
-    const fB = await makeFrame(tmp, "b.jpg", [50, 50, 200]);
+    const fA1 = await makeFrame(tmp, "a1.jpg", 0); // block on left
+    const fA2 = await makeFrame(tmp, "a2.jpg", 0); // same — block on left
+    const fB = await makeFrame(tmp, "b.jpg", 1);   // block on right (visually distinct)
 
     const dense: DensePoolFrame[] = [
       { t: 0.0, localPath: fA1 },
@@ -1096,7 +1112,7 @@ test("buildScreenClusters groups visually-similar frames into one cluster", asyn
 test("buildScreenClusters samples only every samplingSec interval", async () => {
   const tmp = await fs.promises.mkdtemp(path.join(os.tmpdir(), "sid-"));
   try {
-    const f = await makeFrame(tmp, "f.jpg", [128, 128, 128]);
+    const f = await makeFrame(tmp, "f.jpg", 0);
     const dense: DensePoolFrame[] = [
       { t: 0.0, localPath: f },
       { t: 0.5, localPath: f },
