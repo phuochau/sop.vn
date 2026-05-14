@@ -72,3 +72,45 @@ export const GroundedEventOutput = z.object({
   kind: z.enum(["click", "input"]),
   displayFrame: z.enum(["before", "after"]),
 });
+
+// New action-pipeline types
+
+export const ClassifiedCandidate = z.object({
+  index: z.number(),
+  decision: z.enum(["action", "discard"]),
+  verb: z.enum(["click", "input", "select", "link"]).nullable(),
+  screenName: z.string().nullable(),
+  screenCluster: z.string().nullable(),
+  elementCaption: z.string().nullable(),
+  bbox: BBox.nullable(),
+  displayFrame: z.enum(["before", "after"]).nullable(),
+  discardReason: z.enum(["transition", "hover", "press_flicker", "animation", "other"]).nullable(),
+});
+
+export const StepClassification = z.object({
+  candidates: z.array(ClassifiedCandidate),
+});
+
+export type ElementAction = {
+  verb: "click" | "input" | "select" | "link";
+  screenId: string;
+  screenName: string;
+  elementId: string;
+  elementCaption: string;
+  bbox: { x: number; y: number; w: number; h: number };
+  displayFrame: "before" | "after";
+  displayFramePath: string;
+  time: number;
+};
+
+export type ViewAction = {
+  verb: "view";
+  screenId: string;
+  screenName: string;
+  displayFramePath: string;
+  caption: string;
+  time: number;
+  durationSec: number;
+};
+
+export type Action = ElementAction | ViewAction;

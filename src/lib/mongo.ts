@@ -40,6 +40,13 @@ export interface Screenshot {
   t: number;        // timestamp in source video, seconds
   order: number;    // display order within the step
   description?: string;  // optional LLM-written caption/instruction
+  // New: present from the action-pipeline rework onward. Old SOPs lack these fields.
+  verb?: "click" | "input" | "select" | "link" | "view";
+  screenName?: string;
+  elementCaption?: string;
+  // highlight.kind stays narrow ("click" | "input") so the existing UI renderer continues
+  // to work without changes. The upload adapter (Task 9) coerces select/link verbs → "click"
+  // when populating highlight.kind. The full verb is captured in the new top-level `verb` field.
   highlight?: {          // optional yellow-rectangle target (baked into JPEG; field kept for future overlay-mode use)
     kind: "click" | "input";
     bbox: { x: number; y: number; w: number; h: number };
