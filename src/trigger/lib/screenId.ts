@@ -3,10 +3,12 @@ import { hammingDistance } from "./perceptualHash";
 
 export type DensePoolFrame = { t: number; localPath: string };
 
+export type ClusterMember = { frame: DensePoolFrame; dHash: string };
+
 export type ScreenCluster = {
-  letter: string;            // "A", "B", "C", ...
+  letter: string;
   representative: DensePoolFrame;
-  members: DensePoolFrame[];
+  members: ClusterMember[];
   timeSpan: { start: number; end: number };
   dHash: string;
 };
@@ -14,9 +16,6 @@ export type ScreenCluster = {
 const TOP_MASK_FRAC = 0.06;
 const BOTTOM_MASK_FRAC = 0.08;
 
-/**
- * dHash of a frame after masking the top URL/tab strip and bottom chat widget area.
- */
 export async function maskedDHash(imagePath: string): Promise<string> {
   const W = 9;
   const H = 8;
@@ -26,8 +25,8 @@ export async function maskedDHash(imagePath: string): Promise<string> {
     .raw()
     .toBuffer({ resolveWithObject: true });
 
-  const topRowsMasked = Math.round(H * TOP_MASK_FRAC); // for H=8: 0 rows
-  const bottomRowsMasked = Math.round(H * BOTTOM_MASK_FRAC); // for H=8: 1 row
+  const topRowsMasked = Math.round(H * TOP_MASK_FRAC);
+  const bottomRowsMasked = Math.round(H * BOTTOM_MASK_FRAC);
 
   const buf = Buffer.from(data);
   for (let row = 0; row < topRowsMasked; row++) {
@@ -68,6 +67,24 @@ function sampleFramesInRange(denseFrames: DensePoolFrame[], start: number, end: 
   return sampled;
 }
 
+function chooseCentroid(members: ClusterMember[]): ClusterMember {
+  if (members.length === 1) return members[0];
+  let bestIdx = 0;
+  let bestSum = Infinity;
+  for (let i = 0; i < members.length; i++) {
+    let sum = 0;
+    for (let j = 0; j < members.length; j++) {
+      if (i === j) continue;
+      sum += hammingDistance(members[i].dHash, members[j].dHash);
+    }
+    if (sum < bestSum || (sum === bestSum && members[i].frame.t < members[bestIdx].frame.t)) {
+      bestSum = sum;
+      bestIdx = i;
+    }
+  }
+  return members[bestIdx];
+}
+
 export async function buildScreenClusters(args: {
   denseFrames: DensePoolFrame[];
   stepStart: number;
@@ -83,8 +100,7 @@ export async function buildScreenClusters(args: {
     hashes.push({ frame: f, hash: await maskedDHash(f.localPath) });
   }
 
-  // Single-linkage cluster by Hamming <= threshold against any cluster member.
-  const clusters: { hash: string; members: typeof hashes }[] = [];
+  const clusters: { seedHash: string; members: typeof hashes }[] = [];
   for (const h of hashes) {
     let placed = false;
     for (const c of clusters) {
@@ -95,28 +111,42 @@ export async function buildScreenClusters(args: {
         break;
       }
     }
-    if (!placed) clusters.push({ hash: h.hash, members: [h] });
+    if (!placed) clusters.push({ seedHash: h.hash, members: [h] });
   }
 
-  // Order clusters by earliest member's time so letters are stable.
   clusters.sort((a, b) => a.members[0].frame.t - b.members[0].frame.t);
 
   return clusters.map((c, i) => {
-    const members = c.members.map(m => m.frame);
-    const start = members[0].t;
-    const end = members[members.length - 1].t;
-    // Representative = the cluster member nearest the median sampled timestamp.
-    // Spec §5 step 4 uses this for View card displayFramePath.
-    const median = (start + end) / 2;
-    const representative = [...members].sort(
-      (a, b) => Math.abs(a.t - median) - Math.abs(b.t - median),
-    )[0];
+    const members: ClusterMember[] = c.members.map(m => ({ frame: m.frame, dHash: m.hash }));
+    const times = members.map(m => m.frame.t);
+    const centroid = chooseCentroid(members);
     return {
       letter: String.fromCharCode("A".charCodeAt(0) + i),
-      representative,
+      representative: centroid.frame,
       members,
-      timeSpan: { start, end },
-      dHash: c.hash,
+      timeSpan: { start: Math.min(...times), end: Math.max(...times) },
+      dHash: c.seedHash,
     };
   });
+}
+
+export function clusterFor(letter: string | null, clusters: ScreenCluster[]): ScreenCluster | null {
+  if (!letter) return null;
+  return clusters.find(c => c.letter === letter) ?? null;
+}
+
+export function selectInClusterFrame(
+  cluster: ScreenCluster,
+  window: { start: number; end: number },
+): DensePoolFrame {
+  const inWindow = cluster.members.filter(m => m.frame.t >= window.start && m.frame.t <= window.end);
+  if (inWindow.length === 0) return cluster.representative;
+  const repMember = cluster.members.find(m => m.frame.localPath === cluster.representative.localPath) ?? cluster.members[0];
+  let best = inWindow[0];
+  let bestDist = hammingDistance(best.dHash, repMember.dHash);
+  for (let i = 1; i < inWindow.length; i++) {
+    const d = hammingDistance(inWindow[i].dHash, repMember.dHash);
+    if (d < bestDist) { best = inWindow[i]; bestDist = d; }
+  }
+  return best.frame;
 }
