@@ -22,7 +22,7 @@ import { runLocateHighlight } from "./stages/locateHighlight";
 import { buildAction } from "./stages/buildAction";
 import { runWithConcurrency } from "@/lib/concurrency";
 import { traceEnabled, persistTrace, makeTrace } from "@/lib/pipelineTrace";
-import type { TopDownAction } from "@/lib/schemas";
+import type { Action } from "@/lib/schemas";
 
 async function setStatus(id: ObjectId, status: SopStatus, extra: Record<string, unknown> = {}) {
   await (await sops()).updateOne({ _id: id }, { $set: { status, updatedAt: new Date(), ...extra } });
@@ -144,7 +144,7 @@ export const processSopScreenshots = task({
           };
         });
 
-        const actionsByStep = new Map<number, TopDownAction[]>();
+        const actionsByStep = new Map<number, Action[]>();
         const perStepConcurrency = config.screenshots.classify.perStepConcurrency;
 
         try {
@@ -179,7 +179,7 @@ export const processSopScreenshots = task({
               }
             }
 
-            const actions: TopDownAction[] = [];
+            const actions: Action[] = [];
             for (const subStep of plan.subSteps) {
               const { pick, shortlist } = await runPickFrame({
                 subStep,

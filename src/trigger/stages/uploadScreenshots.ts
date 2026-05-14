@@ -5,7 +5,7 @@ import { logger } from "@trigger.dev/sdk/v3";
 import { putObject } from "@/lib/r2";
 import { screenshotKey } from "@/lib/utils";
 import type { Screenshot } from "@/lib/mongo";
-import type { TopDownAction } from "@/lib/schemas";
+import type { Action } from "@/lib/schemas";
 
 export function rectSvg(
   W: number,
@@ -62,7 +62,7 @@ const newFrameId = customAlphabet("abcdefghijklmnopqrstuvwxyz0123456789", 10);
 
 export async function runUploadScreenshots(args: {
   sopId: string;
-  byStep: Map<number, TopDownAction[]>;
+  byStep: Map<number, Action[]>;
 }): Promise<Map<number, Screenshot[]>> {
   const out = new Map<number, Screenshot[]>();
 

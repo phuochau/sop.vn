@@ -3,7 +3,7 @@ import type {
   SubStepPlan,
   FrameVerification,
   HighlightDecision,
-  TopDownAction,
+  Action,
 } from "@/lib/schemas";
 
 type SubStep = z.infer<typeof SubStepPlan>;
@@ -21,8 +21,8 @@ export function buildAction(args: {
   framePath: string;
   frameTime: number;
   pickedClusterLetter: string;
-}): TopDownAction {
-  const base: TopDownAction = {
+}): Action {
+  const base: Action = {
     stepIndex: args.stepIndex,
     order: args.order,
     verb: args.subStep.verb,
