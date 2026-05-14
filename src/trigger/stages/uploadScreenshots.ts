@@ -5,7 +5,7 @@ import { logger } from "@trigger.dev/sdk/v3";
 import { putObject } from "@/lib/r2";
 import { screenshotKey } from "@/lib/utils";
 import type { Screenshot } from "@/lib/mongo";
-import type { Action } from "@/lib/schemas";
+import type { TopDownAction } from "@/lib/schemas";
 
 export function rectSvg(
   W: number,
@@ -60,33 +60,9 @@ export async function buildBufferWithOptionalHighlight(
 
 const newFrameId = customAlphabet("abcdefghijklmnopqrstuvwxyz0123456789", 10);
 
-// Localized templates for the composed description. Falls back to English.
-const DESCRIPTION_TEMPLATES: Record<string, { click: (s: string, e: string) => string; input: (s: string, e: string) => string }> = {
-  en: {
-    click: (s, e) => `On the "${s}" screen, click the ${e}.`,
-    input: (s, e) => `On the "${s}" screen, enter text in the ${e}.`,
-  },
-  vi: {
-    click: (s, e) => `Trên màn hình "${s}", nhấp vào ${e}.`,
-    input: (s, e) => `Trên màn hình "${s}", nhập văn bản vào ${e}.`,
-  },
-};
-
-function composeDescription(action: Action, language: string): string {
-  if (action.verb === "view") return action.caption;
-  const tpl = DESCRIPTION_TEMPLATES[language] ?? DESCRIPTION_TEMPLATES.en;
-  const fn = action.verb === "input" ? tpl.input : tpl.click;
-  return fn(action.screenName, action.elementCaption);
-}
-
-function coerceHighlightKind(verb: "click" | "input" | "select" | "link"): "click" | "input" {
-  return verb === "input" ? "input" : "click";
-}
-
 export async function runUploadScreenshots(args: {
   sopId: string;
-  byStep: Map<number, Action[]>;
-  language: string;
+  byStep: Map<number, TopDownAction[]>;
 }): Promise<Map<number, Screenshot[]>> {
   const out = new Map<number, Screenshot[]>();
 
@@ -96,14 +72,11 @@ export async function runUploadScreenshots(args: {
       const action = actions[order];
       const frameId = newFrameId();
       const r2Key = screenshotKey(args.sopId, stepIndex, frameId);
-      const description = composeDescription(action, args.language);
-      const bboxForOverlay = action.verb === "view" ? null : action.bbox;
+      const bboxForOverlay = action.highlight?.bbox ?? null;
       const { buf, error } = await buildBufferWithOptionalHighlight(action.displayFramePath, bboxForOverlay);
       if (error) {
         logger.warn("uploadScreenshots: highlight draw failed; uploaded un-annotated frame", {
-          stepIndex,
-          t: action.time,
-          error,
+          stepIndex, t: action.time, error,
         });
       }
       await putObject(r2Key, buf, "image/jpeg");
@@ -112,19 +85,13 @@ export async function runUploadScreenshots(args: {
         r2Key,
         t: action.time,
         order,
-        description,
+        description: action.description,
         verb: action.verb,
       };
-      if (action.verb !== "view") {
-        rec.screenName = action.screenName;
-        rec.elementCaption = action.elementCaption;
-        if (!error) {
-          rec.highlight = { kind: coerceHighlightKind(action.verb), bbox: action.bbox };
-        } else {
-          rec.highlightError = error;
-        }
-      } else {
-        rec.screenName = action.screenName;
+      if (action.highlight && !error) {
+        rec.highlight = action.highlight;
+      } else if (action.highlight && error) {
+        rec.highlightError = error;
       }
       records.push(rec);
     }
