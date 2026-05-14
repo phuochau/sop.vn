@@ -28,6 +28,10 @@ export type ErrorCode =
   | "screenshot_pool_failed"
   | "click_detect_failed"
   | "classify_failed"
+  | "plan_failed"          // top-down pipeline: planStep retries exhausted
+  | "frame_pick_failed"    // top-down pipeline: pickFrame retries exhausted (rare; per-sub-step retries-exhausted normally just drop the sub-step)
+  | "verify_failed"        // reserved; current policy drops sub-step on no-match rather than failing SOP
+  | "highlight_failed"     // reserved; same policy as verify_failed
   | "loom_ingest_failed"
   | "unknown";
 
