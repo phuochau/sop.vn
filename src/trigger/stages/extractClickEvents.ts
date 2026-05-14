@@ -12,6 +12,7 @@ export async function runExtractClickEvents(args: {
   steps: StepRange[];
   denseFrames: DenseFrame[];
   opts?: ClickDetectOptions;
+  maxCandidatesPerStep?: number;
 }): Promise<Map<number, ClickEvent[]>> {
   const events = await detectClickEvents(args.denseFrames, args.opts);
   logger.info("click events detected", { count: events.length });
@@ -36,8 +37,18 @@ export async function runExtractClickEvents(args: {
     if (assigned !== null) byStep.get(assigned)!.push(ev);
   }
 
-  // Sort within each step by time ascending
-  for (const list of byStep.values()) list.sort((a, b) => a.time - b.time);
+  const cap = args.maxCandidatesPerStep ?? 25;
+  for (const [stepIndex, list] of byStep.entries()) {
+    list.sort((a, b) => a.time - b.time);
+    if (list.length > cap) {
+      const trimmed = [...list]
+        .sort((a, b) => b.area * b.density - a.area * a.density)
+        .slice(0, cap)
+        .sort((x, y) => x.time - y.time);
+      logger.warn("pipeline.click_events.capped", { stepIndex, before: list.length, after: cap });
+      byStep.set(stepIndex, trimmed);
+    }
+  }
 
   return byStep;
 }

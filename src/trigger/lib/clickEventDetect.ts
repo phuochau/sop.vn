@@ -14,7 +14,6 @@ export type ClickDetectOptions = {
   minAreaFrac?: number;
   maxAreaFrac?: number;
   minDensity?: number;
-  steadinessThreshold?: number;
   mergeWindowSec?: number;
   mergeIouMin?: number;
   maxEventsPerVideo?: number;
@@ -146,7 +145,7 @@ export function mergeEvents(events: ClickEvent[], windowSec: number, iouMin: num
   let current = events[0];
   for (let i = 1; i < events.length; i++) {
     const next = events[i];
-    if (next.time - current.time < windowSec && bboxIou(current.bbox, next.bbox) >= iouMin) {
+    if (next.time - current.time <= windowSec && bboxIou(current.bbox, next.bbox) >= iouMin) {
       const union = bboxUnion(current.bbox, next.bbox);
       current = {
         time: current.time,
@@ -171,19 +170,16 @@ export async function detectClickEvents(
 ): Promise<ClickEvent[]> {
   const diffThreshold = opts.diffThreshold ?? 25;
   const minAreaFrac = opts.minAreaFrac ?? 0.003;
-  const maxAreaFrac = opts.maxAreaFrac ?? 0.20;
+  const maxAreaFrac = opts.maxAreaFrac ?? 0.12;
   const minDensity = opts.minDensity ?? 0.20;
-  const steadinessThreshold = opts.steadinessThreshold ?? 0.30;
-  const mergeWindowSec = opts.mergeWindowSec ?? 1.5;
-  const mergeIouMin = opts.mergeIouMin ?? 0.30;
-  const maxEvents = opts.maxEventsPerVideo ?? 60;
+  const mergeWindowSec = opts.mergeWindowSec ?? 4.0;
+  const mergeIouMin = opts.mergeIouMin ?? 0.20;
+  const maxEvents = opts.maxEventsPerVideo ?? 200;
   const diffMaxEdge = opts.diffMaxEdge ?? 640;
 
   if (frames.length < 2) return [];
 
-  // Pre-compute total mask area per adjacent pair. Used for both forward and
-  // backward steadiness comparisons: a real click is preceded AND followed by
-  // stillness; continuous motion has comparable mask areas in neighboring pairs.
+  // Pre-compute the diff mask for each adjacent frame pair.
   const pairs: { mask: Uint8Array; maskArea: number; gray0: GrayFrame; gray1: GrayFrame }[] = [];
   let g0 = await loadGrayscale(frames[0].localPath, diffMaxEdge);
   for (let i = 0; i < frames.length - 1; i++) {
@@ -218,14 +214,6 @@ export async function detectClickEvents(
     const bboxH = component.maxY - component.minY + 1;
     const density = component.area / (bboxW * bboxH);
     if (density < minDensity) continue;
-
-    // Steadiness: reject if EITHER neighboring pair has a comparable mask area
-    // (continuous motion). A real click is bracketed by relatively still frames.
-    if (component.area >= 1) {
-      const fwd = i + 1 < pairs.length ? pairs[i + 1].maskArea / component.area : 0;
-      const bwd = i > 0 ? pairs[i - 1].maskArea / component.area : 0;
-      if (fwd > steadinessThreshold || bwd > steadinessThreshold) continue;
-    }
 
     events.push({
       time: frames[i].t,
