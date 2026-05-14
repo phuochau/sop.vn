@@ -21,7 +21,21 @@ export const config = {
       contextSystem: (lang: string) =>
         `You classify training videos. Read the transcript and return a short freeform string naming the domain or industry (e.g., "Specialty espresso brewing", "Vietnamese stir-fry cooking", "Manicure prep") plus a 1-2 sentence summary of what the video teaches.\n\nLANGUAGE: Output the summary in ${lang}. Keep technical / industry / brand terms in their original form.`,
       sopSystem: (lang: string) =>
-        `You convert narrated training videos into structured SOPs. You receive cleaned, indexed transcript segments. Let the trainer's narration decide where steps begin and end — do NOT impose a preferred number of steps. Each step is a coherent unit the trainer is explaining. Each step has: a short title (≤8 words), a 2-4 sentence description, and a startSegmentId/endSegmentId referencing the input segment IDs. Also produce an overall SOP title.\n\nLANGUAGE: Output the title and every step's title and description in ${lang}. Keep technical / industry / brand terms in their original form (do not translate them).\n\nReturn strict JSON only.`,
+        `You convert narrated training videos into structured SOPs. You receive cleaned, indexed transcript segments. Let the trainer's narration decide where steps begin and end — do NOT impose a preferred number of steps. Each step is a coherent unit the trainer is explaining. Each step has: a short title (≤8 words), a 2-4 sentence description, and a startSegmentId/endSegmentId referencing the input segment IDs. Also produce an overall SOP title.
+
+GRANULARITY:
+- Aim for one step per 60-180 seconds of narration.
+- A typical 15-minute training video produces 5-12 steps.
+- Combine micro-actions within a single goal into one step (e.g., do not split "fill out form" into "click first field", "type first name", "click second field", ... — that's one step).
+- Do not split a single workflow across multiple steps.
+
+NARRATED ALTERNATIVES:
+- If the trainer mentions an alternative path they don't demonstrate (e.g., "You can sign in with Google or enter your email"), include that alternative in the step's description as a brief note.
+- Do not invent alternatives — only include what the trainer actually says.
+
+LANGUAGE: Output the title and every step's title and description in ${lang}. Keep technical / industry / brand terms in their original form (do not translate them).
+
+Return strict JSON only.`,
       pdfOverviewSystem: (lang: string) =>
         `You are writing the opening of a printed SOP document. The reader cannot watch the source video — they only have your text. Read the full transcript and step list, then produce a concise overview: purpose (2-3 sentences), audience (one sentence), prerequisites (bullets), tools/materials mentioned (bullets), and estimated duration (a short phrase like "~N minutes" / "~N phút" matching the output language). No filler, no speculation beyond what the transcript supports.\n\nLANGUAGE: Output every field in ${lang}. Keep technical / industry / brand terms in their original form (do not translate them).`,
       pdfStepSystem: (lang: string) =>
@@ -60,11 +74,15 @@ LANGUAGE: Write every description in ${lang}. Keep technical / industry / brand 
 
 Return strict JSON only.`,
       groundEventSystem: (lang: string) =>
-        `You are a precise visual locator for a how-to screen recording. You receive a BEFORE crop and an AFTER crop of the same screen region around a moment where the user performed one action. A diff bounding box (normalized 0..1 in the crop) tells you roughly where pixels changed.
+        `You are a precise visual locator for a how-to screen recording. You receive THREE images in this order:
+1. FULL BEFORE frame — the entire screen the user was looking at before the action. Use it to identify the page/screen the user is on (page title, form heading, modal name, app section). Use it for CAPTION CONTEXT ONLY — never measure coordinates from it.
+2. BEFORE crop — a zoomed region around where pixels changed, taken from the same frame as image 1.
+3. AFTER crop — the matching region after the action.
+A diff bounding box (normalized 0..1 in the CROP) tells you roughly where pixels changed.
 
-Ground every answer in the PIXELS YOU CAN SEE in the two crops. Do not infer or guess based on the step title.
+Ground every answer in the PIXELS YOU CAN SEE in these three images. Do not infer or guess based on the step title.
 
-Return a bounding box that wraps the WHOLE interactive UI element the user acted on — the entire container, not the text or icon inside it.
+Return a bounding box that wraps the WHOLE interactive UI element the user acted on — the entire container, not the text or icon inside it. Coordinates are normalized 0..1 against the CROP (image 2 or 3, whichever you pick as displayFrame). NEVER measure against the full frame.
 
 CRITICAL RULES:
 - For a click (button, link, icon, tab, menu item, row, dropdown, card): bbox the FULL clickable element — its background fill, its border, and its inner padding. If a button labeled "Next" has padding around the label, bbox the entire button shape, NOT just the word "Next". If a link is a row in a list, bbox the entire row, NOT just the text.
@@ -74,7 +92,7 @@ CRITICAL RULES:
 - Do NOT bbox the mouse cursor or include it as a separate element. Ignore the cursor entirely; locate the UI element only.
 - If the source element is not visible in the crop (e.g. the click triggered a full-page nav and the source button is gone), fall back to the diff bbox region.
 
-Write a short imperative caption in ${lang} describing what the user did, based ONLY on what is visible in the crops. One sentence (e.g., "Click the Sign in button.", "Enter your email address."). Do NOT invent an element name that is not visibly present in either crop.
+Write a short imperative caption in ${lang} describing what the user did, based ONLY on what is visible in the three images. ALWAYS include the screen/page context from the FULL BEFORE frame so a reader who hasn't watched the video knows WHERE they are. Examples: "On the 'Check your email' screen, enter the 6-digit verification code, then click Next.", "On the 'What is your name?' screen, fill in your first and last name, then click Next.", "On the HubSpot login page, click the Sign in with Google button.". Keep it one or two short sentences. If the screen has no visible title or heading, describe it functionally ("On the signup form…", "In the contacts list…"). Do NOT invent an element name or screen name that is not visibly present.
 
 Return caption: null ONLY when the change is not a user action at all — e.g., a carousel auto-scrolling, a video playing, an ad rotating, a notification toast appearing on its own, a loading spinner animating, a background animation. When caption is null the event will be DISCARDED entirely (the screenshot will not be shown), so use null whenever the change is not something the reader needs to do. Do NOT return null just because you are unsure of the exact element label — make your best caption call.
 
@@ -85,7 +103,7 @@ Pick "displayFrame" — which crop best illustrates the action to a reader who w
 - "after" — the action REVEALED new UI that did not exist in the BEFORE crop (flyout, dropdown, modal, expanded menu, autocomplete), AND the revealed UI is what the reader needs to see. Also pick "after" for typing/input events, where the typed text only appears in the AFTER crop.
 Default to "before" for clicks unless the AFTER crop is materially more informative.
 
-Coordinates are normalized 0..1 against the CROP (top-left origin). The bbox MUST be valid in whichever frame you picked as displayFrame.
+The bbox is normalized 0..1 against the CROP (image 2 or 3, top-left origin) and MUST be valid in whichever crop you picked as displayFrame. NEVER take coordinates from the full BEFORE frame.
 
 LANGUAGE: Caption in ${lang}. Keep technical / industry / brand terms in their original form.
 
