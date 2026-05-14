@@ -3,6 +3,30 @@ import fs from "node:fs";
 
 const API = "https://openrouter.ai/api/v1/chat/completions";
 
+type Fetcher = typeof fetch;
+
+function shouldRetryStatus(status: number): boolean {
+  if (status >= 500) return true;
+  if (status === 408 || status === 429) return true;
+  return false;
+}
+
+async function sleep(ms: number): Promise<void> {
+  return new Promise(r => setTimeout(r, ms));
+}
+
+function jitteredBackoff(baseMs: number, attempt: number): number {
+  const ceiling = baseMs * Math.pow(2, attempt);
+  return Math.floor(Math.random() * ceiling);
+}
+
+class NonRetryableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "NonRetryableError";
+  }
+}
+
 export async function llmJson<T extends ZodTypeAny>(opts: {
   model: string;
   system: string;
@@ -10,7 +34,14 @@ export async function llmJson<T extends ZodTypeAny>(opts: {
   schema: T;
   schemaName: string;
   maxRetries: number;
+  temperature?: number;
+  retryDelayMs?: number;
+  fetcher?: Fetcher;
 }): Promise<z.infer<T>> {
+  const temperature = opts.temperature ?? 0.2;
+  const retryDelayMs = opts.retryDelayMs ?? 1000;
+  const fetcher = opts.fetcher ?? fetch;
+
   const body = {
     model: opts.model,
     messages: [
@@ -25,13 +56,13 @@ export async function llmJson<T extends ZodTypeAny>(opts: {
         schema: zodToJsonSchemaLike(opts.schema),
       },
     },
-    temperature: 0.2,
+    temperature,
   };
 
   let lastErr: unknown = null;
   for (let attempt = 0; attempt <= opts.maxRetries; attempt++) {
     try {
-      const res = await fetch(API, {
+      const res = await fetcher(API, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY!}`,
@@ -41,7 +72,14 @@ export async function llmJson<T extends ZodTypeAny>(opts: {
         },
         body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error(`OpenRouter ${res.status}: ${await res.text()}`);
+      if (!res.ok) {
+        if (!shouldRetryStatus(res.status)) {
+          throw new NonRetryableError(`OpenRouter ${res.status}: ${await res.text()}`);
+        }
+        lastErr = new Error(`OpenRouter ${res.status}`);
+        if (attempt < opts.maxRetries) await sleep(jitteredBackoff(retryDelayMs, attempt));
+        continue;
+      }
       const data = await res.json();
       const content = data.choices?.[0]?.message?.content;
       if (!content) throw new Error("Empty content");
@@ -49,6 +87,8 @@ export async function llmJson<T extends ZodTypeAny>(opts: {
       return opts.schema.parse(parsed);
     } catch (e) {
       lastErr = e;
+      if (e instanceof NonRetryableError) throw e;
+      if (attempt < opts.maxRetries) await sleep(jitteredBackoff(retryDelayMs, attempt));
     }
   }
   throw lastErr ?? new Error("LLM failed");
@@ -58,7 +98,6 @@ export async function llmJson<T extends ZodTypeAny>(opts: {
  * Minimal Zod → JSON Schema conversion sufficient for our 3 schemas.
  * If schemas grow, switch to `zod-to-json-schema` npm package.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function zodToJsonSchemaLike(schema: ZodTypeAny): unknown {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const def: any = (schema as any)._def;
@@ -100,8 +139,16 @@ export async function llmJsonVision<T extends ZodTypeAny>(opts: {
   imagePaths: string[];
   schema: T;
   schemaName: string;
-  maxRetries: number;
+  maxRetries?: number;
+  temperature?: number;
+  retryDelayMs?: number;
+  fetcher?: Fetcher;
 }): Promise<z.infer<T>> {
+  const maxRetries = opts.maxRetries ?? 3;
+  const temperature = opts.temperature ?? 0.2;
+  const retryDelayMs = opts.retryDelayMs ?? 1000;
+  const fetcher = opts.fetcher ?? fetch;
+
   const imageParts = await Promise.all(
     opts.imagePaths.map(async (p) => {
       const b = await fs.promises.readFile(p);
@@ -124,13 +171,13 @@ export async function llmJsonVision<T extends ZodTypeAny>(opts: {
         schema: zodToJsonSchemaLike(opts.schema),
       },
     },
-    temperature: 0.2,
+    temperature,
   };
 
   let lastErr: unknown = null;
-  for (let attempt = 0; attempt <= opts.maxRetries; attempt++) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      const res = await fetch(API, {
+      const res = await fetcher(API, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY!}`,
@@ -140,7 +187,14 @@ export async function llmJsonVision<T extends ZodTypeAny>(opts: {
         },
         body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error(`OpenRouter ${res.status}: ${await res.text()}`);
+      if (!res.ok) {
+        if (!shouldRetryStatus(res.status)) {
+          throw new NonRetryableError(`OpenRouter ${res.status}: ${await res.text()}`);
+        }
+        lastErr = new Error(`OpenRouter ${res.status}`);
+        if (attempt < maxRetries) await sleep(jitteredBackoff(retryDelayMs, attempt));
+        continue;
+      }
       const data = await res.json();
       const content = data.choices?.[0]?.message?.content;
       if (!content) throw new Error("Empty content");
@@ -148,6 +202,8 @@ export async function llmJsonVision<T extends ZodTypeAny>(opts: {
       return opts.schema.parse(parsed);
     } catch (e) {
       lastErr = e;
+      if (e instanceof NonRetryableError) throw e;
+      if (attempt < maxRetries) await sleep(jitteredBackoff(retryDelayMs, attempt));
     }
   }
   throw lastErr ?? new Error("LLM failed");
