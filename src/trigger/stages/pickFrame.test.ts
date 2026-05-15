@@ -26,6 +26,7 @@ test("computeSearchWindow uses narration segment IDs when present", () => {
     { narrationSegmentIds: [0, 1], timeWindow: null },
     narration,
     { tStart: 0, tEnd: 100 },
+    { pre: 1, post: 3 },
   );
   assert.equal(w.start, 9);
   assert.equal(w.end, 18);
@@ -36,9 +37,33 @@ test("computeSearchWindow falls back to timeWindow when ids are empty", () => {
     { narrationSegmentIds: [], timeWindow: { start: 20, end: 30 } },
     narration,
     { tStart: 0, tEnd: 100 },
+    { pre: 0, post: 3 },
   );
   assert.equal(w.start, 20);
   assert.equal(w.end, 33);
+});
+
+test("computeSearchWindow applies symmetric pad in both directions for narration anchor", () => {
+  const w = computeSearchWindow(
+    { narrationSegmentIds: [1], timeWindow: null },
+    narration,
+    { tStart: 0, tEnd: 100 },
+    { pre: 8, post: 8 },
+  );
+  // seg 1: start=12, end=15 → window = [12-8, 15+8] = [4, 23]
+  assert.equal(w.start, 4);
+  assert.equal(w.end, 23);
+});
+
+test("computeSearchWindow applies pre-pad to timeWindow fallback", () => {
+  const w = computeSearchWindow(
+    { narrationSegmentIds: [], timeWindow: { start: 20, end: 30 } },
+    narration,
+    { tStart: 0, tEnd: 100 },
+    { pre: 8, post: 8 },
+  );
+  assert.equal(w.start, 12);
+  assert.equal(w.end, 38);
 });
 
 test("shortlistClusters keeps clusters overlapping the window, up to cap, by longest in-window dwell", () => {

@@ -28,17 +28,21 @@ export function computeSearchWindow(
   subStep: { narrationSegmentIds: number[]; timeWindow: { start: number; end: number } | null },
   narration: NarrationSegment[],
   step: { tStart: number; tEnd: number },
+  pad: { pre: number; post: number } = {
+    pre: config.screenshots.pickFrame.searchWindowPrePadSec,
+    post: config.screenshots.pickFrame.searchWindowPostPadSec,
+  },
 ): { start: number; end: number } {
   if (subStep.narrationSegmentIds.length > 0) {
     const refs = narration.filter(n => subStep.narrationSegmentIds.includes(n.id));
     if (refs.length > 0) {
-      const start = Math.min(...refs.map(n => n.start)) - 1;
-      const end = Math.max(...refs.map(n => n.end)) + 3;
+      const start = Math.min(...refs.map(n => n.start)) - pad.pre;
+      const end = Math.max(...refs.map(n => n.end)) + pad.post;
       return { start, end };
     }
   }
   if (subStep.timeWindow) {
-    return { start: subStep.timeWindow.start, end: subStep.timeWindow.end + 3 };
+    return { start: subStep.timeWindow.start - pad.pre, end: subStep.timeWindow.end + pad.post };
   }
   return { start: step.tStart, end: step.tEnd };
 }
