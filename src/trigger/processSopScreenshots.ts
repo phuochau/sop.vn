@@ -21,7 +21,7 @@ import { runVerifyFrame } from "./stages/verifyFrame";
 import { runLocateHighlight } from "./stages/locateHighlight";
 import { buildAction } from "./stages/buildAction";
 import { runWithConcurrency } from "@/lib/concurrency";
-import { traceEnabled, persistTrace, makeTrace } from "@/lib/pipelineTrace";
+import { traceEnabled, persistTrace, makeTrace, persistStepPlanTrace, makeStepPlanTrace, type ClusterSnapshot, type RawSubStepSnapshot } from "@/lib/pipelineTrace";
 import type { Action } from "@/lib/schemas";
 
 async function setStatus(id: ObjectId, status: SopStatus, extra: Record<string, unknown> = {}) {
@@ -172,6 +172,35 @@ export const processSopScreenshots = task({
                   narration: step.narration,
                   clusters,
                   language: outputLanguage,
+                  onTrace: traceEnabled() ? async (info) => {
+                    const clusterSnapshots: ClusterSnapshot[] = clusters.map(c => ({
+                      letter: c.letter,
+                      start: c.timeSpan.start,
+                      end: c.timeSpan.end,
+                      representativeT: c.representative.t,
+                      memberCount: c.members.length,
+                    }));
+                    const toSnap = (p: typeof info.rawPlan): RawSubStepSnapshot[] => p.subSteps.map(s => ({
+                      intent: s.intent,
+                      verb: s.verb,
+                      visualConfidence: s.visualConfidence,
+                      narrationSegmentIds: [...s.narrationSegmentIds],
+                      timeWindow: s.timeWindow,
+                    }));
+                    await persistStepPlanTrace(makeStepPlanTrace({
+                      sopId: _id.toHexString(),
+                      stepIndex: step.stepIndex,
+                      stepTitle: step.title,
+                      stepWindow: { start: step.tStart, end: step.tEnd },
+                      narrationSegmentCount: step.narration.length,
+                      clusters: clusterSnapshots,
+                      rawPlan: toSnap(info.rawPlan),
+                      filteredPlan: toSnap(info.filteredPlan),
+                      drops: info.drops,
+                      repairUsed: info.repairUsed,
+                      rawRepairPlan: info.rawRepairPlan ? toSnap(info.rawRepairPlan) : null,
+                    }));
+                  } : undefined,
                 });
               } catch (e) {
                 logger.error("plan failed", { stepIndex: step.stepIndex, e: String(e) });

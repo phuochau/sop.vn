@@ -20,6 +20,14 @@ export type PlannerFn = (args: {
   isRepair: boolean;
 }) => Promise<z.infer<typeof StepPlan>>;
 
+export type PlanTraceInfo = {
+  rawPlan: z.infer<typeof StepPlan>;
+  filteredPlan: z.infer<typeof StepPlan>;
+  drops: PlanDropRecord[];
+  repairUsed: boolean;
+  rawRepairPlan: z.infer<typeof StepPlan> | null;
+};
+
 export type PlanStepArgs = {
   stepIndex: number;
   stepTitle: string;
@@ -28,6 +36,7 @@ export type PlanStepArgs = {
   clusters: ScreenCluster[];
   language: string;
   planner?: PlannerFn;
+  onTrace?: (info: PlanTraceInfo) => void | Promise<void>;
 };
 
 const TILE_W = 640;
@@ -104,10 +113,20 @@ async function defaultPlanner(args: {
   });
 }
 
+export type PlanDropRecord = {
+  intent: string;
+  reason: "low_confidence" | "no_temporal_anchor";
+  droppedNarrationIds?: number[];
+};
+
 export function validateAndFilter(
   plan: z.infer<typeof StepPlan>,
   validIds: Set<number>,
-  ctx: { stepIndex?: number; log?: (event: string, attrs: Record<string, unknown>) => void } = {},
+  ctx: {
+    stepIndex?: number;
+    log?: (event: string, attrs: Record<string, unknown>) => void;
+    drops?: PlanDropRecord[];
+  } = {},
 ): z.infer<typeof StepPlan> {
   const log = ctx.log ?? ((_event, _attrs) => {});
   const stepIndex = ctx.stepIndex;
@@ -115,19 +134,18 @@ export function validateAndFilter(
   for (const s of plan.subSteps) {
     if (s.visualConfidence === "low") {
       log("pipeline.plan.low_confidence_dropped", { stepIndex, intent: s.intent });
+      ctx.drops?.push({ intent: s.intent, reason: "low_confidence" });
       continue;
     }
+    const invalidIds = s.narrationSegmentIds.filter(id => !validIds.has(id));
     const filteredIds = s.narrationSegmentIds.filter(id => validIds.has(id));
-    if (filteredIds.length !== s.narrationSegmentIds.length) {
-      log("pipeline.plan.filtered_invalid_ids", {
-        stepIndex,
-        intent: s.intent,
-        droppedIds: s.narrationSegmentIds.filter(id => !validIds.has(id)),
-      });
+    if (invalidIds.length > 0) {
+      log("pipeline.plan.filtered_invalid_ids", { stepIndex, intent: s.intent, droppedIds: invalidIds });
     }
     const next = { ...s, narrationSegmentIds: filteredIds };
     if (next.narrationSegmentIds.length === 0 && next.timeWindow === null) {
       log("pipeline.plan.no_temporal_anchor", { stepIndex, intent: next.intent });
+      ctx.drops?.push({ intent: next.intent, reason: "no_temporal_anchor", droppedNarrationIds: invalidIds });
       continue;
     }
     out.push(next);
@@ -142,7 +160,7 @@ export async function runPlanStep(args: PlanStepArgs): Promise<z.infer<typeof St
     const montagePath = await buildMontage(args.clusters, tmpDir);
     const validIds = new Set(args.narration.map(n => n.id));
 
-    let raw = await planner({
+    const initialRaw = await planner({
       stepIndex: args.stepIndex,
       stepTitle: args.stepTitle,
       stepDescription: args.stepDescription,
@@ -152,11 +170,16 @@ export async function runPlanStep(args: PlanStepArgs): Promise<z.infer<typeof St
       isRepair: false,
     });
     const log = (event: string, attrs: Record<string, unknown>) => logger.info(event, attrs);
-    let plan = validateAndFilter(raw, validIds, { stepIndex: args.stepIndex, log });
+    const initialDrops: PlanDropRecord[] = [];
+    let plan = validateAndFilter(initialRaw, validIds, { stepIndex: args.stepIndex, log, drops: initialDrops });
 
+    let repairUsed = false;
+    let rawRepair: z.infer<typeof StepPlan> | null = null;
+    let repairDrops: PlanDropRecord[] = [];
     if (plan.subSteps.length === 0 && args.narration.length > 0) {
       logger.warn("pipeline.plan.empty", { stepIndex: args.stepIndex });
-      raw = await planner({
+      repairUsed = true;
+      rawRepair = await planner({
         stepIndex: args.stepIndex,
         stepTitle: args.stepTitle,
         stepDescription: args.stepDescription,
@@ -165,7 +188,8 @@ export async function runPlanStep(args: PlanStepArgs): Promise<z.infer<typeof St
         language: args.language,
         isRepair: true,
       });
-      plan = validateAndFilter(raw, validIds, { stepIndex: args.stepIndex, log });
+      repairDrops = [];
+      plan = validateAndFilter(rawRepair, validIds, { stepIndex: args.stepIndex, log, drops: repairDrops });
       if (plan.subSteps.length === 0) {
         logger.error("pipeline.plan.empty_after_repair", { stepIndex: args.stepIndex });
       }
@@ -175,6 +199,17 @@ export async function runPlanStep(args: PlanStepArgs): Promise<z.infer<typeof St
       stepIndex: args.stepIndex,
       subStepCount: plan.subSteps.length,
     });
+
+    if (args.onTrace) {
+      await args.onTrace({
+        rawPlan: repairUsed && rawRepair ? rawRepair : initialRaw,
+        filteredPlan: plan,
+        drops: repairUsed ? repairDrops : initialDrops,
+        repairUsed,
+        rawRepairPlan: repairUsed ? initialRaw : null,
+      });
+    }
+
     return plan;
   } finally {
     await fs.promises.rm(tmpDir, { recursive: true, force: true });

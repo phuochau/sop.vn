@@ -41,3 +41,55 @@ export async function persistTrace(doc: PipelineTraceDoc): Promise<void> {
     logger.warn("pipeline.trace.persist_failed", { sopId: doc.sopId, stepIndex: doc.stepIndex, error: String(e) });
   }
 }
+
+export type RawSubStepSnapshot = {
+  intent: string;
+  verb: string;
+  visualConfidence: string;
+  narrationSegmentIds: number[];
+  timeWindow: { start: number; end: number } | null;
+};
+
+export type PlanDrop = {
+  intent: string;
+  reason: "low_confidence" | "no_temporal_anchor";
+  droppedNarrationIds?: number[];
+};
+
+export type ClusterSnapshot = {
+  letter: string;
+  start: number;
+  end: number;
+  representativeT: number;
+  memberCount: number;
+};
+
+export type StepPlanTraceDoc = {
+  _id: ObjectId;
+  sopId: string;
+  stepIndex: number;
+  stepTitle: string;
+  stepWindow: { start: number; end: number };
+  narrationSegmentCount: number;
+  clusters: ClusterSnapshot[];
+  rawPlan: RawSubStepSnapshot[];
+  filteredPlan: RawSubStepSnapshot[];
+  drops: PlanDrop[];
+  repairUsed: boolean;
+  rawRepairPlan: RawSubStepSnapshot[] | null;
+  createdAt: Date;
+};
+
+export function makeStepPlanTrace(args: Omit<StepPlanTraceDoc, "_id" | "createdAt">): StepPlanTraceDoc {
+  return { _id: new ObjectId(), createdAt: new Date(), ...args };
+}
+
+export async function persistStepPlanTrace(doc: StepPlanTraceDoc): Promise<void> {
+  if (!traceEnabled()) return;
+  try {
+    const db = await getDb();
+    await db.collection<StepPlanTraceDoc>("sop_pipeline_step_traces").insertOne(doc);
+  } catch (e) {
+    logger.warn("pipeline.step_trace.persist_failed", { sopId: doc.sopId, stepIndex: doc.stepIndex, error: String(e) });
+  }
+}
