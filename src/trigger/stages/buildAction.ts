@@ -32,10 +32,10 @@ export function buildAction(args: {
     verifyMatch: args.verify.match === "yes" ? "yes" : "partially",
     pickedClusterLetter: args.pickedClusterLetter,
   };
-  if (args.highlight.highlight === "yes" && args.highlight.bbox && args.subStep.verb !== "view") {
+  if (args.highlight.highlight === "yes" && args.highlight.point && args.subStep.verb !== "view") {
     base.highlight = {
       kind: coerceHighlightKind(args.subStep.verb),
-      bbox: args.highlight.bbox,
+      point: args.highlight.point,
     };
   }
   return base;
