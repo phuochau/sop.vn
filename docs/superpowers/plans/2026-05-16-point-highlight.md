@@ -16,20 +16,24 @@
 - Commits go directly to `master` (project convention). Never use `--no-verify`.
 - The import alias `@/` maps to `src/`.
 
+**Schema-design note:** `HighlightDecision.point` is an **optional** nullable key
+(`Point.nullable().optional()`), not a required one. This is a deliberate
+refinement of the spec's `Point.nullable()`: an optional key means none of the
+existing `HighlightDecision` object literals (in `coerceForViewVerb` and the
+existing test files) need editing — they simply omit `point`. Only the new
+locator code sets it. `HighlightDecision` is no longer passed to an LLM after
+Task 3, so the `ZodOptional` it introduces is never JSON-schema-converted.
+
 ---
 
-## Task 1: Schema & types — add `point`
+## Task 1: Schema & types — add the optional `point`
 
-Adds the `Point` schema and the `point` field through the type layer. `point`
-is a required-but-nullable key on `HighlightDecision` (mirroring `bbox`), so
-every object literal that builds a `HighlightDecision` must gain `point`. This
-task also fixes those literals so the project still compiles.
+Adds the `Point` schema and threads an **optional** `point` field through the
+type layer. Because `point` is optional, no existing object literal breaks.
 
 **Files:**
 - Modify: `src/lib/schemas.ts`
 - Modify: `src/lib/mongo.ts`
-- Modify: `src/trigger/stages/locateHighlight.ts` (`coerceForViewVerb` literal)
-- Modify: `src/trigger/stages/locateHighlight.test.ts` (existing test literals)
 - Create: `src/lib/schemas.test.ts`
 
 - [ ] **Step 1: Write the failing test**
@@ -41,7 +45,7 @@ import { test } from "node:test";
 import assert from "node:assert";
 import { HighlightDecision } from "./schemas";
 
-test("HighlightDecision accepts a point and a null bbox", () => {
+test("HighlightDecision accepts a point", () => {
   const parsed = HighlightDecision.parse({
     highlight: "yes",
     point: { x: 0.5, y: 0.4 },
@@ -50,6 +54,16 @@ test("HighlightDecision accepts a point and a null bbox", () => {
     noHighlightReason: null,
   });
   assert.deepEqual(parsed.point, { x: 0.5, y: 0.4 });
+});
+
+test("HighlightDecision allows point to be omitted (optional key)", () => {
+  const parsed = HighlightDecision.parse({
+    highlight: "no",
+    bbox: null,
+    elementCaption: null,
+    noHighlightReason: "view_action",
+  });
+  assert.equal(parsed.point ?? null, null);
 });
 
 test("HighlightDecision accepts the grounding_unavailable reason", () => {
@@ -85,8 +99,8 @@ Replace the whole `HighlightDecision` definition with:
 ```ts
 export const HighlightDecision = z.object({
   highlight: z.enum(["yes", "no"]),
-  point: Point.nullable(),   // primary geometry — set by the new locator
-  bbox: BBox.nullable(),     // deprecated; kept so old records still validate
+  point: Point.nullable().optional(),   // primary geometry — set by the new locator
+  bbox: BBox.nullable(),                // deprecated; kept so old records validate
   elementCaption: z.string().nullable(),
   noHighlightReason: z
     .enum(["view_action", "no_specific_target", "non_ui_frame", "grounding_unavailable"])
@@ -116,64 +130,19 @@ In the `Screenshot` interface, replace the `highlight?` member with:
   };
 ```
 
-- [ ] **Step 5: Fix the `coerceForViewVerb` literal**
-
-In `src/trigger/stages/locateHighlight.ts`, the `coerceForViewVerb` function
-returns a `Decision` literal. Add `point: null` to it:
-
-```ts
-export function coerceForViewVerb(verb: SubStep["verb"], d: Decision): Decision {
-  if (verb !== "view") return d;
-  return {
-    highlight: "no",
-    point: null,
-    bbox: null,
-    elementCaption: null,
-    noHighlightReason: "view_action",
-  };
-}
-```
-
-- [ ] **Step 6: Fix the existing test literals**
-
-In `src/trigger/stages/locateHighlight.test.ts`, three object literals build a
-`HighlightDecision` and now need `point`. Add `point: null` to each:
-- the `coerceForViewVerb("view", { ... })` argument,
-- the `input` object in the "leaves non-view verbs untouched" test,
-- the object returned by the `highlighter` in the "returns highlighter output"
-  test.
-
-Example — the first becomes:
-
-```ts
-  const out = coerceForViewVerb("view", {
-    highlight: "yes",
-    point: null,
-    bbox: { x: 0, y: 0, w: 0.1, h: 0.1 },
-    elementCaption: "should be ignored",
-    noHighlightReason: null,
-  });
-```
-
-Apply the same `point: null` addition to the other two literals.
-
-- [ ] **Step 7: Run tests and typecheck**
+- [ ] **Step 5: Run the test and typecheck**
 
 Run: `npx tsx --test src/lib/schemas.test.ts`
-Expected: PASS — 2 tests.
+Expected: PASS — 3 tests.
 
-Run: `npx tsx --test src/trigger/stages/locateHighlight.test.ts`
-Expected: PASS — 4 tests (existing tests still green).
+Run: `npx tsc --noEmit -p tsconfig.json 2>&1 | grep -E "schemas|mongo"`
+Expected: no output. (No other file is edited, so nothing else can break.)
 
-Run: `npx tsc --noEmit -p tsconfig.json 2>&1 | grep -E "schemas|mongo|locateHighlight"`
-Expected: no output (no type errors in these files).
-
-- [ ] **Step 8: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add src/lib/schemas.ts src/lib/mongo.ts src/lib/schemas.test.ts \
-  src/trigger/stages/locateHighlight.ts src/trigger/stages/locateHighlight.test.ts
-git commit -m "feat(highlight): add point field to highlight schema/types
+git add src/lib/schemas.ts src/lib/mongo.ts src/lib/schemas.test.ts
+git commit -m "feat(highlight): add optional point field to highlight schema/types
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 ```
@@ -199,14 +168,14 @@ import { test } from "node:test";
 import assert from "node:assert";
 import { parseUiTarsReply, qwenToPoint, uiTarsPoint, qwenPoint } from "./grounding";
 
+const FIXTURE = "src/trigger/stages/__fixtures__/sample-1080p.jpg";
+
 test("parseUiTarsReply normalizes absolute pixels to 0-1", () => {
-  const p = parseUiTarsReply("(960,540)", 1920, 1080);
-  assert.deepEqual(p, { x: 0.5, y: 0.5 });
+  assert.deepEqual(parseUiTarsReply("(960,540)", 1920, 1080), { x: 0.5, y: 0.5 });
 });
 
 test("parseUiTarsReply clamps out-of-range coordinates", () => {
-  const p = parseUiTarsReply("(2000,-50)", 1920, 1080);
-  assert.deepEqual(p, { x: 1, y: 0 });
+  assert.deepEqual(parseUiTarsReply("(2000,-50)", 1920, 1080), { x: 1, y: 0 });
 });
 
 test("parseUiTarsReply returns null when no coordinates present", () => {
@@ -227,18 +196,17 @@ test("uiTarsPoint parses an injected fetch response", async () => {
     json: async () => ({ choices: [{ message: { content: "(480,270)" } }] }),
   })) as unknown as typeof fetch;
   const r = await uiTarsPoint({
-    framePath: "src/trigger/stages/__fixtures__/sample-1080p.jpg",
-    intent: "Click Save", verb: "click", frameW: 960, frameH: 540,
-    model: "test/model", fetcher: fakeFetch,
+    framePath: FIXTURE, intent: "Click Save", verb: "click",
+    frameW: 960, frameH: 540, model: "test/model", fetcher: fakeFetch,
   });
   assert.deepEqual(r.point, { x: 0.5, y: 0.5 });
 });
 
 test("qwenPoint maps an injected vision response", async () => {
-  const fakeVision = (async () => ({ found: "yes", x: 250, y: 750 })) as never;
+  const fakeVision = (async () => ({ found: "yes", x: 250, y: 750 })) as unknown as typeof import("@/lib/openrouter").llmJsonVision;
   const r = await qwenPoint({
-    framePath: "src/trigger/stages/__fixtures__/sample-1080p.jpg",
-    intent: "Click Save", verb: "click", model: "test/model", visionFn: fakeVision,
+    framePath: FIXTURE, intent: "Click Save", verb: "click",
+    model: "test/model", visionFn: fakeVision,
   });
   assert.deepEqual(r.point, { x: 0.25, y: 0.75 });
 });
@@ -420,8 +388,8 @@ which accepts injectable grounders so the chain is testable without network.
 
 - [ ] **Step 1: Add model IDs to config**
 
-In `src/config/index.ts`, inside the `ai:` object, after the `visionModel`
-line, add:
+In `src/config/index.ts`, inside the `ai:` object, directly after the
+`visionModel: "google/gemini-2.5-flash",` line, add:
 
 ```ts
     pointPrimaryModel: "bytedance/ui-tars-1.5-7b",
@@ -430,11 +398,16 @@ line, add:
 
 - [ ] **Step 2: Write the failing test**
 
-Append to `src/trigger/stages/locateHighlight.test.ts`:
+In `src/trigger/stages/locateHighlight.test.ts`, add `pointFallbackHighlight`
+to the **existing** import from `./locateHighlight` so the line reads:
 
 ```ts
-import { pointFallbackHighlight } from "./locateHighlight";
+import { coerceForViewVerb, type HighlighterFn, pointFallbackHighlight, runLocateHighlightWith } from "./locateHighlight";
+```
 
+Then append these tests at the end of the file:
+
+```ts
 const okFrame = "src/trigger/stages/__fixtures__/sample-1080p.jpg";
 
 test("pointFallbackHighlight uses the UI-TARS point when found", async () => {
@@ -502,7 +475,7 @@ test("pointFallbackHighlight reports grounding_unavailable when both throw", asy
 - [ ] **Step 3: Run the test to verify it fails**
 
 Run: `npx tsx --test src/trigger/stages/locateHighlight.test.ts`
-Expected: FAIL — `pointFallbackHighlight` is not exported.
+Expected: FAIL — `pointFallbackHighlight` is not exported by `./locateHighlight`.
 
 - [ ] **Step 4: Rewrite the highlighter in `src/trigger/stages/locateHighlight.ts`**
 
@@ -594,10 +567,12 @@ const defaultHighlighter: HighlighterFn = (args) =>
 ```
 
 Notes for the implementer:
-- `sharp` is already imported at the top of the file — reuse it.
-- `config` is already imported.
-- The `HighlighterFn` type and `runLocateHighlightWith` are unchanged — they
-  still consume `defaultHighlighter` as the default.
+- `sharp`, `config`, `SubStep` (`type SubStep = z.infer<typeof SubStepPlan>`),
+  `Decision` (`type Decision = z.infer<typeof HighlightDecision>`) and
+  `HighlighterFn` are all already declared at the top of the file — reuse them.
+- `runLocateHighlightWith` is unchanged — it still falls back to
+  `defaultHighlighter`. A `const` referenced inside a function body that runs
+  later is fine regardless of declaration order.
 - `defaultHighlighter` ignores `args.language` (the grounders work visually).
 
 - [ ] **Step 5: Run the test to verify it passes**
@@ -624,8 +599,9 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 
 ## Task 4: Circle renderer in `uploadScreenshots`
 
-Adds `circleSvg` and widens `buildBufferWithOptionalHighlight` to accept either
-a point (circle) or a bbox (legacy rect).
+Adds `circleSvg` and widens `buildBufferWithOptionalHighlight` to accept a
+highlight geometry — point (circle) or bbox (legacy rect). The signature change
+means the two existing bbox-passing tests must be updated to the new shape.
 
 **Files:**
 - Modify: `src/trigger/stages/uploadScreenshots.ts`
@@ -633,11 +609,28 @@ a point (circle) or a bbox (legacy rect).
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `src/trigger/stages/uploadScreenshots.test.ts`:
+In `src/trigger/stages/uploadScreenshots.test.ts`, add `circleSvg` to the
+**existing** `import { rectSvg } from "./uploadScreenshots"` line so it reads:
 
 ```ts
-import { circleSvg, buildBufferWithOptionalHighlight } from "./uploadScreenshots";
+import { rectSvg, circleSvg } from "./uploadScreenshots";
+```
 
+(`buildBufferWithOptionalHighlight` is already imported lower in the file —
+do not import it again.)
+
+Update the two existing tests that pass a **bare bbox** so the bbox is wrapped:
+- In "buildBufferWithOptionalHighlight returns re-encoded bytes when bbox is
+  valid", change the 2nd argument from `{ x: 0.1, y: 0.1, w: 0.2, h: 0.1 }` to
+  `{ bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.1 } }`.
+- In "buildBufferWithOptionalHighlight falls back to raw on degenerate bbox...",
+  change `{ x: 0.1, y: 0.1, w: 0.001, h: 0.1 }` to
+  `{ bbox: { x: 0.1, y: 0.1, w: 0.001, h: 0.1 } }`.
+- The "...returns raw bytes when bbox is null" test passes `null` — leave it.
+
+Then append these new tests at the end of the file:
+
+```ts
 test("circleSvg places a marker at the normalized point", () => {
   const svg = circleSvg(1000, 500, { x: 0.5, y: 0.5 });
   assert.ok(svg.includes('cx="500"'));
@@ -652,28 +645,20 @@ test("circleSvg clamps an out-of-range point into the frame", () => {
 });
 
 test("buildBufferWithOptionalHighlight draws a circle for a point geom", async () => {
-  const { buf, error } = await buildBufferWithOptionalHighlight(
-    "src/trigger/stages/__fixtures__/sample-1080p.jpg",
-    { point: { x: 0.5, y: 0.5 } },
-  );
+  const raw = await fs.promises.readFile(FIXTURE);
+  const { buf, error } = await buildBufferWithOptionalHighlight(FIXTURE, {
+    point: { x: 0.5, y: 0.5 },
+  });
   assert.equal(error, null);
-  assert.ok(buf.length > 0);
-});
-
-test("buildBufferWithOptionalHighlight returns the frame unchanged for null geom", async () => {
-  const { error } = await buildBufferWithOptionalHighlight(
-    "src/trigger/stages/__fixtures__/sample-1080p.jpg",
-    null,
-  );
-  assert.equal(error, null);
+  assert.ok(!buf.equals(raw), "should differ from raw (circle composited)");
 });
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
 
 Run: `npx tsx --test src/trigger/stages/uploadScreenshots.test.ts`
-Expected: FAIL — `circleSvg` is not exported / `buildBufferWithOptionalHighlight`
-rejects the `{ point }` argument.
+Expected: FAIL — `circleSvg` is not exported; `buildBufferWithOptionalHighlight`
+rejects the `{ point }` / `{ bbox }` argument shapes.
 
 - [ ] **Step 3: Add `circleSvg` to `src/trigger/stages/uploadScreenshots.ts`**
 
@@ -752,7 +737,7 @@ export async function buildBufferWithOptionalHighlight(
 - [ ] **Step 5: Update the call site in `runUploadScreenshots`**
 
 In `runUploadScreenshots`, replace the `bboxForOverlay` line and the
-`buildBufferWithOptionalHighlight` call:
+`buildBufferWithOptionalHighlight` call with:
 
 ```ts
       const h = action.highlight;
@@ -764,13 +749,14 @@ In `runUploadScreenshots`, replace the `bboxForOverlay` line and the
       const { buf, error } = await buildBufferWithOptionalHighlight(action.displayFramePath, geom);
 ```
 
-The rest of the loop (the `rec.highlight = action.highlight` assignment and
+The rest of the loop (`rec.highlight = action.highlight` and
 `rec.highlightError = error`) is unchanged.
 
 - [ ] **Step 6: Run the test to verify it passes**
 
 Run: `npx tsx --test src/trigger/stages/uploadScreenshots.test.ts`
-Expected: PASS — all tests (existing + 4 new).
+Expected: PASS — 12 tests (6 `rectSvg` + 3 `buildBufferWithOptionalHighlight` +
+3 new).
 
 - [ ] **Step 7: Typecheck**
 
@@ -792,77 +778,117 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 
 The current guard attaches the highlight only when `args.highlight.bbox` is
 truthy. The new locator sets `bbox = null`, so without this change every point
-highlight would be silently dropped.
+highlight would be silently dropped. The existing `buildAction.test.ts` tests
+assert the old bbox behaviour, so the test file is replaced wholesale with
+point-based tests.
 
 **Files:**
 - Modify: `src/trigger/stages/buildAction.ts`
 - Modify: `src/trigger/stages/buildAction.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Replace `src/trigger/stages/buildAction.test.ts` entirely**
 
-Append to `src/trigger/stages/buildAction.test.ts`:
-
-```ts
-test("buildAction attaches a point highlight from the decision", () => {
-  const action = buildAction({
-    stepIndex: 0,
-    order: 0,
-    subStep: {
-      intent: "Click Save", verb: "click", narrationSegmentIds: [],
-      timeWindow: null, visualConfidence: "high",
-    },
-    verify: { match: "yes", reasoning: "" },
-    highlight: {
-      highlight: "yes",
-      point: { x: 0.4, y: 0.6 },
-      bbox: null,
-      elementCaption: null,
-      noHighlightReason: null,
-    },
-    framePath: "/x.jpg",
-    frameTime: 1,
-    pickedClusterLetter: "A",
-  });
-  assert.deepEqual(action.highlight, { kind: "click", point: { x: 0.4, y: 0.6 } });
-});
-
-test("buildAction attaches no highlight when the decision has neither point nor bbox", () => {
-  const action = buildAction({
-    stepIndex: 0,
-    order: 0,
-    subStep: {
-      intent: "Presenter talks", verb: "click", narrationSegmentIds: [],
-      timeWindow: null, visualConfidence: "high",
-    },
-    verify: { match: "yes", reasoning: "" },
-    highlight: {
-      highlight: "no",
-      point: null,
-      bbox: null,
-      elementCaption: null,
-      noHighlightReason: "no_specific_target",
-    },
-    framePath: "/x.jpg",
-    frameTime: 1,
-    pickedClusterLetter: "A",
-  });
-  assert.equal(action.highlight, undefined);
-});
-```
-
-If `buildAction.test.ts` does not exist, create it with this header first:
+Overwrite the file with:
 
 ```ts
 import { test } from "node:test";
 import assert from "node:assert";
 import { buildAction } from "./buildAction";
+
+const subStep = {
+  intent: "Click the Sign up button.",
+  verb: "click" as const,
+  narrationSegmentIds: [0],
+  timeWindow: null,
+  visualConfidence: "high" as const,
+};
+
+test("buildAction composes a click action with a point highlight", () => {
+  const a = buildAction({
+    stepIndex: 1, order: 2, subStep,
+    verify: { match: "yes", reasoning: "ok" },
+    highlight: {
+      highlight: "yes", point: { x: 0.4, y: 0.6 },
+      bbox: null, elementCaption: null, noHighlightReason: null,
+    },
+    framePath: "/frame.jpg", frameTime: 12.5, pickedClusterLetter: "A",
+  });
+  assert.equal(a.stepIndex, 1);
+  assert.equal(a.verb, "click");
+  assert.equal(a.description, "Click the Sign up button.");
+  assert.equal(a.time, 12.5);
+  assert.deepEqual(a.highlight, { kind: "click", point: { x: 0.4, y: 0.6 } });
+  assert.equal(a.verifyMatch, "yes");
+  assert.equal(a.pickedClusterLetter, "A");
+});
+
+test("buildAction omits highlight when highlight.highlight === no", () => {
+  const a = buildAction({
+    stepIndex: 0, order: 0, subStep,
+    verify: { match: "yes", reasoning: "ok" },
+    highlight: { highlight: "no", bbox: null, elementCaption: null, noHighlightReason: "no_specific_target" },
+    framePath: "/x.jpg", frameTime: 0, pickedClusterLetter: "A",
+  });
+  assert.equal(a.highlight, undefined);
+});
+
+test("buildAction omits highlight when the decision has a null point", () => {
+  const a = buildAction({
+    stepIndex: 0, order: 0, subStep,
+    verify: { match: "yes", reasoning: "ok" },
+    highlight: { highlight: "yes", point: null, bbox: null, elementCaption: null, noHighlightReason: null },
+    framePath: "/x.jpg", frameTime: 0, pickedClusterLetter: "A",
+  });
+  assert.equal(a.highlight, undefined);
+});
+
+test("buildAction coerces select/link verbs to highlight.kind: click", () => {
+  const a = buildAction({
+    stepIndex: 0, order: 0,
+    subStep: { ...subStep, verb: "select" },
+    verify: { match: "yes", reasoning: "ok" },
+    highlight: {
+      highlight: "yes", point: { x: 0.2, y: 0.3 },
+      bbox: null, elementCaption: null, noHighlightReason: null,
+    },
+    framePath: "/x.jpg", frameTime: 5, pickedClusterLetter: "A",
+  });
+  assert.equal(a.highlight?.kind, "click");
+});
+
+test("buildAction keeps highlight.kind: input for input verb", () => {
+  const a = buildAction({
+    stepIndex: 0, order: 0,
+    subStep: { ...subStep, verb: "input" },
+    verify: { match: "yes", reasoning: "ok" },
+    highlight: {
+      highlight: "yes", point: { x: 0.2, y: 0.3 },
+      bbox: null, elementCaption: null, noHighlightReason: null,
+    },
+    framePath: "/x.jpg", frameTime: 5, pickedClusterLetter: "A",
+  });
+  assert.equal(a.highlight?.kind, "input");
+});
+
+test("buildAction supports view verb with no highlight", () => {
+  const a = buildAction({
+    stepIndex: 0, order: 0,
+    subStep: { ...subStep, verb: "view", intent: "View the dashboard." },
+    verify: { match: "yes", reasoning: "ok" },
+    highlight: { highlight: "no", bbox: null, elementCaption: null, noHighlightReason: "view_action" },
+    framePath: "/x.jpg", frameTime: 5, pickedClusterLetter: "A",
+  });
+  assert.equal(a.verb, "view");
+  assert.equal(a.highlight, undefined);
+});
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
 
 Run: `npx tsx --test src/trigger/stages/buildAction.test.ts`
-Expected: FAIL — `action.highlight` is `undefined` (guard checks `bbox`, which
-is null).
+Expected: FAIL — the "composes a click action with a point highlight" test
+fails: `a.highlight` is `undefined` because the guard still checks `bbox`,
+which is null.
 
 - [ ] **Step 3: Update the guard in `src/trigger/stages/buildAction.ts`**
 
@@ -880,7 +906,7 @@ Replace the `if (...) { base.highlight = {...}; }` block with:
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `npx tsx --test src/trigger/stages/buildAction.test.ts`
-Expected: PASS — both new tests (and any pre-existing ones).
+Expected: PASS — 6 tests.
 
 - [ ] **Step 5: Typecheck**
 
@@ -908,8 +934,8 @@ together.
 - [ ] **Step 1: Full typecheck**
 
 Run: `npx tsc --noEmit -p tsconfig.json 2>&1 | grep -vE "node_modules" | head -30`
-Expected: no output (the project compiles cleanly; pre-existing `node_modules`
-declaration warnings, if any, are filtered out).
+Expected: no output (the project compiles cleanly; `node_modules` declaration
+warnings, if any, are filtered out).
 
 - [ ] **Step 2: Run every touched test file**
 

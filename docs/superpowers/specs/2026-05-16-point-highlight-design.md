@@ -102,9 +102,9 @@ try uiTarsPoint
 - A model "fails" if it throws (network/provider error) **or** returns no point.
 - `noHighlightReason`: no element found by either model → `no_specific_target`;
   both models *errored* (outage) → new value `grounding_unavailable`.
-- `coerceForViewVerb` keeps its behaviour (`view` → `highlight=no`, before any
-  model call) but its returned `Decision` object literal gains `point: null` to
-  satisfy the widened schema (a one-line change, not "unchanged").
+- `coerceForViewVerb` is unchanged — `view` steps still short-circuit to
+  `highlight=no` before any model call. (`point` is an *optional* schema key,
+  so its `Decision` literal needs no edit — see the schema note below.)
 - The pluggable `HighlighterFn` seam is kept for tests.
 - The highlighter reads the **downscaled** frame's actual width/height (via
   `sharp` metadata) and passes them to `uiTarsPoint` — UI-TARS coordinates are
@@ -137,7 +137,8 @@ export const Point = z.object({ x: z.number(), y: z.number() });
 
 export const HighlightDecision = z.object({
   highlight: z.enum(["yes", "no"]),
-  point: Point.nullable(),          // NEW — primary geometry
+  point: Point.nullable().optional(), // NEW — primary geometry. Optional key so
+                                      // existing Decision literals need no edit.
   bbox: BBox.nullable(),            // kept, deprecated; new locator sets null
   elementCaption: z.string().nullable(),
   noHighlightReason: z
