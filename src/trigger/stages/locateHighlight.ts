@@ -23,7 +23,6 @@ export function coerceForViewVerb(verb: SubStep["verb"], d: Decision): Decision 
   return {
     highlight: "no",
     bbox: null,
-    elementCaption: null,
     noHighlightReason: "view_action",
   };
 }
@@ -48,7 +47,6 @@ function yesDecision(point: { x: number; y: number }): Decision {
     highlight: "yes",
     point,
     bbox: null,
-    elementCaption: null,
     noHighlightReason: null,
   };
 }
@@ -93,7 +91,6 @@ export async function pointFallbackHighlight(
     highlight: "no",
     point: null,
     bbox: null,
-    elementCaption: null,
     noHighlightReason:
       uiTarsErrored && qwenErrored ? "grounding_unavailable" : "no_specific_target",
   };

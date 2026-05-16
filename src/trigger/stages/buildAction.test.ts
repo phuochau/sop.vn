@@ -16,7 +16,7 @@ test("buildAction composes a click action with a point highlight", () => {
     verify: { match: "yes", reasoning: "ok" },
     highlight: {
       highlight: "yes", point: { x: 0.4, y: 0.6 },
-      bbox: null, elementCaption: null, noHighlightReason: null,
+      bbox: null, noHighlightReason: null,
     },
     framePath: "/frame.jpg", frameTime: 12.5, pickedClusterLetter: "A",
   });
@@ -33,7 +33,7 @@ test("buildAction omits highlight when highlight.highlight === no", () => {
   const a = buildAction({
     stepIndex: 0, order: 0, subStep,
     verify: { match: "yes", reasoning: "ok" },
-    highlight: { highlight: "no", bbox: null, elementCaption: null, noHighlightReason: "no_specific_target" },
+    highlight: { highlight: "no", bbox: null, noHighlightReason: "no_specific_target" },
     framePath: "/x.jpg", frameTime: 0, pickedClusterLetter: "A",
   });
   assert.equal(a.highlight, undefined);
@@ -43,7 +43,7 @@ test("buildAction omits highlight when the decision has a null point", () => {
   const a = buildAction({
     stepIndex: 0, order: 0, subStep,
     verify: { match: "yes", reasoning: "ok" },
-    highlight: { highlight: "yes", point: null, bbox: null, elementCaption: null, noHighlightReason: null },
+    highlight: { highlight: "yes", point: null, bbox: null, noHighlightReason: null },
     framePath: "/x.jpg", frameTime: 0, pickedClusterLetter: "A",
   });
   assert.equal(a.highlight, undefined);
@@ -56,7 +56,7 @@ test("buildAction coerces select/link verbs to highlight.kind: click", () => {
     verify: { match: "yes", reasoning: "ok" },
     highlight: {
       highlight: "yes", point: { x: 0.2, y: 0.3 },
-      bbox: null, elementCaption: null, noHighlightReason: null,
+      bbox: null, noHighlightReason: null,
     },
     framePath: "/x.jpg", frameTime: 5, pickedClusterLetter: "A",
   });
@@ -70,7 +70,7 @@ test("buildAction keeps highlight.kind: input for input verb", () => {
     verify: { match: "yes", reasoning: "ok" },
     highlight: {
       highlight: "yes", point: { x: 0.2, y: 0.3 },
-      bbox: null, elementCaption: null, noHighlightReason: null,
+      bbox: null, noHighlightReason: null,
     },
     framePath: "/x.jpg", frameTime: 5, pickedClusterLetter: "A",
   });
@@ -82,7 +82,7 @@ test("buildAction supports view verb with no highlight", () => {
     stepIndex: 0, order: 0,
     subStep: { ...subStep, verb: "view", intent: "View the dashboard." },
     verify: { match: "yes", reasoning: "ok" },
-    highlight: { highlight: "no", bbox: null, elementCaption: null, noHighlightReason: "view_action" },
+    highlight: { highlight: "no", bbox: null, noHighlightReason: "view_action" },
     framePath: "/x.jpg", frameTime: 5, pickedClusterLetter: "A",
   });
   assert.equal(a.verb, "view");

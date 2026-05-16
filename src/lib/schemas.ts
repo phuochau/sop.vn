@@ -100,7 +100,6 @@ export const HighlightDecision = z.object({
   highlight: z.enum(["yes", "no"]),
   point: Point.nullable().optional(),   // primary geometry — set by the new locator
   bbox: BBox.nullable(),                // deprecated; kept so old records validate
-  elementCaption: z.string().nullable(),
   noHighlightReason: z
     .enum(["view_action", "no_specific_target", "non_ui_frame", "grounding_unavailable"])
     .nullable(),
