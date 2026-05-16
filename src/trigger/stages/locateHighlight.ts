@@ -116,11 +116,15 @@ export async function runLocateHighlight(args: {
   intent: string;
   verb: SubStep["verb"];
   framePath: string;
+  highlighter?: HighlighterFn;
 }): Promise<Decision> {
   const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "highlight-"));
   try {
     const ds = await downscaledCopy(args.framePath, tmpDir);
-    return runLocateHighlightWith({ ...args, framePath: ds });
+    // Must `await`: with a bare `return`, the finally below runs (and removes
+    // tmpDir) before the highlighter's async sharp reads of `ds` complete,
+    // racing the rm against those reads. Awaiting keeps tmpDir alive until done.
+    return await runLocateHighlightWith({ ...args, framePath: ds });
   } finally {
     await fs.promises.rm(tmpDir, { recursive: true, force: true });
   }

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert";
-import { coerceForViewVerb, type HighlighterFn, pointFallbackHighlight, runLocateHighlightWith } from "./locateHighlight";
+import fs from "node:fs";
+import { coerceForViewVerb, type HighlighterFn, pointFallbackHighlight, runLocateHighlight, runLocateHighlightWith } from "./locateHighlight";
 
 test("coerceForViewVerb forces no-highlight regardless of LLM output", () => {
   const out = coerceForViewVerb("view", {
@@ -115,4 +116,28 @@ test("pointFallbackHighlight reports grounding_unavailable when both throw", asy
   );
   assert.equal(out.highlight, "no");
   assert.equal(out.noHighlightReason, "grounding_unavailable");
+});
+
+// Regression: runLocateHighlight's finally removes the downscaled-frame
+// tmpdir. If it returns the highlighter promise without awaiting it, the
+// finally runs (and rm's the frame) while the highlighter is still doing its
+// async sharp reads — deleting the frame mid-flight and crashing the pipeline.
+test("runLocateHighlight keeps the downscaled frame alive until the highlighter finishes", async () => {
+  let frameExistedAfterAsyncWork: boolean | null = null;
+  const slowHighlighter: HighlighterFn = async (a) => {
+    // Stand in for the real highlighter's async frame reads (sharp + network).
+    await new Promise((r) => setTimeout(r, 50));
+    frameExistedAfterAsyncWork = fs.existsSync(a.framePath);
+    return { highlight: "no", bbox: null, point: null, noHighlightReason: "no_specific_target" };
+  };
+  await runLocateHighlight({
+    intent: "Click Save",
+    verb: "click",
+    framePath: okFrame,
+    highlighter: slowHighlighter,
+  });
+  assert.equal(
+    frameExistedAfterAsyncWork, true,
+    "tmpdir was removed before the highlighter finished reading the frame",
+  );
 });
