@@ -53,6 +53,11 @@ export const BBox = z.object({
   h: z.number(),
 });
 
+export const Point = z.object({
+  x: z.number(),
+  y: z.number(),
+});
+
 export const Highlight = z.object({
   kind: z.enum(["click", "input"]),
   bbox: BBox,
@@ -93,9 +98,12 @@ export const FrameVerification = z.object({
 
 export const HighlightDecision = z.object({
   highlight: z.enum(["yes", "no"]),
-  bbox: BBox.nullable(),
+  point: Point.nullable().optional(),   // primary geometry — set by the new locator
+  bbox: BBox.nullable(),                // deprecated; kept so old records validate
   elementCaption: z.string().nullable(),
-  noHighlightReason: z.enum(["view_action", "no_specific_target", "non_ui_frame"]).nullable(),
+  noHighlightReason: z
+    .enum(["view_action", "no_specific_target", "non_ui_frame", "grounding_unavailable"])
+    .nullable(),
 });
 
 export type Action = {
@@ -107,7 +115,8 @@ export type Action = {
   time: number;
   highlight?: {
     kind: "click" | "input";
-    bbox: { x: number; y: number; w: number; h: number };
+    bbox?: { x: number; y: number; w: number; h: number };
+    point?: { x: number; y: number };
   };
   verifyMatch: "yes" | "partially";
   pickedClusterLetter: string;

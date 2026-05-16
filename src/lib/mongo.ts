@@ -51,9 +51,10 @@ export interface Screenshot {
   // highlight.kind stays narrow ("click" | "input") so the existing UI renderer continues
   // to work without changes. The upload adapter (Task 9) coerces select/link verbs → "click"
   // when populating highlight.kind. The full verb is captured in the new top-level `verb` field.
-  highlight?: {          // optional yellow-rectangle target (baked into JPEG; field kept for future overlay-mode use)
+  highlight?: {          // optional highlight target, baked into the JPEG
     kind: "click" | "input";
-    bbox: { x: number; y: number; w: number; h: number };
+    bbox?: { x: number; y: number; w: number; h: number };
+    point?: { x: number; y: number };
   };
   highlightError?: string; // set when rectangle drawing failed; un-annotated JPEG was uploaded instead
 }
