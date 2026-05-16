@@ -33,7 +33,7 @@ Decision (with the user): ship a point-based highlight.
 ```
 runLocateHighlight (stage)
   └─ downscale frame to 1280px
-  └─ pointHighlighter
+  └─ defaultHighlighter  (rewritten — fallback chain)
        ├─ 1. UI-TARS         → click point   (primary)
        ├─ 2. Qwen3-VL-32B    → click point   (fallback, only if #1 fails)
        └─ 3. none            → highlight=no  (safe degradation)
@@ -102,9 +102,13 @@ try uiTarsPoint
 - A model "fails" if it throws (network/provider error) **or** returns no point.
 - `noHighlightReason`: no element found by either model → `no_specific_target`;
   both models *errored* (outage) → new value `grounding_unavailable`.
-- `coerceForViewVerb` is unchanged — `view` steps still short-circuit to
-  `highlight=no` before any model call.
+- `coerceForViewVerb` keeps its behaviour (`view` → `highlight=no`, before any
+  model call) but its returned `Decision` object literal gains `point: null` to
+  satisfy the widened schema (a one-line change, not "unchanged").
 - The pluggable `HighlighterFn` seam is kept for tests.
+- The highlighter reads the **downscaled** frame's actual width/height (via
+  `sharp` metadata) and passes them to `uiTarsPoint` — UI-TARS coordinates are
+  pixels of the image it was sent, so the dimensions must match that image.
 
 ### 3. Circle renderer — in `src/trigger/stages/uploadScreenshots.ts`
 
