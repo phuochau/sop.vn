@@ -16,6 +16,10 @@ test("parseUiTarsReply returns null when no coordinates present", () => {
   assert.equal(parseUiTarsReply("I cannot find it", 1920, 1080), null);
 });
 
+test("parseUiTarsReply ignores numeric prose before the coordinate tuple", () => {
+  assert.deepEqual(parseUiTarsReply("Step 3: click at (480,270)", 960, 540), { x: 0.5, y: 0.5 });
+});
+
 test("qwenToPoint converts a 0-1000 reply to a 0-1 point", () => {
   assert.deepEqual(qwenToPoint({ found: "yes", x: 500, y: 250 }), { x: 0.5, y: 0.25 });
 });

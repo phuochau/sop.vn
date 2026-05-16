@@ -40,9 +40,9 @@ export function parseUiTarsReply(
   frameW: number,
   frameH: number,
 ): Point | null {
-  const nums = (raw.match(/-?\d+\.?\d*/g) ?? []).map(Number);
-  if (nums.length < 2 || frameW <= 0 || frameH <= 0) return null;
-  return { x: clamp01(nums[0] / frameW), y: clamp01(nums[1] / frameH) };
+  const m = raw.match(/\(\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*\)/);
+  if (!m || frameW <= 0 || frameH <= 0) return null;
+  return { x: clamp01(Number(m[1]) / frameW), y: clamp01(Number(m[2]) / frameH) };
 }
 
 export async function uiTarsPoint(args: {
