@@ -37,7 +37,6 @@ test("runLocateHighlightWith returns highlighter output for non-view verb", asyn
     intent: "Click Verify email.",
     verb: "click",
     framePath: "/x.jpg",
-    language: "en",
     highlighter,
   });
   assert.equal(out.highlight, "yes");
@@ -55,7 +54,6 @@ test("runLocateHighlightWith coerces view-verb regardless of LLM output", async 
     intent: "View the dashboard.",
     verb: "view",
     framePath: "/x.jpg",
-    language: "en",
     highlighter,
   });
   assert.equal(out.highlight, "no");

@@ -164,23 +164,6 @@ For verb="view": "yes" requires that the frame shows the screen the trainer is p
 reasoning: one short sentence, in ${lang} when convenient.
 
 Return strict JSON only.`,
-      locateHighlightSystem: (lang: string) =>
-        `You decide whether to draw a highlight bbox on a sub-step's screenshot, and where.
-
-You receive:
-- The sub-step's intent and verb.
-- The picked frame (a single full image).
-
-Decision rules:
-- If verb is "view": return highlight: "no" with noHighlightReason: "view_action". bbox null, elementCaption null.
-- If verb is click/input/select/link:
-  - If the frame shows an application UI AND the intent's target element is clearly visible: highlight: "yes" with a tight bbox wrapping the WHOLE interactive element (background + border + padding — NOT just the text inside), normalized 0..1 against the supplied image. elementCaption is a short reusable element name in ${lang} (e.g., "Verify email button", "verification code input").
-  - If the frame shows an application UI but you cannot locate the target element: highlight: "no" with noHighlightReason: "no_specific_target". bbox null, elementCaption null.
-  - If the frame is NOT an application UI (a webcam, slide, intro graphic, transition mid-flight): highlight: "no" with noHighlightReason: "non_ui_frame". bbox null, elementCaption null.
-
-Coordinates are normalized 0..1 (top-left origin) against the SUPPLIED IMAGE.
-
-Return strict JSON only.`,
     },
   },
   limits: {

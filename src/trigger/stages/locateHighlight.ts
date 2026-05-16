@@ -14,7 +14,6 @@ export type HighlighterFn = (args: {
   intent: string;
   verb: SubStep["verb"];
   framePath: string;
-  language: string;
 }) => Promise<Decision>;
 
 const DOWNSCALE_MAX_EDGE = 1280;
@@ -107,12 +106,11 @@ export async function runLocateHighlightWith(args: {
   intent: string;
   verb: SubStep["verb"];
   framePath: string;
-  language: string;
   highlighter?: HighlighterFn;
 }): Promise<Decision> {
   const highlighter = args.highlighter ?? defaultHighlighter;
   const raw = await highlighter({
-    intent: args.intent, verb: args.verb, framePath: args.framePath, language: args.language,
+    intent: args.intent, verb: args.verb, framePath: args.framePath,
   });
   return coerceForViewVerb(args.verb, raw);
 }
@@ -121,7 +119,6 @@ export async function runLocateHighlight(args: {
   intent: string;
   verb: SubStep["verb"];
   framePath: string;
-  language: string;
 }): Promise<Decision> {
   const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "highlight-"));
   try {

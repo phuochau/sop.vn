@@ -278,7 +278,6 @@ export const processSopScreenshots = task({
                 intent: subStep.intent,
                 verb: subStep.verb,
                 framePath: finalFramePath,
-                language: outputLanguage,
               });
 
               if (traceEnabled()) {
