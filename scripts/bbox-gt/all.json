@@ -1,0 +1,181 @@
+{
+  "video": "samples/hubspot_crm.mp4",
+  "language": "en",
+  "cases": [
+    {
+      "t": 60,
+      "intent": "Enter the verification code into the verification code field",
+      "verb": "input"
+    },
+    {
+      "t": 95,
+      "intent": "The page is loading",
+      "verb": "view"
+    },
+    {
+      "t": 125.7,
+      "intent": "Click Skip, for now to bypass the tools selection step",
+      "verb": "click"
+    },
+    {
+      "t": 165,
+      "intent": "Click Use template on the Simple email template",
+      "verb": "click"
+    },
+    {
+      "t": 210,
+      "intent": "Click Advanced filters to filter the contacts",
+      "verb": "click"
+    },
+    {
+      "t": 240,
+      "intent": "Type the first name into the First name field",
+      "verb": "input"
+    },
+    {
+      "t": 264.1,
+      "intent": "Select Subscriber as the lifecycle stage from the dropdown",
+      "verb": "select"
+    },
+    {
+      "t": 305.32,
+      "intent": "Click the Activities tab on the contact record",
+      "verb": "click"
+    },
+    {
+      "t": 340,
+      "intent": "Click the Notes tab on the contact record",
+      "verb": "click"
+    },
+    {
+      "t": 370,
+      "intent": "Select Contacts as the type of data to import",
+      "verb": "click"
+    },
+    {
+      "t": 410,
+      "intent": "Click Next to continue past the column mapping step",
+      "verb": "click"
+    },
+    {
+      "t": 458.2,
+      "intent": "Click Start import to finish importing the contacts",
+      "verb": "click"
+    },
+    {
+      "t": 483.51,
+      "intent": "Presenter introduces the HubSpot CRM walkthrough",
+      "verb": "view"
+    },
+    {
+      "t": 511.57,
+      "intent": "Type the company name into the Company name field",
+      "verb": "input"
+    },
+    {
+      "t": 528.17,
+      "intent": "Click the Jake Miller contact row to select it",
+      "verb": "click"
+    },
+    {
+      "t": 528.6,
+      "intent": "Click the Ella Grant contact row to select it",
+      "verb": "click"
+    },
+    {
+      "t": 545,
+      "intent": "Click Edit filters to modify the advanced filter",
+      "verb": "click"
+    },
+    {
+      "t": 590,
+      "intent": "Click Next to proceed with the import column mapping",
+      "verb": "click"
+    },
+    {
+      "t": 640,
+      "intent": "Click Create company to add a new company",
+      "verb": "click"
+    },
+    {
+      "t": 660,
+      "intent": "Click + Add to associate a company with the contact",
+      "verb": "click"
+    },
+    {
+      "t": 693.63,
+      "intent": "Click the Next button to continue setting up the email account",
+      "verb": "click"
+    },
+    {
+      "t": 709.95,
+      "intent": "Click Select all to grant HubSpot all requested Google permissions",
+      "verb": "click"
+    },
+    {
+      "t": 711.48,
+      "intent": "Click Continue to grant HubSpot access to the Google account",
+      "verb": "click"
+    },
+    {
+      "t": 740,
+      "intent": "Click the Sequences tab in the email composer",
+      "verb": "click"
+    },
+    {
+      "t": 771.53,
+      "intent": "Click Select all to grant HubSpot the calendar permissions",
+      "verb": "click"
+    },
+    {
+      "t": 800,
+      "intent": "Click the Quick Chat with Mia meeting activity",
+      "verb": "click"
+    },
+    {
+      "t": 857.03,
+      "intent": "Presenter explains the next step of the walkthrough",
+      "verb": "view"
+    },
+    {
+      "t": 905,
+      "intent": "Click Next: Define deal stages to continue",
+      "verb": "click"
+    },
+    {
+      "t": 960,
+      "intent": "Type the deal amount into the Amount field",
+      "verb": "input"
+    },
+    {
+      "t": 1010,
+      "intent": "Click the Apex Media Group Sponsorship deal card",
+      "verb": "click"
+    },
+    {
+      "t": 1045.08,
+      "intent": "Click + Add next to Contacts to associate a contact with the deal",
+      "verb": "click"
+    },
+    {
+      "t": 1077.64,
+      "intent": "Presenter continues the walkthrough narration",
+      "verb": "view"
+    },
+    {
+      "t": 1086.82,
+      "intent": "Click Users & Teams in the Settings sidebar",
+      "verb": "click"
+    },
+    {
+      "t": 1114.65,
+      "intent": "Click the Quick Invite option to invite a user",
+      "verb": "click"
+    },
+    {
+      "t": 1130,
+      "intent": "Click the Make super admin checkbox",
+      "verb": "click"
+    }
+  ]
+}

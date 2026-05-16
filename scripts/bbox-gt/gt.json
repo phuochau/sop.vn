@@ -1,0 +1,178 @@
+{
+  "video": "samples/hubspot_crm.mp4",
+  "language": "en",
+  "cases": [
+    {
+      "t": 483.51,
+      "intent": "Presenter introduces the HubSpot CRM walkthrough",
+      "verb": "view",
+      "gt": null
+    },
+    {
+      "t": 511.57,
+      "intent": "Type the company name into the Company name field",
+      "verb": "input",
+      "gt": {
+        "x": 0.636,
+        "y": 0.368,
+        "w": 0.337,
+        "h": 0.039
+      }
+    },
+    {
+      "t": 693.63,
+      "intent": "Click the Next button to continue setting up the email account",
+      "verb": "click",
+      "gt": {
+        "x": 0.466,
+        "y": 0.343,
+        "w": 0.07,
+        "h": 0.035
+      }
+    },
+    {
+      "t": 709.95,
+      "intent": "Click Select all to grant HubSpot all requested Google permissions",
+      "verb": "click",
+      "gt": {
+        "x": 0.524,
+        "y": 0.315,
+        "w": 0.084,
+        "h": 0.032
+      }
+    },
+    {
+      "t": 1086.82,
+      "intent": "Click Users & Teams in the Settings sidebar",
+      "verb": "click",
+      "gt": {
+        "x": 0.048,
+        "y": 0.6,
+        "w": 0.146,
+        "h": 0.039
+      }
+    },
+    {
+      "t": 1114.65,
+      "intent": "Click the Quick Invite option to invite a user",
+      "verb": "click",
+      "gt": {
+        "x": 0.733,
+        "y": 0.183,
+        "w": 0.242,
+        "h": 0.148
+      }
+    },
+    {
+      "t": 264.1,
+      "intent": "Select Subscriber as the lifecycle stage from the dropdown",
+      "verb": "select",
+      "gt": {
+        "x": 0.642,
+        "y": 0.467,
+        "w": 0.072,
+        "h": 0.03
+      }
+    },
+    {
+      "t": 305.32,
+      "intent": "Click the Activities tab on the contact record",
+      "verb": "click",
+      "gt": {
+        "x": 0.477,
+        "y": 0.151,
+        "w": 0.117,
+        "h": 0.044
+      }
+    },
+    {
+      "t": 458.2,
+      "intent": "Click Start import to finish importing the contacts",
+      "verb": "click",
+      "gt": {
+        "x": 0.85,
+        "y": 0.902,
+        "w": 0.082,
+        "h": 0.037
+      }
+    },
+    {
+      "t": 711.48,
+      "intent": "Click Continue to grant HubSpot access to the Google account",
+      "verb": "click",
+      "gt": {
+        "x": 0.701,
+        "y": 0.841,
+        "w": 0.131,
+        "h": 0.04
+      }
+    },
+    {
+      "t": 771.53,
+      "intent": "Click Select all to grant HubSpot the calendar permissions",
+      "verb": "click",
+      "gt": {
+        "x": 0.515,
+        "y": 0.31,
+        "w": 0.085,
+        "h": 0.035
+      }
+    },
+    {
+      "t": 125.7,
+      "intent": "Click Skip, for now to bypass the tools selection step",
+      "verb": "click",
+      "gt": {
+        "x": 0.767,
+        "y": 0.841,
+        "w": 0.08,
+        "h": 0.039
+      }
+    },
+    {
+      "t": 528.17,
+      "intent": "Click the Jake Miller contact row to select it",
+      "verb": "click",
+      "gt": {
+        "x": 0.635,
+        "y": 0.56,
+        "w": 0.255,
+        "h": 0.033
+      }
+    },
+    {
+      "t": 528.6,
+      "intent": "Click the Ella Grant contact row to select it",
+      "verb": "click",
+      "gt": {
+        "x": 0.635,
+        "y": 0.602,
+        "w": 0.255,
+        "h": 0.033
+      }
+    },
+    {
+      "t": 857.03,
+      "intent": "Presenter explains the next step of the walkthrough",
+      "verb": "view",
+      "gt": null
+    },
+    {
+      "t": 1045.08,
+      "intent": "Click + Add next to Contacts to associate a contact with the deal",
+      "verb": "click",
+      "gt": {
+        "x": 0.945,
+        "y": 0.543,
+        "w": 0.045,
+        "h": 0.025
+      }
+    },
+    {
+      "t": 1077.64,
+      "intent": "Presenter continues the walkthrough narration",
+      "verb": "view",
+      "gt": null
+    }
+  ]
+}

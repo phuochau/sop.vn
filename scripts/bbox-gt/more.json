@@ -1,0 +1,24 @@
+{
+  "video": "samples/hubspot_crm.mp4",
+  "language": "en",
+  "cases": [
+    { "t": 60, "intent": "Enter the verification code into the verification code field", "verb": "input" },
+    { "t": 95, "intent": "The page is loading", "verb": "view" },
+    { "t": 165, "intent": "Click Use template on the Simple email template", "verb": "click" },
+    { "t": 210, "intent": "Click Advanced filters to filter the contacts", "verb": "click" },
+    { "t": 240, "intent": "Type the first name into the First name field", "verb": "input" },
+    { "t": 340, "intent": "Click the Notes tab on the contact record", "verb": "click" },
+    { "t": 370, "intent": "Select Contacts as the type of data to import", "verb": "click" },
+    { "t": 410, "intent": "Click Next to continue past the column mapping step", "verb": "click" },
+    { "t": 545, "intent": "Click Edit filters to modify the advanced filter", "verb": "click" },
+    { "t": 590, "intent": "Click Next to proceed with the import column mapping", "verb": "click" },
+    { "t": 640, "intent": "Click Create company to add a new company", "verb": "click" },
+    { "t": 660, "intent": "Click + Add to associate a company with the contact", "verb": "click" },
+    { "t": 740, "intent": "Click the Sequences tab in the email composer", "verb": "click" },
+    { "t": 800, "intent": "Click the Quick Chat with Mia meeting activity", "verb": "click" },
+    { "t": 905, "intent": "Click Next: Define deal stages to continue", "verb": "click" },
+    { "t": 960, "intent": "Type the deal amount into the Amount field", "verb": "input" },
+    { "t": 1010, "intent": "Click the Apex Media Group Sponsorship deal card", "verb": "click" },
+    { "t": 1130, "intent": "Click the Make super admin checkbox", "verb": "click" }
+  ]
+}

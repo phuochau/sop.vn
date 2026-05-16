@@ -54,3 +54,6 @@ sop-updated.png
 # git worktrees
 .worktrees/
 *.png
+scripts/bbox-runs/
+scripts/bbox-gt/frames/
+scripts/bbox-gt/more/
