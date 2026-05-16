@@ -147,8 +147,9 @@ export const HighlightDecision = z.object({
 });
 ```
 
-`Action.highlight` and the Mongo `Screenshot/step.highlight` object gain an
-optional `point` field next to `bbox`.
+The `Action.highlight` and Mongo `step.highlight` **types** gain an optional
+`point` alongside the existing optional `bbox`. The new locator populates
+`point` only — it never sets `bbox` — so new records carry `{ kind, point }`.
 
 > **buildAction.ts guard must change.** It currently attaches the highlight only
 > when `args.highlight.bbox` is truthy:
