@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert";
-import { coerceForViewVerb, type HighlighterFn, runLocateHighlightWith } from "./locateHighlight";
+import { coerceForViewVerb, type HighlighterFn, pointFallbackHighlight, runLocateHighlightWith } from "./locateHighlight";
 
 test("coerceForViewVerb forces no-highlight regardless of LLM output", () => {
   const out = coerceForViewVerb("view", {
@@ -60,4 +60,67 @@ test("runLocateHighlightWith coerces view-verb regardless of LLM output", async 
   });
   assert.equal(out.highlight, "no");
   assert.equal(out.bbox, null);
+});
+
+const okFrame = "src/trigger/stages/__fixtures__/sample-1080p.jpg";
+
+test("pointFallbackHighlight uses the UI-TARS point when found", async () => {
+  const out = await pointFallbackHighlight(
+    { intent: "Click Save", verb: "click", framePath: okFrame },
+    {
+      uiTars: async () => ({ point: { x: 0.4, y: 0.6 }, raw: "(x,y)" }),
+      qwen: async () => { throw new Error("should not be called"); },
+    },
+  );
+  assert.equal(out.highlight, "yes");
+  assert.deepEqual(out.point, { x: 0.4, y: 0.6 });
+  assert.equal(out.bbox, null);
+});
+
+test("pointFallbackHighlight falls back to Qwen when UI-TARS finds nothing", async () => {
+  const out = await pointFallbackHighlight(
+    { intent: "Click Save", verb: "click", framePath: okFrame },
+    {
+      uiTars: async () => ({ point: null, raw: "no" }),
+      qwen: async () => ({ point: { x: 0.7, y: 0.2 } }),
+    },
+  );
+  assert.equal(out.highlight, "yes");
+  assert.deepEqual(out.point, { x: 0.7, y: 0.2 });
+});
+
+test("pointFallbackHighlight falls back to Qwen when UI-TARS throws", async () => {
+  const out = await pointFallbackHighlight(
+    { intent: "Click Save", verb: "click", framePath: okFrame },
+    {
+      uiTars: async () => { throw new Error("provider down"); },
+      qwen: async () => ({ point: { x: 0.3, y: 0.3 } }),
+    },
+  );
+  assert.equal(out.highlight, "yes");
+  assert.deepEqual(out.point, { x: 0.3, y: 0.3 });
+});
+
+test("pointFallbackHighlight reports no_specific_target when both find nothing", async () => {
+  const out = await pointFallbackHighlight(
+    { intent: "Click Save", verb: "click", framePath: okFrame },
+    {
+      uiTars: async () => ({ point: null, raw: "no" }),
+      qwen: async () => ({ point: null }),
+    },
+  );
+  assert.equal(out.highlight, "no");
+  assert.equal(out.noHighlightReason, "no_specific_target");
+});
+
+test("pointFallbackHighlight reports grounding_unavailable when both throw", async () => {
+  const out = await pointFallbackHighlight(
+    { intent: "Click Save", verb: "click", framePath: okFrame },
+    {
+      uiTars: async () => { throw new Error("down"); },
+      qwen: async () => { throw new Error("down"); },
+    },
+  );
+  assert.equal(out.highlight, "no");
+  assert.equal(out.noHighlightReason, "grounding_unavailable");
 });

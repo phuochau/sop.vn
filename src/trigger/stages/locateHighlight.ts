@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import sharp from "sharp";
 import type { z } from "zod";
-import { llmJsonVision } from "@/lib/openrouter";
+import { uiTarsPoint, qwenPoint } from "@/lib/grounding";
 import { HighlightDecision, SubStepPlan } from "@/lib/schemas";
 import { config } from "@/config";
 
@@ -38,26 +38,70 @@ async function downscaledCopy(srcPath: string, outDir: string): Promise<string> 
   return outPath;
 }
 
-async function defaultHighlighter(args: {
-  intent: string;
-  verb: SubStep["verb"];
-  framePath: string;
-  language: string;
-}): Promise<Decision> {
-  const userText = [
-    `Intent: ${args.intent}`,
-    `Verb: ${args.verb}`,
-  ].join("\n");
-  return llmJsonVision({
-    model: config.ai.visionModel,
-    system: config.ai.prompts.locateHighlightSystem(args.language),
-    userText,
-    imagePaths: [args.framePath],
-    schema: HighlightDecision,
-    schemaName: "highlight_decision",
-    temperature: 0.0,
-  });
+type GroundDeps = {
+  uiTars: typeof uiTarsPoint;
+  qwen: typeof qwenPoint;
+};
+const defaultGroundDeps: GroundDeps = { uiTars: uiTarsPoint, qwen: qwenPoint };
+
+function yesDecision(point: { x: number; y: number }): Decision {
+  return {
+    highlight: "yes",
+    point,
+    bbox: null,
+    elementCaption: null,
+    noHighlightReason: null,
+  };
 }
+
+/**
+ * Fallback chain: UI-TARS (primary) -> Qwen3-VL (fallback) -> no-highlight.
+ * A grounder "fails" if it throws OR returns no point. If both throw, the
+ * reason is `grounding_unavailable` (outage); if both simply find nothing it
+ * is `no_specific_target`.
+ */
+export async function pointFallbackHighlight(
+  args: { intent: string; verb: SubStep["verb"]; framePath: string },
+  deps: GroundDeps = defaultGroundDeps,
+): Promise<Decision> {
+  const meta = await sharp(args.framePath).metadata();
+  const frameW = meta.width ?? 0;
+  const frameH = meta.height ?? 0;
+
+  let uiTarsErrored = false;
+  try {
+    const r = await deps.uiTars({
+      framePath: args.framePath, intent: args.intent, verb: args.verb,
+      frameW, frameH, model: config.ai.pointPrimaryModel,
+    });
+    if (r.point) return yesDecision(r.point);
+  } catch {
+    uiTarsErrored = true;
+  }
+
+  let qwenErrored = false;
+  try {
+    const r = await deps.qwen({
+      framePath: args.framePath, intent: args.intent, verb: args.verb,
+      model: config.ai.pointFallbackModel,
+    });
+    if (r.point) return yesDecision(r.point);
+  } catch {
+    qwenErrored = true;
+  }
+
+  return {
+    highlight: "no",
+    point: null,
+    bbox: null,
+    elementCaption: null,
+    noHighlightReason:
+      uiTarsErrored && qwenErrored ? "grounding_unavailable" : "no_specific_target",
+  };
+}
+
+const defaultHighlighter: HighlighterFn = (args) =>
+  pointFallbackHighlight({ intent: args.intent, verb: args.verb, framePath: args.framePath });
 
 export async function runLocateHighlightWith(args: {
   intent: string;

@@ -7,6 +7,8 @@ export const config = {
     sopModel: "anthropic/claude-sonnet-4.5",
     pdfModel: "google/gemini-2.5-flash",
     visionModel: "google/gemini-2.5-flash",
+    pointPrimaryModel: "bytedance/ui-tars-1.5-7b",
+    pointFallbackModel: "qwen/qwen3-vl-32b-instruct",
     maxRetries: 1,
     prompts: {
       // Every system prompt receives the detected language code from Whisper
