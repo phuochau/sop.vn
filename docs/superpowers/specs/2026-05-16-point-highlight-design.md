@@ -52,6 +52,17 @@ normalized-point output, testable in isolation.
 
 ### 1. Grounding clients — `src/lib/grounding.ts` (new)
 
+> **IMPORTANT — UI-TARS does NOT support structured JSON output.** Sending it a
+> `response_format: json_schema` request fails (it ignores the schema and
+> replies with prose). UI-TARS must be called as a **plain chat completion**;
+> it answers free-form in plain text, e.g. `(965,393)`. The two clients are
+> therefore deliberately different:
+> - `uiTarsPoint` — raw `fetch` to OpenRouter, **no `response_format`**, output
+>   parsed from plain text by regex.
+> - `qwenPoint` — Qwen3-VL *does* support JSON, so it uses `llmJsonVision` with
+>   a schema as normal.
+> Do not try to unify them onto `llmJsonVision`.
+
 Two functions, one per model, both returning a frame-normalized point or null.
 
 ```ts
