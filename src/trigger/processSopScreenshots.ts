@@ -311,7 +311,10 @@ export const processSopScreenshots = task({
           });
         } catch (e) {
           if (e instanceof Error && e.message === "plan_failed") return fail(_id, "plan_failed");
-          logger.error("screenshot pipeline failed", { e: String(e) });
+          logger.error("screenshot pipeline failed", {
+            e: String(e),
+            stack: e instanceof Error ? e.stack : undefined,
+          });
           return fail(_id, "unknown");
         }
 
