@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert";
-import { rectSvg } from "./uploadScreenshots";
+import { rectSvg, circleSvg } from "./uploadScreenshots";
 
 test("rectSvg renders a yellow rect with pixel-scaled coords", () => {
   const svg = rectSvg(1920, 1080, { x: 0.1, y: 0.2, w: 0.3, h: 0.05 });
@@ -58,7 +58,7 @@ test("buildBufferWithOptionalHighlight returns raw bytes when bbox is null", asy
 test("buildBufferWithOptionalHighlight returns re-encoded bytes when bbox is valid", async () => {
   const raw = await fs.promises.readFile(FIXTURE);
   const { buf, error } = await buildBufferWithOptionalHighlight(FIXTURE, {
-    x: 0.1, y: 0.1, w: 0.2, h: 0.1,
+    bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.1 },
   });
   assert.equal(error, null);
   assert.ok(!buf.equals(raw), "should differ from raw (rectangle composited)");
@@ -68,8 +68,30 @@ test("buildBufferWithOptionalHighlight returns re-encoded bytes when bbox is val
 test("buildBufferWithOptionalHighlight falls back to raw on degenerate bbox and records the error", async () => {
   const raw = await fs.promises.readFile(FIXTURE);
   const { buf, error } = await buildBufferWithOptionalHighlight(FIXTURE, {
-    x: 0.1, y: 0.1, w: 0.001, h: 0.1,
+    bbox: { x: 0.1, y: 0.1, w: 0.001, h: 0.1 },
   });
   assert.equal(error, "bbox out of range");
   assert.ok(buf.equals(raw), "should return raw bytes when bbox is invalid");
+});
+
+test("circleSvg places a marker at the normalized point", () => {
+  const svg = circleSvg(1000, 500, { x: 0.5, y: 0.5 });
+  assert.ok(svg.includes('cx="500"'));
+  assert.ok(svg.includes('cy="250"'));
+  assert.ok(svg.includes("#F5C518"));
+});
+
+test("circleSvg clamps an out-of-range point into the frame", () => {
+  const svg = circleSvg(1000, 500, { x: 1.4, y: -0.2 });
+  assert.ok(svg.includes('cx="1000"'));
+  assert.ok(svg.includes('cy="0"'));
+});
+
+test("buildBufferWithOptionalHighlight draws a circle for a point geom", async () => {
+  const raw = await fs.promises.readFile(FIXTURE);
+  const { buf, error } = await buildBufferWithOptionalHighlight(FIXTURE, {
+    point: { x: 0.5, y: 0.5 },
+  });
+  assert.equal(error, null);
+  assert.ok(!buf.equals(raw), "should differ from raw (circle composited)");
 });

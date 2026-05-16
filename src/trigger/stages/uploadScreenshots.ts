@@ -31,20 +31,55 @@ function clamp01(n: number): number {
   return Math.max(0, Math.min(1, n));
 }
 
+/** SVG "click here" marker — soft halo, bold ring, centre dot — at a point. */
+export function circleSvg(
+  W: number,
+  H: number,
+  point: { x: number; y: number },
+): string {
+  const cx = Math.round(clamp01(point.x) * W);
+  const cy = Math.round(clamp01(point.y) * H);
+  const ring = Math.max(14, Math.round(W * 0.016));
+  const halo = Math.round(ring * 1.85);
+  const dot = Math.max(4, Math.round(W * 0.004));
+  const stroke = Math.max(4, Math.round(H * 0.005));
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">` +
+    `<circle cx="${cx}" cy="${cy}" r="${halo}" fill="#F5C518" fill-opacity="0.12" ` +
+    `stroke="#F5C518" stroke-width="3" stroke-opacity="0.45"/>` +
+    `<circle cx="${cx}" cy="${cy}" r="${ring}" fill="#F5C518" fill-opacity="0.15" ` +
+    `stroke="#F5C518" stroke-width="${stroke}"/>` +
+    `<circle cx="${cx}" cy="${cy}" r="${dot}" fill="#F5C518"/>` +
+    `</svg>`
+  );
+}
+
+export type HighlightGeom =
+  | { point: { x: number; y: number } }
+  | { bbox: { x: number; y: number; w: number; h: number } }
+  | null;
+
 export async function buildBufferWithOptionalHighlight(
   localPath: string,
-  bbox: { x: number; y: number; w: number; h: number } | null,
+  geom: HighlightGeom,
 ): Promise<{ buf: Buffer; error: string | null }> {
-  if (!bbox) {
+  if (!geom) {
     return { buf: await fs.promises.readFile(localPath), error: null };
   }
   try {
     const meta = await sharp(localPath).metadata();
     const W = meta.width ?? 0;
     const H = meta.height ?? 0;
-    if (!W || !H) return { buf: await fs.promises.readFile(localPath), error: "missing image metadata" };
-    const svg = rectSvg(W, H, bbox);
-    if (!svg) return { buf: await fs.promises.readFile(localPath), error: "bbox out of range" };
+    if (!W || !H) {
+      return { buf: await fs.promises.readFile(localPath), error: "missing image metadata" };
+    }
+    let svg: string | null;
+    if ("point" in geom) {
+      svg = circleSvg(W, H, geom.point);
+    } else {
+      svg = rectSvg(W, H, geom.bbox);
+      if (!svg) return { buf: await fs.promises.readFile(localPath), error: "bbox out of range" };
+    }
     const buf = await sharp(localPath)
       .composite([{ input: Buffer.from(svg), top: 0, left: 0 }])
       .jpeg({ quality: 85 })
@@ -72,8 +107,13 @@ export async function runUploadScreenshots(args: {
       const action = actions[order];
       const frameId = newFrameId();
       const r2Key = screenshotKey(args.sopId, stepIndex, frameId);
-      const bboxForOverlay = action.highlight?.bbox ?? null;
-      const { buf, error } = await buildBufferWithOptionalHighlight(action.displayFramePath, bboxForOverlay);
+      const h = action.highlight;
+      const geom: HighlightGeom = h?.point
+        ? { point: h.point }
+        : h?.bbox
+          ? { bbox: h.bbox }
+          : null;
+      const { buf, error } = await buildBufferWithOptionalHighlight(action.displayFramePath, geom);
       if (error) {
         logger.warn("uploadScreenshots: highlight draw failed; uploaded un-annotated frame", {
           stepIndex, t: action.time, error,
