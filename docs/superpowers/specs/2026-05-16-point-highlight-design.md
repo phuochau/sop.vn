@@ -148,8 +148,25 @@ export const HighlightDecision = z.object({
 ```
 
 `Action.highlight` and the Mongo `Screenshot/step.highlight` object gain an
-optional `point` field next to `bbox`. `buildAction.ts` carries `point` through
-when `highlight=yes`.
+optional `point` field next to `bbox`.
+
+> **buildAction.ts guard must change.** It currently attaches the highlight only
+> when `args.highlight.bbox` is truthy:
+> `if (highlight === "yes" && args.highlight.bbox && verb !== "view")`.
+> The new locator sets `bbox = null` and `point = {…}`, so this guard would be
+> false for *every* point highlight — the highlight would be silently dropped
+> and no circle ever drawn. The guard must change to test `args.highlight.point`,
+> and it sets `Action.highlight = { kind, point }`.
+
+### 4a. `elementCaption` — behaviour change
+
+The point grounders (UI-TARS, Qwen3-VL) return only a coordinate — no element
+name. The new `defaultHighlighter` therefore sets `elementCaption: null` on
+every decision. The field is kept in the schema (deprecated-in-place, like
+`bbox`) so stored records still validate. `elementCaption` is currently only
+*stored* (`mongo.ts`) — no pipeline logic reads it — so dropping it is low-risk,
+but it is a visible behaviour change: **flagged for the reviewer to confirm**
+that nothing (e.g. the frontend, alt-text, candidate dedup) depends on it.
 
 ### 5. Config — `src/config/index.ts`
 
@@ -207,6 +224,9 @@ The step always renders — a missing highlight never blocks the SOP.
   schema so old records still render; no migration.
 - Animated/pulsing markers for video output — the static circle ships first.
 - Removing the `bbox` field entirely — deferred; deprecate-in-place for now.
+- `config.ai.prompts.locateHighlightSystem` (the old box-locating prompt) — it
+  becomes unused once the grounding-client prompts replace it. Left in place;
+  removal deferred to avoid touching the config prompt block now.
 
 ## File-change summary
 
