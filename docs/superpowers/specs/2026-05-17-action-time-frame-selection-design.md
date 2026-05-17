@@ -75,20 +75,29 @@ New function in `src/trigger/stages/pickFrame.ts`, next to
 - Else if `subStep.timeWindow` is set: return `timeWindow.end`.
 - Else: return `step.tEnd`.
 
+The `step` parameter has type `{ tStart: number; tEnd: number }` — the same
+shape `computeSearchWindow` already receives at the call site. The fallback
+chain mirrors `computeSearchWindow`'s exactly so the two stay in lockstep.
+
 Padding (`searchWindowPrePadSec` / `searchWindowPostPadSec`) stays exclusive to
 `computeSearchWindow`; it widens the candidate *search*, it does not locate the
 action.
 
 ### 2. `frameSharpness(localPath)`
 
-New file `src/trigger/lib/sharpness.ts`. Computes a focus measure for a frame:
+A small `async` helper exported from `src/trigger/lib/screenId.ts` (which
+already imports `sharp`). Computes a focus measure for a frame:
 
-- `sharp(localPath)` → greyscale → downscale (for speed) → convolve with a
-  3×3 Laplacian kernel → `.stats()`.
-- Return the standard deviation of the convolved channel. Higher = sharper
-  (variance-of-Laplacian, a standard focus measure).
+- `const { sharpness } = await sharp(localPath).stats(); return sharpness;`
+- `sharp`'s `Stats` already exposes a built-in `sharpness` field, documented
+  as "estimation of greyscale sharpness based on the standard deviation of a
+  Laplacian convolution" — exactly the variance-of-Laplacian focus measure we
+  want. Higher = sharper.
 
-No OpenCV dependency — `sharp` covers greyscale, convolution, and stats.
+Using the native `stats().sharpness` avoids hand-rolling greyscale +
+convolution, so no separate `lib/sharpness.ts` file and no OpenCV dependency.
+`frameSharpness` is exported so it can serve as the default `sharpnessFn` for
+`selectInClusterFrame`.
 
 ### 3. `selectInClusterFrame` rewrite
 
@@ -107,11 +116,14 @@ Logic:
 1. Filter cluster members to those whose `frame.t` is within `window`
    (`inWindow`). If `inWindow` is empty, return `cluster.representative`
    (unchanged fallback).
-2. Sort `inWindow` by `|frame.t - actionTime|` ascending.
+2. Sort `inWindow` by `|frame.t - actionTime|` ascending; break ties on lower
+   `frame.t` so the sort is fully deterministic.
 3. Take the **K nearest** — `K = config.screenshots.selectFrame.actionNeighborhood`
-   (default 5).
+   (default 5). If `inWindow` has fewer than K frames, take all of them.
 4. Compute sharpness for those K frames only (`sharpnessFn ?? frameSharpness`).
-5. Return the frame with the highest sharpness.
+5. Return the frame with the highest sharpness. On a sharpness tie, return the
+   tied frame that appeared earliest in the step-2 ordering (i.e. nearest to
+   `actionTime`, then lowest `t`) — the selection is fully deterministic.
 
 `sharpnessFn` is injectable so the selection logic can be unit-tested without
 running `sharp`.
@@ -144,6 +156,12 @@ sub-step
         → chosen frame
 ```
 
+Note: `runPickFrame` already calls `computeSearchWindow` internally to build
+its cluster shortlist, so the window is computed both inside `runPickFrame`
+and again at the `processSopScreenshots` call site. This duplication is
+pre-existing and unchanged by this design; `computeActionTime` is added
+alongside the existing call-site `computeSearchWindow`.
+
 ## Testing
 
 - **`computeActionTime`** — narration-end is used; `timeWindow.end` fallback
@@ -158,22 +176,32 @@ sub-step
   - (b) within the K-neighborhood, picks the sharpest over the merely-nearest;
   - (c) regression: two different action times on one cluster yield two
     different frames;
-  - (d) empty-in-window → returns `cluster.representative`.
-- Existing `pickFrame.test.ts` and any `selectInClusterFrame` callers updated
-  for the new async signature.
+  - (d) empty-in-window → returns `cluster.representative`;
+  - (e) fewer than K frames in window → considers all of them, no crash;
+  - (f) sharpness tie → resolves deterministically (nearest to `actionTime`,
+    then lowest `t`).
+- **`src/trigger/lib/screenId.test.ts`** — the two existing `selectInClusterFrame`
+  calls (currently synchronous, two-arg) must be updated for the new
+  three-arg `async` signature: add an `actionTime` argument and `await` the
+  result before asserting. Without this they break (arity-invalid, and an
+  unawaited `Promise` compared against a string).
+- The only `selectInClusterFrame` call sites are `processSopScreenshots.ts` and
+  `screenId.test.ts` (`pickFrame.test.ts` does not call it). Both are covered
+  above; no other caller needs updating.
 
 ## Verification
 
 After implementation, re-run the pipeline on
-`samples/trimmed-hubspot_crm.mp4` and confirm step 2's "enter name" and
+`samples/trimmed-hubspot_crm.mp4` — the same recording that produced SOP
+`6a08a7b1bd8d8846831c49d6` — and confirm step 2's "enter name" and
 "click Next" sub-steps resolve to **distinct** frames, with the "click Next"
 screenshot showing the name field **filled in**.
 
 ## Scope
 
 **In scope:** `pickFrame.ts` (`computeActionTime`), `screenId.ts`
-(`selectInClusterFrame`), new `lib/sharpness.ts`, `processSopScreenshots.ts`
-wiring, `config`.
+(`selectInClusterFrame` rewrite + `frameSharpness` helper),
+`processSopScreenshots.ts` wiring, `config`.
 
 **Out of scope:**
 - Planner / sub-step decomposition — unchanged.
