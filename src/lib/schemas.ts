@@ -63,6 +63,22 @@ export const Highlight = z.object({
   bbox: BBox,
 });
 
+export const ClassifiedCandidate = z.object({
+  index: z.number(),
+  decision: z.enum(["action", "discard"]),
+  verb: z.enum(["click", "input", "select", "link"]).nullable(),
+  screenName: z.string().nullable(),
+  screenCluster: z.string().nullable(),
+  elementCaption: z.string().nullable(),
+  bbox: BBox.nullable(),
+  displayFrame: z.enum(["before", "after"]).nullable(),
+  discardReason: z.enum(["transition", "hover", "press_flicker", "animation", "not_a_ui", "other"]).nullable(),
+});
+
+export const StepClassification = z.object({
+  candidates: z.array(ClassifiedCandidate),
+});
+
 export const ScreenshotPicksOutput = z.object({
   picks: z.array(z.object({
     index: z.number().int().nonnegative(),
@@ -117,6 +133,4 @@ export type Action = {
     bbox?: { x: number; y: number; w: number; h: number };
     point?: { x: number; y: number };
   };
-  verifyMatch: "yes" | "partially";
-  pickedClusterLetter: string;
 };
