@@ -219,6 +219,11 @@ Return strict JSON only.`,
       searchWindowPrePadSec: 8,
       searchWindowPostPadSec: 8,
     },
+    selectFrame: {
+      // Within the chosen screen cluster, consider this many frames nearest
+      // the sub-step's action time, then pick the sharpest of them.
+      actionNeighborhood: 5,
+    },
     classify: {
       maxCandidatesPerCall: 12,
       perStepConcurrency: 5,
