@@ -3,9 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import sharp from "sharp";
 import type { z } from "zod";
-import { uiTarsPoint, qwenPoint } from "@/lib/grounding";
+import { uiTarsPoint, qwenPoint, type Point } from "@/lib/grounding";
 import { HighlightDecision, SubStepPlan } from "@/lib/schemas";
 import { config } from "@/config";
+import { verifyGroundedPoint } from "./verifyHighlight";
 
 type SubStep = z.infer<typeof SubStepPlan>;
 type Decision = z.infer<typeof HighlightDecision>;
@@ -39,8 +40,14 @@ async function downscaledCopy(srcPath: string, outDir: string): Promise<string> 
 type GroundDeps = {
   uiTars: typeof uiTarsPoint;
   qwen: typeof qwenPoint;
+  verify: (point: Point, framePath: string, caption: string) => Promise<boolean>;
 };
-const defaultGroundDeps: GroundDeps = { uiTars: uiTarsPoint, qwen: qwenPoint };
+const defaultGroundDeps: GroundDeps = {
+  uiTars: uiTarsPoint,
+  qwen: qwenPoint,
+  verify: (point, framePath, caption) =>
+    verifyGroundedPoint({ point, framePath, caption, model: config.ai.verifyModel }),
+};
 
 function yesDecision(point: { x: number; y: number }): Decision {
   return {
@@ -65,34 +72,44 @@ export async function pointFallbackHighlight(
   const frameW = meta.width ?? 0;
   const frameH = meta.height ?? 0;
 
-  let uiTarsErrored = false;
-  try {
-    const r = await deps.uiTars({
+  // Each grounder, tried in order. A grounder yields a point (or null), and may
+  // throw. A point that passes verification wins immediately. If no point
+  // verifies, the earliest grounder that *returned* a point wins as best-effort.
+  const grounders: Array<() => Promise<{ point: Point | null }>> = [
+    () => deps.uiTars({
       framePath: args.framePath, intent: args.intent, verb: args.verb,
       frameW, frameH, model: config.ai.pointPrimaryModel,
-    });
-    if (r.point) return yesDecision(r.point);
-  } catch {
-    uiTarsErrored = true;
-  }
-
-  let qwenErrored = false;
-  try {
-    const r = await deps.qwen({
+    }),
+    () => deps.qwen({
       framePath: args.framePath, intent: args.intent, verb: args.verb,
       model: config.ai.pointFallbackModel,
-    });
-    if (r.point) return yesDecision(r.point);
-  } catch {
-    qwenErrored = true;
+    }),
+  ];
+
+  const results: Array<{ errored: boolean; point: Point | null }> = [];
+  for (const ground of grounders) {
+    let errored = false;
+    let point: Point | null = null;
+    try {
+      point = (await ground()).point;
+    } catch {
+      errored = true;
+    }
+    if (point && (await deps.verify(point, args.framePath, args.intent))) {
+      return yesDecision(point);
+    }
+    results.push({ errored, point });
   }
+
+  const firstPoint = results.find(r => r.point !== null)?.point ?? null;
+  if (firstPoint) return yesDecision(firstPoint);
 
   return {
     highlight: "no",
     point: null,
     bbox: null,
     noHighlightReason:
-      uiTarsErrored && qwenErrored ? "grounding_unavailable" : "no_specific_target",
+      results.every(r => r.errored) ? "grounding_unavailable" : "no_specific_target",
   };
 }
 

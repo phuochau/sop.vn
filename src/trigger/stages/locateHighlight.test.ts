@@ -63,6 +63,7 @@ test("pointFallbackHighlight uses the UI-TARS point when found", async () => {
     {
       uiTars: async () => ({ point: { x: 0.4, y: 0.6 }, raw: "(x,y)" }),
       qwen: async () => { throw new Error("should not be called"); },
+      verify: async () => true,
     },
   );
   assert.equal(out.highlight, "yes");
@@ -76,6 +77,7 @@ test("pointFallbackHighlight falls back to Qwen when UI-TARS finds nothing", asy
     {
       uiTars: async () => ({ point: null, raw: "no" }),
       qwen: async () => ({ point: { x: 0.7, y: 0.2 } }),
+      verify: async () => true,
     },
   );
   assert.equal(out.highlight, "yes");
@@ -88,6 +90,7 @@ test("pointFallbackHighlight falls back to Qwen when UI-TARS throws", async () =
     {
       uiTars: async () => { throw new Error("provider down"); },
       qwen: async () => ({ point: { x: 0.3, y: 0.3 } }),
+      verify: async () => true,
     },
   );
   assert.equal(out.highlight, "yes");
@@ -100,6 +103,7 @@ test("pointFallbackHighlight reports no_specific_target when both find nothing",
     {
       uiTars: async () => ({ point: null, raw: "no" }),
       qwen: async () => ({ point: null }),
+      verify: async () => true,
     },
   );
   assert.equal(out.highlight, "no");
@@ -112,6 +116,7 @@ test("pointFallbackHighlight reports grounding_unavailable when both throw", asy
     {
       uiTars: async () => { throw new Error("down"); },
       qwen: async () => { throw new Error("down"); },
+      verify: async () => true,
     },
   );
   assert.equal(out.highlight, "no");
@@ -140,4 +145,56 @@ test("runLocateHighlight keeps the downscaled frame alive until the highlighter 
     frameExistedAfterAsyncWork, true,
     "tmpdir was removed before the highlighter finished reading the frame",
   );
+});
+
+test("pointFallbackHighlight accepts the UI-TARS point when verification passes", async () => {
+  const out = await pointFallbackHighlight(
+    { intent: "Click Save", verb: "click", framePath: okFrame },
+    {
+      uiTars: async () => ({ point: { x: 0.4, y: 0.6 }, raw: "(x,y)" }),
+      qwen: async () => { throw new Error("should not be called"); },
+      verify: async () => true,
+    },
+  );
+  assert.equal(out.highlight, "yes");
+  assert.deepEqual(out.point, { x: 0.4, y: 0.6 });
+});
+
+test("pointFallbackHighlight retries to Qwen when the UI-TARS point fails verification", async () => {
+  const out = await pointFallbackHighlight(
+    { intent: "Click Save", verb: "click", framePath: okFrame },
+    {
+      uiTars: async () => ({ point: { x: 0.4, y: 0.6 }, raw: "(x,y)" }),
+      qwen: async () => ({ point: { x: 0.7, y: 0.2 } }),
+      verify: async (point) => point.x === 0.7, // UI-TARS point fails, Qwen point passes
+    },
+  );
+  assert.equal(out.highlight, "yes");
+  assert.deepEqual(out.point, { x: 0.7, y: 0.2 });
+});
+
+test("pointFallbackHighlight keeps the UI-TARS point as best-effort when neither verifies", async () => {
+  const out = await pointFallbackHighlight(
+    { intent: "Click Save", verb: "click", framePath: okFrame },
+    {
+      uiTars: async () => ({ point: { x: 0.4, y: 0.6 }, raw: "(x,y)" }),
+      qwen: async () => ({ point: { x: 0.7, y: 0.2 } }),
+      verify: async () => false, // both fail verification
+    },
+  );
+  assert.equal(out.highlight, "yes");
+  assert.deepEqual(out.point, { x: 0.4, y: 0.6 }); // UI-TARS preferred
+});
+
+test("pointFallbackHighlight uses a verified Qwen point when UI-TARS throws", async () => {
+  const out = await pointFallbackHighlight(
+    { intent: "Click Save", verb: "click", framePath: okFrame },
+    {
+      uiTars: async () => { throw new Error("provider down"); },
+      qwen: async () => ({ point: { x: 0.3, y: 0.3 } }),
+      verify: async () => true,
+    },
+  );
+  assert.equal(out.highlight, "yes");
+  assert.deepEqual(out.point, { x: 0.3, y: 0.3 });
 });
