@@ -1,6 +1,5 @@
 import sharp from "sharp";
 import { hammingDistance } from "./perceptualHash";
-import { config } from "@/config";
 
 export type DensePoolFrame = { t: number; localPath: string };
 
@@ -13,18 +12,6 @@ export type ScreenCluster = {
   timeSpan: { start: number; end: number };
   dHash: string;
 };
-
-/**
- * Focus measure for a frame. sharp's stats() exposes a native `sharpness`
- * estimate — the standard deviation of a Laplacian convolution of the
- * greyscale image. Higher = sharper / more in-focus. Note: sharp marks the
- * `sharpness` stat as experimental, so this field could change in a future
- * sharp release.
- */
-export async function frameSharpness(localPath: string): Promise<number> {
-  const { sharpness } = await sharp(localPath).stats();
-  return sharpness;
-}
 
 const TOP_MASK_FRAC = 0.06;
 const BOTTOM_MASK_FRAC = 0.08;
@@ -143,45 +130,3 @@ export async function buildScreenClusters(args: {
   });
 }
 
-export function clusterFor(letter: string | null, clusters: ScreenCluster[]): ScreenCluster | null {
-  if (!letter) return null;
-  return clusters.find(c => c.letter === letter) ?? null;
-}
-
-export async function selectInClusterFrame(
-  cluster: ScreenCluster,
-  window: { start: number; end: number },
-  actionTime: number,
-  sharpnessFn: (localPath: string) => Promise<number> = frameSharpness,
-): Promise<DensePoolFrame> {
-  const inWindow = cluster.members.filter(
-    m => m.frame.t >= window.start && m.frame.t <= window.end,
-  );
-  if (inWindow.length === 0) return cluster.representative;
-
-  // Order by closeness to the action time; tie-break on lower t so the
-  // ordering — and therefore the final pick — is fully deterministic.
-  const byActionTime = [...inWindow].sort((a, b) => {
-    const da = Math.abs(a.frame.t - actionTime);
-    const db = Math.abs(b.frame.t - actionTime);
-    return da - db || a.frame.t - b.frame.t;
-  });
-
-  // Among the K frames nearest the action time, pick the sharpest. The
-  // neighborhood is already in deterministic nearest-first order, and the
-  // loop replaces `best` only on a strictly greater score, so a sharpness
-  // tie keeps the earlier (nearer / lower-t) frame.
-  const neighborhood = byActionTime.slice(
-    0, config.screenshots.selectFrame.actionNeighborhood,
-  );
-  let best = neighborhood[0];
-  let bestSharpness = await sharpnessFn(best.frame.localPath);
-  for (let i = 1; i < neighborhood.length; i++) {
-    const s = await sharpnessFn(neighborhood[i].frame.localPath);
-    if (s > bestSharpness) {
-      best = neighborhood[i];
-      bestSharpness = s;
-    }
-  }
-  return best.frame;
-}
