@@ -12,10 +12,8 @@ function action(over: Partial<ClassifiedActionRecord>): ClassifiedActionRecord {
     screenName: "Login page",
     screenCluster: "A",
     elementCaption: "Sign in button",
-    bbox: { x: 0.1, y: 0.1, w: 0.1, h: 0.1 },
     displayFrame: "before",
     discardReason: null,
-    fullFrameBbox: { x: 0.1, y: 0.1, w: 0.1, h: 0.1 },
     beforeFramePath: "/b.jpg",
     afterFramePath: "/a.jpg",
     ...over,
@@ -46,8 +44,8 @@ test("normalizeElementId lowercases, trims, collapses whitespace, strips closed-
 test("drops discards including those with null discardReason", () => {
   const cls = [
     action({ index: 0 }),
-    action({ index: 1, decision: "discard", verb: null, screenName: null, screenCluster: null, elementCaption: null, bbox: null, displayFrame: null, discardReason: "hover", fullFrameBbox: null }),
-    action({ index: 2, decision: "discard", verb: null, screenName: null, screenCluster: null, elementCaption: null, bbox: null, displayFrame: null, discardReason: null, fullFrameBbox: null }),
+    action({ index: 1, decision: "discard", verb: null, screenName: null, screenCluster: null, elementCaption: null, displayFrame: null, discardReason: "hover" }),
+    action({ index: 2, decision: "discard", verb: null, screenName: null, screenCluster: null, elementCaption: null, displayFrame: null, discardReason: null }),
   ];
   const out = buildActionsForStep({
     stepIndex: 0, classified: cls, screenClusters: [cluster("A", 0, 3)],
