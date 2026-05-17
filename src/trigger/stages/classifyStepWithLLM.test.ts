@@ -7,9 +7,8 @@ function c(index: number, time: number, cluster: string | null): CandidateForLLM
     index,
     time,
     kindHint: "click",
-    diffBboxInCrop: { x: 0.1, y: 0.1, w: 0.1, h: 0.1 },
-    beforeCropPath: "/b.jpg",
-    afterCropPath: "/a.jpg",
+    beforeMarkedPath: "/b.jpg",
+    afterMarkedPath: "/a.jpg",
     screenCluster: cluster,
   };
 }
@@ -63,7 +62,6 @@ test("classifyStepWithLLM forwards each chunk to the injected classifier and con
           screenName: cand.screenCluster ?? "x",
           screenCluster: cand.screenCluster,
           elementCaption: `el${cand.index}`,
-          bbox: { x: 0, y: 0, w: 0.1, h: 0.1 },
           displayFrame: "before" as const,
           discardReason: null,
         })),

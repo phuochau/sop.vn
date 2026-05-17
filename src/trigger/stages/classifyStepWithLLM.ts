@@ -7,13 +7,7 @@ import { z } from "zod";
 import { llmJsonVision } from "@/lib/openrouter";
 import { StepClassification, ClassifiedCandidate as ClassifiedCandidateSchema } from "@/lib/schemas";
 import { config } from "@/config";
-import {
-  computeCropWindow,
-  diffBboxInCrop,
-  cropBboxToFullFrame,
-  padBbox,
-  type Bbox,
-} from "@/trigger/lib/cropEvent";
+import { markRegion } from "@/trigger/lib/markRegion";
 import type { RawEvent } from "./classifyAndMergeEvents";
 import { maskedDHash, type ScreenCluster } from "@/trigger/lib/screenId";
 import { hammingDistance } from "@/trigger/lib/perceptualHash";
@@ -24,14 +18,12 @@ export type CandidateForLLM = {
   index: number;
   time: number;
   kindHint: "click" | "input";
-  diffBboxInCrop: Bbox;
-  beforeCropPath: string;
-  afterCropPath: string;
+  beforeMarkedPath: string;
+  afterMarkedPath: string;
   screenCluster: string | null;
 };
 
 export type ClassifiedActionRecord = ClassifiedCandidate & {
-  fullFrameBbox: Bbox | null;
   beforeFramePath: string;
   afterFramePath: string;
 };
@@ -128,8 +120,7 @@ async function defaultClassifier(args: {
   ];
   for (const c of args.candidates) {
     lines.push(
-      `- index=${c.index} time=${c.time.toFixed(2)} kindHint=${c.kindHint} screenCluster=${c.screenCluster ?? "null"} ` +
-      `diffBboxInCrop=(${c.diffBboxInCrop.x.toFixed(3)},${c.diffBboxInCrop.y.toFixed(3)},${c.diffBboxInCrop.w.toFixed(3)},${c.diffBboxInCrop.h.toFixed(3)})`,
+      `- index=${c.index} time=${c.time.toFixed(2)} kindHint=${c.kindHint} screenCluster=${c.screenCluster ?? "null"}`,
     );
   }
   const userText = lines.join("\n");
@@ -137,7 +128,7 @@ async function defaultClassifier(args: {
   const imagePaths: string[] = [];
   if (args.montageImagePath) imagePaths.push(args.montageImagePath);
   for (const c of args.candidates) {
-    imagePaths.push(c.beforeCropPath, c.afterCropPath);
+    imagePaths.push(c.beforeMarkedPath, c.afterMarkedPath);
   }
 
   return llmJsonVision({
@@ -183,28 +174,18 @@ export async function classifyAndRemap(args: {
   language: string;
   events: RawEvent[];
   screenClusters: ScreenCluster[];
-  perStepConcurrency?: number;
 }): Promise<ClassifiedActionRecord[]> {
   if (args.events.length === 0) return [];
 
   const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "classify-"));
   try {
-    const candidates: (CandidateForLLM & { event: RawEvent; cropWindow: ReturnType<typeof computeCropWindow>; W: number; H: number })[] = [];
+    const candidates: (CandidateForLLM & { event: RawEvent })[] = [];
     for (let i = 0; i < args.events.length; i++) {
       const e = args.events[i];
-      const meta = await sharp(e.beforeFramePath).metadata();
-      const W = meta.width ?? 0;
-      const H = meta.height ?? 0;
-      if (!W || !H) throw new Error("missing image metadata");
-      const crop = computeCropWindow(e.bbox, W, H, {
-        multiplier: config.screenshots.ground.cropMultiplier,
-        minPx: config.screenshots.ground.cropMinPx,
-        maxFrac: config.screenshots.ground.cropMaxFrac,
-      });
-      const beforeCropPath = path.join(tmpDir, `c${i}-before.jpg`);
-      const afterCropPath = path.join(tmpDir, `c${i}-after.jpg`);
-      await sharp(e.beforeFramePath).extract({ left: crop.cx, top: crop.cy, width: crop.cw, height: crop.ch }).jpeg({ quality: 90 }).toFile(beforeCropPath);
-      await sharp(e.afterFramePath).extract({ left: crop.cx, top: crop.cy, width: crop.cw, height: crop.ch }).jpeg({ quality: 90 }).toFile(afterCropPath);
+      const beforeMarkedPath = path.join(tmpDir, `c${i}-before.jpg`);
+      const afterMarkedPath = path.join(tmpDir, `c${i}-after.jpg`);
+      await markRegion(e.beforeFramePath, e.bbox, beforeMarkedPath);
+      await markRegion(e.afterFramePath, e.bbox, afterMarkedPath);
 
       // When clusters exceed the montage cap, the montage is omitted (see buildMontage).
       // In that case the LLM has no letter→frame mapping to interpret, so every candidate
@@ -215,14 +196,10 @@ export async function classifyAndRemap(args: {
         index: i,
         time: e.time,
         kindHint: e.kindHint,
-        diffBboxInCrop: diffBboxInCrop(e.bbox, crop, W, H),
-        beforeCropPath,
-        afterCropPath,
+        beforeMarkedPath,
+        afterMarkedPath,
         screenCluster: cluster?.letter ?? null,
         event: e,
-        cropWindow: crop,
-        W,
-        H,
       });
     }
 
@@ -235,9 +212,8 @@ export async function classifyAndRemap(args: {
         index: c.index,
         time: c.time,
         kindHint: c.kindHint,
-        diffBboxInCrop: c.diffBboxInCrop,
-        beforeCropPath: c.beforeCropPath,
-        afterCropPath: c.afterCropPath,
+        beforeMarkedPath: c.beforeMarkedPath,
+        afterMarkedPath: c.afterMarkedPath,
         screenCluster: c.screenCluster,
       })),
       montageImagePath: montagePath,
@@ -281,15 +257,9 @@ export async function classifyAndRemap(args: {
           displayFrame = "before";
         }
       }
-      let fullBbox: Bbox | null = null;
-      if (cc.decision === "action" && cc.bbox) {
-        const mapped = cropBboxToFullFrame(cc.bbox, cand.cropWindow, cand.W, cand.H);
-        fullBbox = padBbox(mapped, cand.W, cand.H, config.screenshots.ground.bboxPadPx);
-      }
       records.push({
         ...cc,
         displayFrame,
-        fullFrameBbox: fullBbox,
         beforeFramePath: cand.event.beforeFramePath,
         afterFramePath: cand.event.afterFramePath,
       });
