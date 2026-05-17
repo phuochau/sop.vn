@@ -85,6 +85,14 @@ export const ScreenshotPicksOutput = z.object({
   })),
 });
 
+export const CanonicalizationOutput = z.object({
+  actions: z.array(z.object({
+    index: z.number().int(),
+    screenName: z.string(),
+    elementCaption: z.string(),
+  })),
+});
+
 export const SubStepPlan = z.object({
   intent: z.string(),
   verb: z.enum(["click", "input", "select", "link", "view"]),
@@ -107,6 +115,8 @@ export type Action = {
   order: number;
   verb: "click" | "input" | "select" | "link" | "view";
   description: string;
+  screenName: string;
+  elementCaption: string;
   displayFramePath: string;
   time: number;
   highlight?: {
