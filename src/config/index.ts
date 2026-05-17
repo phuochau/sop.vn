@@ -5,6 +5,7 @@ export const config = {
     normalizeModel: "google/gemini-2.5-flash",
     contextModel: "google/gemini-2.5-flash",
     canonicalizeModel: "google/gemini-2.5-flash",
+    verifyModel: "google/gemini-2.5-flash",
     sopModel: "anthropic/claude-sonnet-4.5",
     pdfModel: "google/gemini-2.5-flash",
     visionModel: "google/gemini-2.5-flash",
@@ -132,6 +133,13 @@ Rules:
 - Return exactly one entry per input index. Do not add, drop, or renumber indices.
 
 Return strict JSON only.`,
+
+      verifyHighlightSystem:
+        `You are shown an app screenshot with a yellow circle drawn on it. Judge whether the CENTRE of that circle lands on the specific UI element named in the user message — the element the circle is meant to mark.
+
+Answer "yes" only if the circle's centre is clearly on, or within, that element. If the centre is on a different element, on empty space, or you cannot tell, answer "no".
+
+Return strict JSON: { "onElement": "yes" | "no" }.`,
 
     },
   },

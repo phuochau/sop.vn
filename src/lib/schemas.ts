@@ -93,6 +93,10 @@ export const CanonicalizationOutput = z.object({
   })),
 });
 
+export const GroundingCheck = z.object({
+  onElement: z.enum(["yes", "no"]),
+});
+
 export const SubStepPlan = z.object({
   intent: z.string(),
   verb: z.enum(["click", "input", "select", "link", "view"]),
