@@ -27,6 +27,8 @@ export type ErrorCode =
   | "visual_context_failed" | "visual_extract_failed"
   | "frame_sampling_failed" | "video_download_failed"
   | "screenshot_pool_failed"
+  | "not_an_app"           // Stage 0: < 50% of sampled frames show an app UI
+  | "analysis_failed"      // Stage 0: the analysis VLM call errored (retryable)
   | "click_detect_failed"
   | "classify_failed"
   | "verify_failed"        // reserved; current policy drops sub-step on no-match rather than failing SOP
@@ -88,6 +90,7 @@ export interface SopDoc {
   title: string;                     // AI-generated in Stage 4
   category: string;                  // AI-detected in Stage 3
   inputMode?: "speech" | "silent";
+  appType?: "web" | "mobile" | "desktop" | "none"; // detected by Stage 0
   mode?: "clips" | "screenshots"; // NEW — set at upload time; absent ⇒ "clips"
   defaultLanguage?: string;
   sourceType?: "upload" | "loom";   // absent ⇒ "upload" (legacy rows)

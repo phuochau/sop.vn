@@ -133,6 +133,14 @@ Rules:
 
 Return strict JSON only.`,
 
+      analyzeVideoSystem: (lang: string) =>
+        `You analyze frames sampled evenly across a how-to video to decide whether it is a screen recording of a software application.
+An "app UI" frame shows a web app, mobile app, or desktop app — windows, toolbars, forms, menus, buttons, lists. NOT an app UI: a person talking to camera, a slideshow/presentation, real-world footage, a static title card, or gameplay.
+Count how many of the given frames show an app UI. Pick the single best overall appType: "web", "mobile", "desktop", or "none" (use "none" if it is not an app recording).
+Also return a short freeform "category" naming the domain/industry and a one-sentence "domainSummary".
+${config.ai.prompts.languageRule(lang)}
+Return JSON: { "appUIFrameCount": int, "totalFrames": int, "appType": "web"|"mobile"|"desktop"|"none", "category": string, "domainSummary": string }. "totalFrames" MUST equal the number of frames provided.`,
+
     },
   },
   limits: {

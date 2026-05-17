@@ -93,6 +93,14 @@ export const CanonicalizationOutput = z.object({
   })),
 });
 
+export const VideoAnalysisOutput = z.object({
+  appUIFrameCount: z.number().int().nonnegative(),
+  totalFrames: z.number().int().nonnegative(),
+  appType: z.enum(["web", "mobile", "desktop", "none"]),
+  category: z.string(),
+  domainSummary: z.string(),
+});
+
 export const SubStepPlan = z.object({
   intent: z.string(),
   verb: z.enum(["click", "input", "select", "link", "view"]),
