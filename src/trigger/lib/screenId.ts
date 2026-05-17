@@ -13,6 +13,16 @@ export type ScreenCluster = {
   dHash: string;
 };
 
+/**
+ * Focus measure for a frame. sharp's stats() exposes a native `sharpness`
+ * estimate — the standard deviation of a Laplacian convolution of the
+ * greyscale image. Higher = sharper / more in-focus.
+ */
+export async function frameSharpness(localPath: string): Promise<number> {
+  const { sharpness } = await sharp(localPath).stats();
+  return sharpness;
+}
+
 const TOP_MASK_FRAC = 0.06;
 const BOTTOM_MASK_FRAC = 0.08;
 

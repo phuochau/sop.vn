@@ -7,6 +7,7 @@ import sharp from "sharp";
 import {
   buildScreenClusters,
   clusterFor,
+  frameSharpness,
   selectInClusterFrame,
   type DensePoolFrame,
   type ScreenCluster,
@@ -121,4 +122,21 @@ test("selectInClusterFrame falls back to representative when no member is in win
   ]);
   const picked = selectInClusterFrame(c, { start: 100, end: 200 });
   assert.equal(picked.localPath, c.representative.localPath);
+});
+
+test("frameSharpness scores a blurred frame lower than the sharp original", async () => {
+  const tmp = await fs.promises.mkdtemp(path.join(os.tmpdir(), "sharp-"));
+  try {
+    const fixture = "src/trigger/stages/__fixtures__/sample-1080p.jpg";
+    const blurred = path.join(tmp, "blur.jpg");
+    await sharp(fixture).blur(8).jpeg().toFile(blurred);
+    const sharpScore = await frameSharpness(fixture);
+    const blurScore = await frameSharpness(blurred);
+    assert.ok(
+      sharpScore > blurScore,
+      `expected sharp score ${sharpScore} > blurred score ${blurScore}`,
+    );
+  } finally {
+    await fs.promises.rm(tmp, { recursive: true, force: true });
+  }
 });
