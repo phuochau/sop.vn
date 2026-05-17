@@ -81,9 +81,10 @@ async function runPipeline(_id: ObjectId): Promise<void> {
     try {
       stage1 = await withStage("transcribe", async () => {
         const r = await runTranscribe(signedVideo);
-        // fal/Whisper returns no cost field — estimate from audio duration.
-        // Skip when there is no audio track (runTranscribe returns no
-        // segments and nothing was actually transcribed).
+        // fal/Whisper returns no cost field — estimate from the video's
+        // duration (≈ audio-track length; runTranscribe processes the whole
+        // track). Skip when there is no audio track (runTranscribe returns
+        // no segments and nothing was actually transcribed).
         if (r.segments.length > 0) {
           recordCost({
             provider: "fal",
