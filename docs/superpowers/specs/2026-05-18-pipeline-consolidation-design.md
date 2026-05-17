@@ -48,19 +48,19 @@ process-sop-screenshots
 │   │
 │   ├─ SPEECH head                          ├─ SILENT head
 │   │  outputLanguage = detected lang        │  outputLanguage = defaultLanguage
-│   │  Stage 2  normalize (source lang)      │  Stage 4' visualExtract (frames)
-│   │  Stage 4  extract (steps from           │     → step list with time windows
-│   │           transcript)                  │     uses category/domainSummary
-│   │  uses category/domainSummary           │     from Stage 0
+│   │  normalize (source lang)               │  visualExtract (frames)
+│   │  extract (steps from transcript)        │   → step list w/ start/end times
+│   │  resolveTimes (segmentIds → times)     │   uses category/domainSummary
+│   │  uses category/domainSummary           │   from Stage 0
 │   │  from Stage 0                          │
 │   │
 │   └─── both heads converge on: { title, steps:[{title,startTime,endTime}] } ───┘
 │
-├─ Stage 5  buildFramePool
-├─ Stage 6  extractClickEvents → classifyAndMergeEvents
-├─ Stage 7  per-step loop: classify → canonicalize → buildActions
+├─ Stage 2  buildFramePool
+├─ Stage 3  extractClickEvents → classifyAndMergeEvents
+├─ Stage 4  per-step loop: classify → canonicalize → buildActions
 │                          → collapse → highlight
-├─ Stage 8  uploadScreenshots
+├─ Stage 5  uploadScreenshots
 │
 └─ done · mode:"screenshots"
 ```
@@ -96,9 +96,16 @@ or UI sounds, so "has audio" is not the signal — "has usable speech" is.
 
 ### Convergence
 
-Both heads emit `{ title, steps: [{ title, startTime, endTime }] }`. From
-`buildFramePool` onward the code path is identical for both — no per-path
-branching in the spine.
+The speech `extract` emits steps keyed by `startSegmentId`/`endSegmentId`
+(`SopExtractOutput`), so the speech head runs `resolveTimes` to convert those to
+`startTime`/`endTime`. The silent `visualExtract` already emits
+`startTime`/`endTime` directly (`VisualSopExtractOutput`) and skips
+`resolveTimes`. `resolveTimes` therefore lives **inside the speech head**, before
+convergence — it is not a spine stage.
+
+Both heads converge on `{ title, steps: [{ title, startTime, endTime }] }`. From
+`buildFramePool` (Stage 2) onward the code path is identical for both — the only
+per-path branching lives in the two heads.
 
 ## File Inventory
 
@@ -106,21 +113,41 @@ branching in the spine.
 - `src/trigger/stages/analyzeVideo.ts` — Stage 0.
 
 **Adapted:**
-- `src/trigger/stages/visualExtract.ts` — silent head; takes `category` and
-  `domainSummary` as input instead of running its own context; emits the
-  converged `{title, steps[]}` shape.
-- `src/trigger/stages/extract.ts` — speech head; unchanged logic, fed
-  `category`/`domainSummary` from Stage 0.
 - `src/trigger/processSopScreenshots.ts` — control flow rewritten per the
-  diagram.
+  diagram (Stage 0 added, silent head added, status/error handling).
+- `src/trigger/stages/clip.ts` — trim to **only `resolveTimes`** (delete
+  `runClip`, which belongs to the removed clip pipeline) and rename the file to
+  `resolveTimes.ts`. `resolveTimes` is used by the speech head and must survive;
+  `processSopScreenshots.ts` already imports it.
+- `src/trigger/ingestLoom.ts` — change both `tasks.trigger("process-sop", …)`
+  calls (lines 65, 106) and their idempotency keys to `process-sop-screenshots`.
+  Loom ingest must keep working after the `process-sop` task is deleted.
+- `src/app/api/upload/commit/route.ts` — remove the `mode` enum field, its
+  `"clips"` default, and the `taskId` branch (line 34); always trigger
+  `process-sop-screenshots`. Stop persisting `mode` from the request body.
 
 **Deleted** (document/clip pipeline + superseded stages), each with its
-`.test.ts`:
-`processSop.ts`, `generateSopPdf.ts`, `clip.ts`, `keyframes.ts`,
-`synthesizeOverview.ts`, `synthesizeStep.ts`, `renderPdf.tsx`, `visualStep.ts`,
-`visualOverview.ts`, `context.ts`, `visualContext.ts`.
+`.test.ts` where one exists:
+- Trigger task & stages: `processSop.ts`, `generateSopPdf.ts`, `keyframes.ts`,
+  `synthesizeOverview.ts`, `synthesizeStep.ts`, `renderPdf.tsx`, `visualStep.ts`,
+  `visualOverview.ts`, `context.ts`, `visualContext.ts`.
+- PDF surface: `src/app/api/sop/[id]/pdf/route.ts` (triggers the deleted
+  `generate-sop-pdf` task) and `src/components/ExportPdfButton.tsx`.
 
-**Untouched:** `buildFramePool`, `extractClickEvents`, `classifyAndMergeEvents`,
+**`visualExtract.ts` — kept, effectively untouched.** It already accepts
+`category`/`domainSummary` as input and already emits the converged
+`{title, steps:[{title,description,startTime,endTime}]}` shape. It never ran
+context internally (`runVisualContext` was a separate function in the deleted
+`visualContext.ts`). The only change is that its `category`/`domainSummary` now
+come from Stage 0 instead of `runVisualContext`.
+
+**Frontend cleanup — `src/app/sop/[id]/page.tsx`:** remove the `mode !==
+"screenshots"` branches — the `<ExportPdfButton>` render (lines ~99-100), the
+clip-vs-screenshot rendering branch (lines ~123, ~138-146), and the now-unused
+`clipUrl`/`pdf` fields. Screenshots is the only mode, so the branching is dead.
+
+**Untouched:** `extract.ts` (already accepts `category`/`domainSummary`),
+`buildFramePool`, `extractClickEvents`, `classifyAndMergeEvents`,
 `classifyStepWithLLM`, `canonicalizeActions`, `buildActionsForStep`,
 `collapseDuplicateActions`, `highlightActions`, `locateHighlight`,
 `uploadScreenshots`, `transcribe`, `normalize`.
@@ -131,15 +158,25 @@ trigger references for a cosmetic gain.
 
 ## Data & Schema
 
-- New zod schema `VideoAnalysisOutput`:
+- New zod schema `VideoAnalysisOutput` (in `src/lib/schemas.ts`):
   `{ appUIFrameCount: number, totalFrames: number,
      appType: enum["web","mobile","desktop","none"],
      category: string, domainSummary: string }`.
+- Remove now-orphaned schemas from `src/lib/schemas.ts`: `OverviewOutput` and
+  `StepRewriteOutput` (their only consumers — `synthesizeOverview`/`visualOverview`
+  and `synthesizeStep`/`visualStep` — are deleted), and `ContextOutput` (its
+  consumers `context.ts`/`visualContext.ts` are deleted). `VisualSopExtractOutput`
+  is **kept** — `visualExtract.ts` still uses it.
 - `ErrorCode` (in `src/lib/mongo.ts`) gains:
   - `not_an_app` — permanent; Stage 0 ran fine, < 50% app frames.
   - `analysis_failed` — retryable; Stage 0 VLM call errored.
+- `ErrorCode` cleanup — remove codes that become unreachable once the clip/PDF
+  pipeline is gone: `clipping_failed`, `visual_context_failed`. Keep
+  `visual_extract_failed` (reused for a silent-head failure) and
+  `loom_ingest_failed` (`ingestLoom.ts` is kept).
 - The sop doc persists `appType` alongside the existing `category`,
-  `domainSummary`, `inputMode`, and `mode: "screenshots"`.
+  `domainSummary`, `inputMode`, and `mode: "screenshots"`. The `mode` field is
+  always `"screenshots"` (no longer set from the upload request).
 - `SopStatus` already includes `"analyzing"` — Stage 0 uses it.
 
 ## Language
@@ -168,9 +205,12 @@ trigger references for a cosmetic gain.
 - `analyzeVideo.test.ts` — fake VLM fn: threshold boundary (8/20 frames →
   reject, 10/20 → accept), `appType` passthrough, VLM-error propagation (caller
   maps the throw to `analysis_failed`).
-- `visualExtract.test.ts` — adapted: verifies it consumes injected
-  `category`/`domainSummary` and emits the converged `{title, steps[]}` shape.
+- `visualExtract.test.ts` — kept as-is (the stage is effectively untouched);
+  confirm it still passes after the schema cleanup.
 - Tests for deleted stages are removed with their stages.
+- `tsc --noEmit` must pass after deletions — this is the regression check that
+  catches a broken caller (no surviving file imports a deleted file or the
+  deleted `process-sop` / `generate-sop-pdf` task).
 - E2E: the HubSpot narrated video (`samples/hubspot_crm.mp4`, existing
   benchmark, ~96%) and a silent sample. **Open item:** `samples/` currently
   holds `1.mp4`, `hubspot_crm.mp4`, `trimmed-hubspot_crm.mp4`; none is confirmed
