@@ -12,6 +12,8 @@
 
 **Conventions:** Commit directly to `master`. Never use `--no-verify`. Commit-message trailer: `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>`. Typecheck with `npx tsc --noEmit -p tsconfig.json`. Run tests with `npx tsx --test <file>`.
 
+**Note on red-tree commits:** Tasks 1–2 deliberately commit a transient `tsc` error (resolved by Task 4). This repo has **no pre-commit hook** (verified — no `.husky/`, no `.git/hooks/pre-commit`), so these commits are not blocked. If you prefer a green tree throughout, do Tasks 1, 2, 4, 7 before the first commit — either is acceptable.
+
 ---
 
 ## File Structure
@@ -26,7 +28,7 @@
 - **Modify:** `src/trigger/stages/uploadScreenshots.ts` — persist the two new fields.
 - **Modify:** `src/lib/openrouter.ts` — fix the stale `zodToJsonSchemaLike` doc comment.
 - **Modify:** `src/trigger/processSopScreenshots.ts` — wire `canonicalizeActions` into the per-step loop.
-- **Modify:** test fixtures that construct `Action` literals (`collapseDuplicateActions.test.ts`, `highlightActions.test.ts`, `uploadScreenshots.test.ts`) — add the two new required fields.
+- **Modify:** test fixtures that construct `Action` literals (`collapseDuplicateActions.test.ts`, `highlightActions.test.ts`) — add the two new required fields. (These are the only two `Action`-literal test sites — verified by codebase search; `uploadScreenshots.test.ts` does NOT construct `Action` objects, it tests only the pure `rectSvg` / `circleSvg` / `buildBufferWithOptionalHighlight` helpers.)
 
 ---
 
@@ -519,7 +521,7 @@ Expected: PASS — all tests, including the rewritten step-wide-collapse test an
 - [ ] **Step 6: Typecheck**
 
 Run: `npx tsc --noEmit -p tsconfig.json`
-Expected: `buildActionsForStep.ts` is now clean. Remaining failures: only the `Action`-constructing test fixtures (`collapseDuplicateActions.test.ts`, `highlightActions.test.ts`, `uploadScreenshots.test.ts`) — fixed in Task 6 and Task 7.
+Expected: `buildActionsForStep.ts` is now clean. Remaining failures: only the two `Action`-literal test fixtures `collapseDuplicateActions.test.ts` and `highlightActions.test.ts` — fixed in Task 7.
 
 - [ ] **Step 7: Commit**
 
@@ -592,27 +594,10 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 
 **Files:**
 - Modify: `src/trigger/stages/uploadScreenshots.ts`
-- Modify: `src/trigger/stages/uploadScreenshots.test.ts`
 
-- [ ] **Step 1: Update the test fixture and add an assertion**
+**Note — no unit test for this task.** `uploadScreenshots.test.ts` covers only the pure helpers (`rectSvg`, `circleSvg`, `buildBufferWithOptionalHighlight`) and is not touched. `runUploadScreenshots` does real I/O — it calls `putObject` (R2 upload) with no injection seam — so a unit test would require adding mocking infrastructure for a two-field literal copy. The change is fully covered by `tsc` (the fields must exist on `Action`) and by the Task 8 E2E run (the fields must appear on the persisted `Screenshot` docs in Mongo). This is a deliberate, scoped exception to TDD.
 
-In `src/trigger/stages/uploadScreenshots.test.ts`, find the helper(s) that construct `Action` objects and add `screenName` and `elementCaption` to each (use any non-empty string, e.g. `screenName: "Test screen", elementCaption: "Test element"`). This is required for the file to compile against the new `Action` type.
-
-Then add a test asserting the fields reach the `Screenshot` record. Match the style of the existing tests in that file — locate an existing test that inspects a returned `Screenshot` record and add assertions:
-
-```typescript
-assert.equal(rec.screenName, "Test screen");
-assert.equal(rec.elementCaption, "Test element");
-```
-
-(Use whatever variable name the existing test uses for the returned record; if no such test exists, add a minimal one that calls `runUploadScreenshots` with one action and asserts the two fields on `out.get(0)![0]`.)
-
-- [ ] **Step 2: Run the test to verify it fails**
-
-Run: `npx tsx --test src/trigger/stages/uploadScreenshots.test.ts`
-Expected: FAIL — `screenName` / `elementCaption` are `undefined` on the record (not yet written).
-
-- [ ] **Step 3: Write the implementation**
+- [ ] **Step 1: Write the implementation**
 
 In `src/trigger/stages/uploadScreenshots.ts`, in `runUploadScreenshots`, extend the `rec` object literal (currently lines 123-130) to include the two fields:
 
@@ -631,15 +616,20 @@ In `src/trigger/stages/uploadScreenshots.ts`, in `runUploadScreenshots`, extend 
 
 The `Screenshot` type (`src/lib/mongo.ts:40`) already declares `screenName?` and `elementCaption?` — no type change needed.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [ ] **Step 2: Typecheck**
+
+Run: `npx tsc --noEmit -p tsconfig.json`
+Expected: `uploadScreenshots.ts` is clean (`action.screenName` / `action.elementCaption` resolve against the `Action` type from Task 1). Remaining failures: only the `Action`-literal test fixtures `collapseDuplicateActions.test.ts` / `highlightActions.test.ts` — fixed in Task 7.
+
+- [ ] **Step 3: Confirm the existing helper tests still pass**
 
 Run: `npx tsx --test src/trigger/stages/uploadScreenshots.test.ts`
-Expected: PASS.
+Expected: PASS — unchanged (the file was not modified; this just confirms no regression).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add src/trigger/stages/uploadScreenshots.ts src/trigger/stages/uploadScreenshots.test.ts
+git add src/trigger/stages/uploadScreenshots.ts
 git commit -m "feat(upload): persist screenName/elementCaption onto Screenshot doc
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
@@ -734,7 +724,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 Run: `npx tsc --noEmit -p tsconfig.json`
 Expected: zero errors.
 
-Run: `npx tsx --test src/trigger/stages/canonicalizeActions.test.ts src/trigger/stages/buildActionsForStep.test.ts src/trigger/stages/collapseDuplicateActions.test.ts src/trigger/stages/uploadScreenshots.test.ts`
+Run: `npx tsx --test src/trigger/stages/canonicalizeActions.test.ts src/trigger/stages/buildActionsForStep.test.ts src/trigger/stages/collapseDuplicateActions.test.ts src/trigger/stages/highlightActions.test.ts src/trigger/stages/uploadScreenshots.test.ts`
 Expected: all PASS.
 
 - [ ] **Step 2: Re-run the full untrimmed HubSpot video**
