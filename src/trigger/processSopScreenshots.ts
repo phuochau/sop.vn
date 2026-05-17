@@ -5,11 +5,13 @@ import { config } from "@/config";
 import { probeDuration } from "./lib/probe";
 import { presignGet } from "@/lib/r2";
 import { fetchSourceVideo } from "./lib/videoTmp";
+import { sampleFrames } from "./lib/sampleFrames";
 import { hasUsableSpeech } from "./lib/branchDecision";
+import { runAnalyzeVideo, decideAppGate } from "./stages/analyzeVideo";
 import { runTranscribe } from "./stages/transcribe";
 import { runNormalize } from "./stages/normalize";
-import { runContext } from "./stages/context";
 import { runExtract } from "./stages/extract";
+import { runVisualExtract } from "./stages/visualExtract";
 import { resolveTimes } from "./stages/resolveTimes";
 import { runBuildFramePool } from "./stages/buildFramePool";
 import { runUploadScreenshots } from "./stages/uploadScreenshots";
@@ -23,6 +25,8 @@ import { collapseDuplicateActions } from "./stages/collapseDuplicateActions";
 import { highlightActions } from "./stages/highlightActions";
 import { runWithCostTracking, withStage, recordCost } from "@/lib/aiCost";
 import type { Action } from "@/lib/schemas";
+
+type ResolvedStep = { title: string; description: string; startTime: number; endTime: number };
 
 async function setStatus(id: ObjectId, status: SopStatus, extra: Record<string, unknown> = {}) {
   await (await sops()).updateOne({ _id: id }, { $set: { status, updatedAt: new Date(), ...extra } });
@@ -38,7 +42,6 @@ export const processSopScreenshots = task({
     const _id = new ObjectId(payload.sopId);
     const { summary: aiCost } = await runWithCostTracking(() => runPipeline(_id));
 
-    // Persist + log the AI cost of the run, even if the pipeline failed.
     try {
       await (await sops()).updateOne(
         { _id },
@@ -63,6 +66,7 @@ async function runPipeline(_id: ObjectId): Promise<void> {
   if (!doc || !doc.videoR2Key) { logger.error("sop not found"); return; }
 
   const signedVideo = await presignGet(doc.videoR2Key, 3600);
+  const defaultLanguage = doc.defaultLanguage ?? "vi";
 
   try {
     // Pre-stage: duration probe.
@@ -76,78 +80,127 @@ async function runPipeline(_id: ObjectId): Promise<void> {
       return fail(_id, "unknown");
     }
 
-    // Stage 1: transcribe.
-    await setStatus(_id, "transcribing");
-    let stage1;
-    try {
-      stage1 = await withStage("transcribe", async () => {
-        const r = await runTranscribe(signedVideo);
-        // fal/Whisper returns no cost field — estimate from the video's
-        // duration (≈ audio-track length; runTranscribe processes the whole
-        // track). Skip when there is no audio track (runTranscribe returns
-        // no segments and nothing was actually transcribed).
-        if (r.segments.length > 0) {
-          recordCost({
-            provider: "fal",
-            model: "fal-ai/whisper",
-            promptTokens: 0,
-            completionTokens: 0,
-            costUSD: (durationSec / 60) * config.costs.whisperPerMinuteUSD,
-            estimated: true,
-          });
-        }
-        return r;
-      });
-    }
-    catch (e) { logger.error("transcribe failed", { e: String(e) }); return fail(_id, "transcription_failed"); }
-    const { transcript, segments, language } = stage1;
-
-    // POC scope: speech-path only.
-    if (!hasUsableSpeech({ segments, transcript })) {
-      logger.error("screenshot pipeline: silent path not supported in POC");
-      return fail(_id, "transcription_failed");
-    }
-    const inputMode = "speech" as const;
-    await (await sops()).updateOne(
-      { _id },
-      { $set: { transcript, segments, language, inputMode, updatedAt: new Date() } },
-    );
-
-    // The user's selected language on the upload form takes precedence over
-    // Whisper's detected language for all natural-language output (titles,
-    // step text, captions). Whisper-detected language is still used by
-    // normalize so it cleans the transcript in its source language.
-    const outputLanguage = doc.defaultLanguage ?? language!;
-
-    // Stage 2: normalize (in source language).
-    await setStatus(_id, "normalizing");
-    const segmentsClean = await withStage("normalize", () => runNormalize(segments, language!));
-    await (await sops()).updateOne({ _id }, { $set: { segmentsClean, updatedAt: new Date() } });
-
-    // Stage 3: context.
-    await setStatus(_id, "analyzing");
-    const { category, domainSummary } = await withStage("context", () => runContext({
-      cleanTranscript: segmentsClean.map(s => s.text).join(" "),
-      language: outputLanguage,
-    }));
-    await (await sops()).updateOne({ _id }, { $set: { category, domainSummary, updatedAt: new Date() } });
-
-    // Stage 4: extract step list.
-    await setStatus(_id, "generating");
-    let extracted;
-    try { extracted = await withStage("extract", () => runExtract({ segmentsClean, category, domainSummary, language: outputLanguage })); }
-    catch (e) { logger.error("extract failed", { e: String(e) }); return fail(_id, "generation_failed"); }
-
-    const resolved = resolveTimes(segments, extracted.steps, durationSec);
-
-    // Stage 5: build frame pool.
-    await setStatus(_id, "building-pool", { title: extracted.title });
+    // Download the source video once — Stage 0, the silent head, and the
+    // frame pool all read from it.
     let src;
     try { src = await fetchSourceVideo(doc.videoR2Key); }
     catch (e) { logger.error("source download failed", { e: String(e) }); return fail(_id, "video_download_failed"); }
 
-    let pool;
+    let pool: Awaited<ReturnType<typeof runBuildFramePool>> | undefined;
     try {
+      // Stage 0: analyze video — app-recording gate + category/domainSummary.
+      await setStatus(_id, "analyzing");
+      let analysis;
+      try {
+        analysis = await withStage("analyze", () => runAnalyzeVideo({
+          srcPath: src.srcPath,
+          durationSec,
+          language: defaultLanguage,
+        }));
+      } catch (e) {
+        logger.error("analyze failed", { e: String(e) });
+        return fail(_id, "analysis_failed");
+      }
+      if (!decideAppGate(analysis.appUIFrameCount, analysis.totalFrames)) {
+        logger.info("rejected: not an app recording", {
+          sopId: _id.toHexString(),
+          appUIFrameCount: analysis.appUIFrameCount,
+          totalFrames: analysis.totalFrames,
+        });
+        return fail(_id, "not_an_app");
+      }
+      const { category, domainSummary, appType } = analysis;
+      await (await sops()).updateOne(
+        { _id },
+        { $set: { category, domainSummary, appType, updatedAt: new Date() } },
+      );
+
+      // Stage 1: transcribe (always run).
+      await setStatus(_id, "transcribing");
+      let stage1;
+      try {
+        stage1 = await withStage("transcribe", async () => {
+          const r = await runTranscribe(signedVideo);
+          if (r.segments.length > 0) {
+            recordCost({
+              provider: "fal",
+              model: "fal-ai/whisper",
+              promptTokens: 0,
+              completionTokens: 0,
+              costUSD: (durationSec / 60) * config.costs.whisperPerMinuteUSD,
+              estimated: true,
+            });
+          }
+          return r;
+        });
+      }
+      catch (e) { logger.error("transcribe failed", { e: String(e) }); return fail(_id, "transcription_failed"); }
+      const { transcript, segments, language } = stage1;
+
+      // Branch on usable speech (not on the presence of an audio track —
+      // a silent video may still carry music or UI sounds).
+      const useSpeech = hasUsableSpeech({ segments, transcript });
+      const inputMode: "speech" | "silent" = useSpeech ? "speech" : "silent";
+      logger.info("branch chosen", { sopId: _id.toHexString(), inputMode });
+
+      let title: string;
+      let resolved: ResolvedStep[];
+      let outputLanguage: string;
+
+      if (useSpeech) {
+        // Narrated: trust Whisper's detected language for all output.
+        outputLanguage = language!;
+        await (await sops()).updateOne(
+          { _id },
+          { $set: { transcript, segments, language, inputMode, updatedAt: new Date() } },
+        );
+
+        // Stage 2: normalize (in source language).
+        await setStatus(_id, "normalizing");
+        const segmentsClean = await withStage("normalize", () => runNormalize(segments, language!));
+        await (await sops()).updateOne({ _id }, { $set: { segmentsClean, updatedAt: new Date() } });
+
+        // Stage 3: extract step list from the transcript.
+        await setStatus(_id, "generating");
+        let extracted;
+        try { extracted = await withStage("extract", () => runExtract({ segmentsClean, category, domainSummary, language: outputLanguage })); }
+        catch (e) { logger.error("extract failed", { e: String(e) }); return fail(_id, "generation_failed"); }
+        title = extracted.title;
+        resolved = resolveTimes(segments, extracted.steps, durationSec);
+      } else {
+        // Silent: no transcript — use the upload-form default language.
+        outputLanguage = defaultLanguage;
+        await (await sops()).updateOne(
+          { _id },
+          { $set: { transcript: "", segments: [], language: outputLanguage, inputMode, updatedAt: new Date() } },
+        );
+
+        // Stage 3 (silent): extract step list from sampled frames.
+        await setStatus(_id, "generating");
+        let extFrames: Awaited<ReturnType<typeof sampleFrames>> | null = null;
+        try {
+          try { extFrames = await sampleFrames(src.srcPath, durationSec, { mode: "density" }); }
+          catch (e) { logger.error("frame sampling failed", { e: String(e) }); return fail(_id, "frame_sampling_failed"); }
+          let extracted;
+          try {
+            extracted = await withStage("visual-extract", () => runVisualExtract({
+              framePaths: extFrames!.paths,
+              frameTimestamps: extFrames!.timestamps,
+              durationSec,
+              category,
+              domainSummary,
+              language: outputLanguage,
+            }));
+          } catch (e) { logger.error("visual extract failed", { e: String(e) }); return fail(_id, "visual_extract_failed"); }
+          title = extracted.title;
+          resolved = extracted.steps;
+        } finally {
+          if (extFrames) await extFrames.dispose();
+        }
+      }
+
+      // Stage 4: build frame pool.
+      await setStatus(_id, "building-pool", { title });
       try {
         pool = await runBuildFramePool({
           srcPath: src.srcPath,
@@ -164,7 +217,7 @@ async function runPipeline(_id: ObjectId): Promise<void> {
         return fail(_id, "screenshot_pool_failed");
       }
 
-      // Stage 6: detect click events, classify click-vs-input, merge typing.
+      // Stage 5: detect click events, classify click-vs-input, merge typing.
       await setStatus(_id, "assigning");
       const stepInputs = resolved.map((rs, i) => ({
         stepIndex: i,
@@ -177,13 +230,13 @@ async function runPipeline(_id: ObjectId): Promise<void> {
       try {
         eventsByStep = await runExtractClickEvents({
           steps: stepInputs.map(s => ({ stepIndex: s.stepIndex, tStart: s.tStart, tEnd: s.tEnd })),
-          denseFrames: pool!.denseFrames,
+          denseFrames: pool.denseFrames,
           opts: config.screenshots.clickDetect,
           maxCandidatesPerStep: config.screenshots.clickDetect.maxCandidatesPerStep,
         });
       } catch (e) {
         logger.error("click detect failed", { e: String(e) });
-        return fail(_id, "screenshot_pool_failed");
+        return fail(_id, "click_detect_failed");
       }
 
       const rawCountByStep = [...eventsByStep.entries()].map(([s, evs]) => ({ stepIndex: s, count: evs.length }));
@@ -204,13 +257,13 @@ async function runPipeline(_id: ObjectId): Promise<void> {
         })),
       });
 
-      // Stage 7: per-step LLM classification, dedup + assemble, highlight pass.
+      // Stage 6: per-step LLM classification, dedup + assemble, highlight pass.
       const actionsByStep = new Map<number, Action[]>();
       try {
         for (const step of stepInputs) {
           const stepEvents = merged.get(step.stepIndex) ?? [];
           const clusters = await buildScreenClusters({
-            denseFrames: pool!.denseFrames,
+            denseFrames: pool.denseFrames,
             stepStart: step.tStart,
             stepEnd: step.tEnd,
             samplingSec: config.screenshots.screenId.samplingSec,
@@ -274,7 +327,7 @@ async function runPipeline(_id: ObjectId): Promise<void> {
 
       await (await sops()).updateOne(
         { _id },
-        { $set: { title: extracted.title, steps: stepsOut, mode: "screenshots", status: "done" as SopStatus, updatedAt: new Date() } },
+        { $set: { title, steps: stepsOut, mode: "screenshots", status: "done" as SopStatus, updatedAt: new Date() } },
       );
       await (await events()).insertOne({
         _id: new ObjectId(), type: "sop_completed", sopId: _id, createdAt: new Date(),
