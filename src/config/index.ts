@@ -76,12 +76,14 @@ LANGUAGE: Write every description in ${lang}. Keep technical / industry / brand 
 
 Return strict JSON only.`,
       classifyStepSystem: (lang: string) =>
-        `You classify candidate user actions from a screen recording into structured records, and discard candidates that are not real user actions.
+        `You classify candidate user actions from a screen recording into structured records, discard candidates that are not real user actions, and pick which frame best illustrates each action.
 
 You receive:
 - The step's title.
-- An optional SCREEN MONTAGE image: a row of up to 6 representative full BEFORE frames for this step, each labeled with a cluster letter (A, B, C, ...). When present, every candidate's BEFORE frame matches one of these clusters. When absent, treat each candidate independently.
-- A series of candidates. Each candidate has: an index, an event time, a kind hint (click | input), a full BEFORE frame and a full AFTER frame. On both frames the detected change region is outlined with a MAGENTA rectangle — that outline marks the element this candidate is about; it is not part of the UI. The candidate also references its cluster letter (or null if no montage).
+- The images for all candidates in this batch, supplied as ONE FLAT ORDERED LIST, grouped per candidate in index order: candidate 0's window frames come first, then candidate 1's, and so on. The user text lists, per candidate, its index and its window length, so you know exactly which images belong to which candidate.
+- Each candidate's images are an ORDERED SERIES of full window frames covering a short time span around the action (earliest first). On every frame the detected change region is outlined with a MAGENTA rectangle.
+
+The magenta box is an APPROXIMATE motion hint only. During fast screen transitions it may be inaccurate — it can land on heading text or on empty space, especially on window frames away from the action moment. Do not trust it blindly: trust the cursor position and what visibly changes across the window frames.
 
 For each candidate, decide:
 
@@ -89,20 +91,19 @@ For each candidate, decide:
 
 2) If "action":
    - verb: "click" (button, link, tab, menu item, icon, row, card, checkbox, radio), "input" (typing into a text field, textarea, search), "select" (picking an option from an open dropdown / autocomplete), or "link" (clicking a hyperlink that navigates).
-   - screenName: the visible page/screen identifier from the BEFORE frame or the matching montage frame — usually the page heading text or modal title. If no heading is visible, give a short functional name ("Signup form", "Contacts list"). Lower-case, trimmed, normalize whitespace.
-   - screenCluster: the letter (A/B/C...) of the candidate's BEFORE frame in the montage, or null if no montage was provided.
-   - elementCaption: a SHORT REUSABLE element name — NOT a sentence. Examples: "Verify email button", "verification code input", "Companies link", "Search field". Name the element inside the magenta outline. For two candidates targeting the same element, the elementCaption MUST be identical.
-   - displayFrame: "after" for verb === "input" (typed text only appears in AFTER) and for click verbs whose action REVEALS new UI in the AFTER frame (flyout, dropdown, modal, autocomplete). "before" otherwise.
+   - screenName: the visible page/screen identifier — usually the page heading text or modal title of the screen the action happens on. If no heading is visible, give a short functional name ("Signup form", "Contacts list"). Lower-case, trimmed, normalize whitespace.
+   - elementCaption: a SHORT REUSABLE element name — NOT a sentence. Examples: "Verify email button", "verification code input", "Companies link", "Search field". Name the element the user interacted with. For two candidates targeting the same element, the elementCaption MUST be identical.
+   - displayFrameIndex: a 0-based index into THIS candidate's OWN window (range 0 .. windowLength-1, NOT the flat image list). Pick the frame that clearly shows the screen the action happened on, is NOT mid-transition / NOT a loading screen, and shows the target element. For "input" / "select", pick the frame showing the RESULT (typed text visible, dropdown open). For "click" / "link", pick the frame showing the SOURCE screen with the element present.
 
 3) If "discard":
    - discardReason: "transition" (large-area pixel change, page navigation, OR a frame caught mid-transition / fade while the screen is animating between two states), "hover" (state-only change with no click target), "press_flicker" (second event in a tiny window after a click on the same element — animation by-product), "animation" (repeating motion in same region — spinner, loader, progress screen, or a loading / "setting up..." page with no user control), "not_a_ui" (the marked region is NOT a real interactive UI element the user deliberately operated — e.g., a person on camera / webcam talking-head, a presenter holding props or illustrative icons, a title slide, an intro/outro animation, a generic stock graphic, a logo bug, OR incidental product chrome such as a chat-widget bubble, a cookie / consent banner, or a notification toast), "other".
    - All "action" fields must be null.
 
-You now see the WHOLE screen, so you can and must recognise context that a crop would hide. DISCARD aggressively when the marked region is:
+You see a whole window of full frames, so a loading screen or mid-transition frame within the window is unambiguous. DISCARD aggressively when the candidate is:
 - incidental product chrome — chat-widget bubbles, cookie / consent banners, notification toasts (discardReason: "not_a_ui");
 - a loading / progress screen — spinners, progress bars, "setting up..." pages with no control the user can act on (discardReason: "animation");
-- a mid-transition / fade frame — the screen is visibly animating between two states (discardReason: "transition").
-Only emit verb: "click" / "input" / "select" / "link" when the BEFORE frame clearly shows an application interface and the marked region is an element the user deliberately interacted with.
+- a mid-transition / fade — the window only shows the screen visibly animating between two states, with no stable frame of a real interface (discardReason: "transition").
+Only emit verb: "click" / "input" / "select" / "link" when at least one window frame clearly shows an application interface and the marked region is an element the user deliberately interacted with.
 
 IMPORTANT: Many training videos open with a presenter on camera or an animated intro before any real application screen is shown. Icons or graphics appearing in those segments are NOT clickable UI elements and MUST be discarded with discardReason: "not_a_ui".
 

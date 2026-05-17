@@ -1,7 +1,6 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import sharp from "sharp";
 import { logger } from "@trigger.dev/sdk/v3";
 import { z } from "zod";
 import { llmJsonVision } from "@/lib/openrouter";
@@ -9,8 +8,7 @@ import { StepClassification, ClassifiedCandidate as ClassifiedCandidateSchema } 
 import { config } from "@/config";
 import { markRegion } from "@/trigger/lib/markRegion";
 import type { RawEvent } from "./classifyAndMergeEvents";
-import { maskedDHash, type ScreenCluster, type DensePoolFrame } from "@/trigger/lib/screenId";
-import { hammingDistance } from "@/trigger/lib/perceptualHash";
+import { type DensePoolFrame } from "@/trigger/lib/screenId";
 
 export type ClassifiedCandidate = z.infer<typeof ClassifiedCandidateSchema>;
 
@@ -18,38 +16,27 @@ export type CandidateForLLM = {
   index: number;
   time: number;
   kindHint: "click" | "input";
-  beforeMarkedPath: string;
-  afterMarkedPath: string;
-  screenCluster: string | null;
+  windowFramePaths: string[];
 };
 
 export type ClassifiedActionRecord = ClassifiedCandidate & {
-  beforeFramePath: string;
-  afterFramePath: string;
+  displayFramePath: string;
 };
 
 type ClassifierFn = (args: {
   stepTitle: string;
   language: string;
   candidates: CandidateForLLM[];
-  montageImagePath: string | null;
 }) => Promise<z.infer<typeof StepClassification>>;
 
 /**
- * Sort by (screenCluster ASC with nulls last, time ASC) then split into chunks of `cap`.
+ * Sort by time ASC then split into chunks of `cap`.
  */
-export function chunkCandidatesBySort<T extends { screenCluster: string | null; time: number }>(
+export function chunkCandidatesBySort<T extends { time: number }>(
   candidates: T[],
   cap: number,
 ): T[][] {
-  const sorted = [...candidates].sort((a, b) => {
-    if (a.screenCluster === null && b.screenCluster !== null) return 1;
-    if (a.screenCluster !== null && b.screenCluster === null) return -1;
-    if (a.screenCluster !== b.screenCluster) {
-      return String(a.screenCluster).localeCompare(String(b.screenCluster));
-    }
-    return a.time - b.time;
-  });
+  const sorted = [...candidates].sort((a, b) => a.time - b.time);
   const out: T[][] = [];
   for (let i = 0; i < sorted.length; i += cap) {
     out.push(sorted.slice(i, i + cap));
@@ -57,78 +44,31 @@ export function chunkCandidatesBySort<T extends { screenCluster: string | null; 
   return out.length > 0 ? out : [[]];
 }
 
-/**
- * Build a horizontal montage of representative cluster frames, each labeled with its letter.
- * Returns the JPEG path, or null when only 0 or 1 cluster (nothing useful to show) OR > maxClusters.
- */
-export async function buildMontage(
-  clusters: ScreenCluster[],
-  outDir: string,
-  maxClusters: number,
-): Promise<string | null> {
-  if (clusters.length < 2 || clusters.length > maxClusters) return null;
-
-  const tileW = 640;
-  const tileH = 360;
-  const labelH = 36;
-  const tiles: Buffer[] = [];
-  for (const c of clusters) {
-    const labelSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${tileW}" height="${labelH}">
-      <rect width="${tileW}" height="${labelH}" fill="#222"/>
-      <text x="12" y="26" fill="#fff" font-family="sans-serif" font-size="22" font-weight="700">${c.letter}</text>
-    </svg>`;
-    const imgBuf = await sharp(c.representative.localPath)
-      .resize({ width: tileW, height: tileH - labelH, fit: "inside", withoutEnlargement: true })
-      .toBuffer();
-    const tile = await sharp({
-      create: { width: tileW, height: tileH, channels: 3, background: "#000" },
-    })
-      .composite([
-        { input: Buffer.from(labelSvg), top: 0, left: 0 },
-        { input: imgBuf, top: labelH, left: 0 },
-      ])
-      .jpeg({ quality: 85 })
-      .toBuffer();
-    tiles.push(tile);
-  }
-
-  const outPath = path.join(outDir, "montage.jpg");
-  const composites = tiles.map((buf, i) => ({ input: buf, top: 0, left: i * tileW }));
-  await sharp({
-    create: { width: tileW * tiles.length, height: tileH, channels: 3, background: "#000" },
-  })
-    .composite(composites)
-    .jpeg({ quality: 85 })
-    .toFile(outPath);
-  return outPath;
-}
-
 async function defaultClassifier(args: {
   stepTitle: string;
   language: string;
   candidates: CandidateForLLM[];
-  montageImagePath: string | null;
 }): Promise<z.infer<typeof StepClassification>> {
   const lines: string[] = [
     `Step title: ${args.stepTitle}`,
     `Number of candidates in this batch: ${args.candidates.length}`,
-    args.montageImagePath
-      ? `First image is the screen montage. Candidates start at the second image.`
-      : `No montage attached. Candidates start at the first image. screenCluster MUST be null for every candidate.`,
+    `Images are supplied as one flat ordered list, grouped per candidate in index`,
+    `order: candidate 0's window frames first, then candidate 1's, and so on.`,
+    `Each candidate's displayFrameIndex is 0-based into that candidate's own window.`,
     ``,
     `Candidates:`,
   ];
   for (const c of args.candidates) {
     lines.push(
-      `- index=${c.index} time=${c.time.toFixed(2)} kindHint=${c.kindHint} screenCluster=${c.screenCluster ?? "null"}`,
+      `- index=${c.index} time=${c.time.toFixed(2)} kindHint=${c.kindHint} windowLength=${c.windowFramePaths.length}`,
     );
   }
   const userText = lines.join("\n");
 
+  // Flat image list: candidate-by-candidate in index order.
   const imagePaths: string[] = [];
-  if (args.montageImagePath) imagePaths.push(args.montageImagePath);
   for (const c of args.candidates) {
-    imagePaths.push(c.beforeMarkedPath, c.afterMarkedPath);
+    imagePaths.push(...c.windowFramePaths);
   }
 
   return llmJsonVision({
@@ -146,7 +86,6 @@ export async function classifyStepWithLLM(args: {
   stepTitle: string;
   language: string;
   candidates: CandidateForLLM[];
-  montageImagePath: string | null;
   maxCandidatesPerCall?: number;
   classifier?: ClassifierFn;
 }): Promise<ClassifiedCandidate[]> {
@@ -162,7 +101,6 @@ export async function classifyStepWithLLM(args: {
       stepTitle: args.stepTitle,
       language: args.language,
       candidates: chunk,
-      montageImagePath: args.montageImagePath,
     });
     out.push(...result.candidates);
   }
@@ -173,37 +111,36 @@ export async function classifyAndRemap(args: {
   stepTitle: string;
   language: string;
   events: RawEvent[];
-  screenClusters: ScreenCluster[];
+  denseFrames: DensePoolFrame[];
 }): Promise<ClassifiedActionRecord[]> {
   if (args.events.length === 0) return [];
 
   const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "classify-"));
   try {
-    const candidates: (CandidateForLLM & { event: RawEvent })[] = [];
+    const candidates: (CandidateForLLM & { event: RawEvent; window: DensePoolFrame[] })[] = [];
     for (let i = 0; i < args.events.length; i++) {
       const e = args.events[i];
-      const beforeMarkedPath = path.join(tmpDir, `c${i}-before.jpg`);
-      const afterMarkedPath = path.join(tmpDir, `c${i}-after.jpg`);
-      await markRegion(e.beforeFramePath, e.bbox, beforeMarkedPath);
-      await markRegion(e.afterFramePath, e.bbox, afterMarkedPath);
-
-      // When clusters exceed the montage cap, the montage is omitted (see buildMontage).
-      // In that case the LLM has no letter→frame mapping to interpret, so every candidate
-      // passes screenCluster=null. Spec §3 montage-overflow edge case.
-      const overCap = args.screenClusters.length > config.screenshots.screenId.maxMontageClusters;
-      const cluster = overCap ? null : nearestCluster(args.screenClusters, e.time);
+      const window = buildCandidateWindow(args.denseFrames, e, {
+        maxFrames: config.screenshots.classify.maxWindowFrames,
+        preSec: config.screenshots.classify.windowPreSec,
+        postSec: config.screenshots.classify.windowPostSec,
+        maxSpanSec: config.screenshots.classify.windowMaxSpanSec,
+      });
+      const windowFramePaths: string[] = [];
+      for (let k = 0; k < window.length; k++) {
+        const markedPath = path.join(tmpDir, `c${i}-w${k}.jpg`);
+        await markRegion(window[k].localPath, e.bbox, markedPath);
+        windowFramePaths.push(markedPath);
+      }
       candidates.push({
         index: i,
         time: e.time,
         kindHint: e.kindHint,
-        beforeMarkedPath,
-        afterMarkedPath,
-        screenCluster: cluster?.letter ?? null,
+        windowFramePaths,
         event: e,
+        window,
       });
     }
-
-    const montagePath = await buildMontage(args.screenClusters, tmpDir, config.screenshots.screenId.maxMontageClusters);
 
     const classified = await classifyStepWithLLM({
       stepTitle: args.stepTitle,
@@ -212,25 +149,9 @@ export async function classifyAndRemap(args: {
         index: c.index,
         time: c.time,
         kindHint: c.kindHint,
-        beforeMarkedPath: c.beforeMarkedPath,
-        afterMarkedPath: c.afterMarkedPath,
-        screenCluster: c.screenCluster,
+        windowFramePaths: c.windowFramePaths,
       })),
-      montageImagePath: montagePath,
     });
-
-    // Cross-screen guard: if displayFrame === "after" but AFTER is on a different
-    // screen than BEFORE (action triggered a page navigation), the AFTER frame is
-    // the destination page — useless for illustrating the action. Force BEFORE.
-    const beforeHashCache = new Map<string, string>();
-    const afterHashCache = new Map<string, string>();
-    async function hashOf(p: string, cache: Map<string, string>): Promise<string> {
-      const cached = cache.get(p);
-      if (cached) return cached;
-      const h = await maskedDHash(p);
-      cache.set(p, h);
-      return h;
-    }
 
     const records: ClassifiedActionRecord[] = [];
     const debugRows: Record<string, unknown>[] = [];
@@ -240,29 +161,47 @@ export async function classifyAndRemap(args: {
         logger.warn("pipeline.classifier.unknown_index", { index: cc.index });
         continue;
       }
-      let displayFrame = cc.displayFrame;
-      if (cc.decision === "action" && displayFrame === "after") {
-        const bh = await hashOf(cand.event.beforeFramePath, beforeHashCache);
-        const ah = await hashOf(cand.event.afterFramePath, afterHashCache);
-        const dist = hammingDistance(bh, ah);
-        if (dist > config.screenshots.screenId.hammingThreshold) {
-          logger.info("pipeline.classifier.displayframe_overridden", {
+
+      let displayFramePath = "";
+      let resolvedIndex: number | null = null;
+      if (cc.decision === "action") {
+        const window = cand.window;
+        const last = window.length - 1;
+        if (cc.displayFrameIndex === null) {
+          // LLM error on an action — fall back to the frame nearest event.time.
+          let nearest = 0;
+          for (let k = 1; k < window.length; k++) {
+            if (
+              Math.abs(window[k].t - cand.event.time) <
+              Math.abs(window[nearest].t - cand.event.time)
+            ) {
+              nearest = k;
+            }
+          }
+          resolvedIndex = nearest;
+          logger.info("pipeline.classifier.index_missing", {
             index: cc.index,
             time: cand.time,
-            verb: cc.verb,
-            llmChoice: "after",
-            override: "before",
-            hammingDistance: dist,
-            reason: "after frame is a different screen (navigation)",
+            resolvedIndex,
           });
-          displayFrame = "before";
+        } else if (cc.displayFrameIndex < 0 || cc.displayFrameIndex > last) {
+          resolvedIndex = Math.max(0, Math.min(last, cc.displayFrameIndex));
+          logger.info("pipeline.classifier.index_clamped", {
+            index: cc.index,
+            time: cand.time,
+            llmIndex: cc.displayFrameIndex,
+            resolvedIndex,
+            windowLength: window.length,
+          });
+        } else {
+          resolvedIndex = cc.displayFrameIndex;
         }
+        displayFramePath = window[resolvedIndex].localPath;
       }
+
       records.push({
         ...cc,
-        displayFrame,
-        beforeFramePath: cand.event.beforeFramePath,
-        afterFramePath: cand.event.afterFramePath,
+        displayFramePath,
       });
       debugRows.push({
         index: cc.index,
@@ -273,15 +212,13 @@ export async function classifyAndRemap(args: {
         screenName: cc.screenName,
         elementCaption: cc.elementCaption,
         discardReason: cc.discardReason,
-        llmDisplayFrame: cc.displayFrame,
-        finalDisplayFrame: displayFrame,
-        screenCluster: cc.screenCluster,
-        beforeMarkedPath: cand.beforeMarkedPath,
-        afterMarkedPath: cand.afterMarkedPath,
+        displayFrameIndex: resolvedIndex,
+        displayFramePath,
+        windowFramePaths: cand.windowFramePaths,
       });
     }
 
-    // STEPIKA_DEBUG_DIR: env-gated dump of marked frames + classifier decisions
+    // STEPIKA_DEBUG_DIR: env-gated dump of window frames + classifier decisions
     // for offline accuracy investigation. No-op when the var is unset.
     const debugDir = process.env.STEPIKA_DEBUG_DIR;
     if (debugDir) {
@@ -290,25 +227,16 @@ export async function classifyAndRemap(args: {
       await fs.promises.mkdir(outDir, { recursive: true });
       for (const row of debugRows) {
         const i = row.index as number;
-        try {
-          await fs.promises.copyFile(row.beforeMarkedPath as string, path.join(outDir, `c${i}-before.jpg`));
-          await fs.promises.copyFile(row.afterMarkedPath as string, path.join(outDir, `c${i}-after.jpg`));
-        } catch { /* frame may be missing for discards */ }
-      }
-      const clusterInfo = args.screenClusters.map(c => ({
-        letter: c.letter,
-        repT: c.representative.t,
-        span: c.timeSpan,
-        memberTimes: c.members.map(m => m.frame.t),
-      }));
-      for (const c of args.screenClusters) {
-        try {
-          await fs.promises.copyFile(c.representative.localPath, path.join(outDir, `cluster-${c.letter}.jpg`));
-        } catch { /* representative frame may be gone */ }
+        const paths = row.windowFramePaths as string[];
+        for (let k = 0; k < paths.length; k++) {
+          try {
+            await fs.promises.copyFile(paths[k], path.join(outDir, `c${i}-w${k}.jpg`));
+          } catch { /* frame may be missing */ }
+        }
       }
       await fs.promises.writeFile(
         path.join(outDir, "decisions.json"),
-        JSON.stringify({ stepTitle: args.stepTitle, clusters: clusterInfo, rows: debugRows }, null, 2),
+        JSON.stringify({ stepTitle: args.stepTitle, rows: debugRows }, null, 2),
       );
       logger.info("pipeline.classifier.debug_dump", { outDir, rows: debugRows.length });
     }
@@ -373,18 +301,4 @@ function decimateEvenly(frames: DensePoolFrame[], n: number): DensePoolFrame[] {
     if (!seen.has(f.localPath)) { seen.add(f.localPath); picked.push(f); }
   }
   return picked;
-}
-
-function nearestCluster(clusters: ScreenCluster[], t: number): ScreenCluster | null {
-  if (clusters.length === 0) return null;
-  let best = clusters[0];
-  let bestDelta = Math.abs(clusters[0].representative.t - t);
-  for (let i = 1; i < clusters.length; i++) {
-    const m = clusters[i].members;
-    for (const mm of m) {
-      const d = Math.abs(mm.frame.t - t);
-      if (d < bestDelta) { bestDelta = d; best = clusters[i]; }
-    }
-  }
-  return best;
 }

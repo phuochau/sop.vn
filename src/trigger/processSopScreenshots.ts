@@ -175,7 +175,7 @@ export const processSopScreenshots = task({
               stepTitle: step.title,
               language: outputLanguage,
               events: stepEvents,
-              screenClusters: clusters,
+              denseFrames: pool!.denseFrames,
             });
             const actions = buildActionsForStep({
               stepIndex: step.stepIndex,

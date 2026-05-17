@@ -2,6 +2,7 @@ import { logger } from "@trigger.dev/sdk/v3";
 import type { Action } from "@/lib/schemas";
 import type { ClassifiedActionRecord } from "./classifyStepWithLLM";
 import type { ScreenCluster } from "@/trigger/lib/screenId";
+import { config } from "@/config";
 
 const SUFFIX_SET = new Set(["button", "link", "field", "input", "icon", "tab", "menu", "item"]);
 
@@ -22,10 +23,6 @@ export function normalizeElementId(s: string): string {
     tokens.pop();
   }
   return tokens.join(" ");
-}
-
-function normalizeScreenName(s: string): string {
-  return s.toLowerCase().trim().replace(/\s+/g, " ").replace(/[.:!?]$/, "");
 }
 
 export type BuildActionsArgs = {
@@ -52,63 +49,66 @@ export function buildActionsForStep(args: BuildActionsArgs): Action[] {
       logger.info("pipeline.candidate.discarded", { stepIndex: args.stepIndex, index: c.index, reason });
       continue;
     }
-    if (!c.verb || !c.screenName || !c.elementCaption || !c.displayFrame) {
+    if (!c.verb || !c.screenName || !c.elementCaption || !c.displayFramePath) {
       logger.warn("pipeline.classifier.incomplete_action", { stepIndex: args.stepIndex, index: c.index });
       continue;
     }
     surviving.push(c);
   }
 
-  const screenGroups = new Map<string, ClassifiedActionRecord[]>();
-  for (const c of surviving) {
-    const key = normalizeScreenName(c.screenName!);
-    const list = screenGroups.get(key) ?? [];
-    list.push(c);
-    screenGroups.set(key, list);
+  // Time-windowed anchor-based dedup: group by normalized element id, sort by
+  // event time, the earliest record anchors a cluster; later records within
+  // dedupWindowSec of the anchor join it. Records further apart stay separate.
+  const byElement = new Map<string, ClassifiedActionRecord[]>();
+  for (const r of surviving) {
+    const id = normalizeElementId(r.elementCaption!);
+    const list = byElement.get(id) ?? [];
+    list.push(r);
+    byElement.set(id, list);
   }
 
-  const orderedScreens = [...screenGroups.entries()].sort((a, b) => {
-    const at = Math.min(...a[1].map(r => args.eventTimes[r.index]));
-    const bt = Math.min(...b[1].map(r => args.eventTimes[r.index]));
-    return at - bt;
-  });
-
+  const dedupWindowSec = config.screenshots.classify.dedupWindowSec;
   const elementGroups: ElementGroup[] = [];
-  let seq = 0;
-  for (const [, records] of orderedScreens) {
-    const screenId = `${args.stepIndex}-${seq + 1}`;
-    seq += 1;
-
-    const byElement = new Map<string, ClassifiedActionRecord[]>();
-    for (const r of records) {
-      const id = normalizeElementId(r.elementCaption!);
-      const list = byElement.get(id) ?? [];
-      list.push(r);
-      byElement.set(id, list);
-    }
-
-    for (const [elementId, group] of byElement.entries()) {
-      const sortedByTime = [...group].sort((x, y) => args.eventTimes[x.index] - args.eventTimes[y.index]);
-      const latest = sortedByTime[sortedByTime.length - 1];
-      const hasInput = group.some(g => g.verb === "input");
-      const verb = hasInput ? ("input" as const) : latest.verb!;
-      if (sortedByTime.length > 1) {
+  for (const [elementId, group] of byElement.entries()) {
+    const sortedByTime = [...group].sort(
+      (x, y) => args.eventTimes[x.index] - args.eventTimes[y.index],
+    );
+    let cluster: ClassifiedActionRecord[] = [];
+    let anchorTime = 0;
+    const flush = () => {
+      if (cluster.length === 0) return;
+      const anchor = cluster[0];
+      const hasInput = cluster.some(g => g.verb === "input");
+      const verb = hasInput ? ("input" as const) : anchor.verb!;
+      if (cluster.length > 1) {
         logger.info("pipeline.action.deduped", {
           stepIndex: args.stepIndex,
-          screenId,
           elementId,
-          keptTime: args.eventTimes[latest.index],
-          droppedTimes: sortedByTime.slice(0, -1).map(r => args.eventTimes[r.index]),
+          keptTime: args.eventTimes[anchor.index],
+          droppedTimes: cluster.slice(1).map(r => args.eventTimes[r.index]),
         });
       }
-      const displayFrame = latest.displayFrame!;
       elementGroups.push({
         verb,
-        caption: latest.elementCaption!,
-        displayFramePath: displayFrame === "after" ? latest.afterFramePath : latest.beforeFramePath,
-        time: args.eventTimes[latest.index],
+        caption: anchor.elementCaption!,
+        displayFramePath: anchor.displayFramePath,
+        time: args.eventTimes[anchor.index],
       });
+    };
+    for (const r of sortedByTime) {
+      const t = args.eventTimes[r.index];
+      if (cluster.length === 0) {
+        cluster = [r];
+        anchorTime = t;
+      } else if (t - anchorTime <= dedupWindowSec) {
+        cluster.push(r);
+      } else {
+        flush();
+        cluster = [r];
+        anchorTime = t;
+      }
     }
+    flush();
   }
 
   const elementTimes = elementGroups.map(a => a.time);
