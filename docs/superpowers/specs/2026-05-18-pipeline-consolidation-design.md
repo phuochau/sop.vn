@@ -1,0 +1,185 @@
+# Pipeline Consolidation — Design
+
+**Date:** 2026-05-18
+**Status:** Approved for planning
+
+## Goal
+
+Collapse the project to a single, clean SOP pipeline before moving toward a real
+product. One trigger task produces screenshot-based SOPs with yellow-circle
+highlight points. It accepts only software-application recordings (web, mobile,
+desktop) and supports both narrated and silent videos.
+
+## Motivation
+
+Four product decisions drive this:
+
+1. **Ingest only app recordings.** We want strong results for highlight points
+   first, so we only process videos that show a web/mobile/desktop application.
+   Other video types (talking-head, slideshow, real-world footage) are rejected.
+2. **Support silent (no people talking) videos.** Highlight points must work for
+   videos with no narration — this serves the silent-founder use case.
+3. **Screenshots only.** The screenshots pipeline is the base. The document/clip
+   pipeline is removed; clips can be re-added later from git history if needed.
+4. **Language rule.** Narrated videos use the language Whisper detects from the
+   audio. Silent videos use the upload form's `defaultLanguage`.
+
+## Architecture
+
+One trigger task, `process-sop-screenshots`. One shared front analysis stage,
+two thin path-specific heads (speech / silent), and one shared spine from
+frame-pool building onward.
+
+```
+process-sop-screenshots
+│
+├─ probeDuration ──────────────────→ fail: video_too_short / video_too_long
+│
+├─ Stage 0  ANALYZE  (vision, runs for ALL videos)
+│     sample ~1 frame/min, clamped [8,20]
+│     one VLM call → per-frame app-UI classification + appType
+│                   + category + domainSummary
+│     < 50% app-UI frames ───────────→ fail: not_an_app   (permanent)
+│     VLM call errors ───────────────→ fail: analysis_failed (retryable)
+│
+├─ Stage 1  transcribe (always run)
+│
+├─ branch: hasUsableSpeech(segments, transcript)?
+│   │
+│   ├─ SPEECH head                          ├─ SILENT head
+│   │  outputLanguage = detected lang        │  outputLanguage = defaultLanguage
+│   │  Stage 2  normalize (source lang)      │  Stage 4' visualExtract (frames)
+│   │  Stage 4  extract (steps from           │     → step list with time windows
+│   │           transcript)                  │     uses category/domainSummary
+│   │  uses category/domainSummary           │     from Stage 0
+│   │  from Stage 0                          │
+│   │
+│   └─── both heads converge on: { title, steps:[{title,startTime,endTime}] } ───┘
+│
+├─ Stage 5  buildFramePool
+├─ Stage 6  extractClickEvents → classifyAndMergeEvents
+├─ Stage 7  per-step loop: classify → canonicalize → buildActions
+│                          → collapse → highlight
+├─ Stage 8  uploadScreenshots
+│
+└─ done · mode:"screenshots"
+```
+
+### Stage 0 — app gate + context (the consolidation)
+
+A single vision stage runs first for every video, before transcription:
+
+- Samples roughly one frame per minute of video, clamped to `[8, 20]` frames.
+  Sampling by duration (not a fixed small count) means a long stretch of
+  non-app content cannot hide between samples.
+- One VLM call classifies **each** frame as app-UI or not-app, and returns an
+  overall `appType` (`web` / `mobile` / `desktop` / `none`), plus `category`
+  and `domainSummary` for downstream grounding.
+- The caller computes the app-UI fraction. **< 50% → reject** as `not_an_app`.
+  A fraction (not all-or-nothing) tolerates intro/outro/talking segments while
+  rejecting videos that are not fundamentally a software walkthrough.
+
+This stage replaces the former text-only `context` stage and the silent-path
+`visualContext` stage. The text-only `context` could never see the screen, so
+it could not gate on app content; a vision stage that already spans the whole
+video can return `category`/`domainSummary` at no extra call. For narrated
+videos, `domainSummary` is now frame-derived rather than transcript-derived —
+acceptable, because the actual steps still come from the transcript via
+`extract`.
+
+### Speech vs. silent branch
+
+Transcription always runs (Whisper handles a no-audio track gracefully — it
+returns no segments). The branch keys on `hasUsableSpeech`, not on the presence
+of an audio track: a no-people-talking video may still carry background music
+or UI sounds, so "has audio" is not the signal — "has usable speech" is.
+
+### Convergence
+
+Both heads emit `{ title, steps: [{ title, startTime, endTime }] }`. From
+`buildFramePool` onward the code path is identical for both — no per-path
+branching in the spine.
+
+## File Inventory
+
+**New:**
+- `src/trigger/stages/analyzeVideo.ts` — Stage 0.
+
+**Adapted:**
+- `src/trigger/stages/visualExtract.ts` — silent head; takes `category` and
+  `domainSummary` as input instead of running its own context; emits the
+  converged `{title, steps[]}` shape.
+- `src/trigger/stages/extract.ts` — speech head; unchanged logic, fed
+  `category`/`domainSummary` from Stage 0.
+- `src/trigger/processSopScreenshots.ts` — control flow rewritten per the
+  diagram.
+
+**Deleted** (document/clip pipeline + superseded stages), each with its
+`.test.ts`:
+`processSop.ts`, `generateSopPdf.ts`, `clip.ts`, `keyframes.ts`,
+`synthesizeOverview.ts`, `synthesizeStep.ts`, `renderPdf.tsx`, `visualStep.ts`,
+`visualOverview.ts`, `context.ts`, `visualContext.ts`.
+
+**Untouched:** `buildFramePool`, `extractClickEvents`, `classifyAndMergeEvents`,
+`classifyStepWithLLM`, `canonicalizeActions`, `buildActionsForStep`,
+`collapseDuplicateActions`, `highlightActions`, `locateHighlight`,
+`uploadScreenshots`, `transcribe`, `normalize`.
+
+**Naming:** the task keeps id `process-sop-screenshots` and file
+`processSopScreenshots.ts`. Renaming to `process-sop` would break deployed
+trigger references for a cosmetic gain.
+
+## Data & Schema
+
+- New zod schema `VideoAnalysisOutput`:
+  `{ appUIFrameCount: number, totalFrames: number,
+     appType: enum["web","mobile","desktop","none"],
+     category: string, domainSummary: string }`.
+- `ErrorCode` (in `src/lib/mongo.ts`) gains:
+  - `not_an_app` — permanent; Stage 0 ran fine, < 50% app frames.
+  - `analysis_failed` — retryable; Stage 0 VLM call errored.
+- The sop doc persists `appType` alongside the existing `category`,
+  `domainSummary`, `inputMode`, and `mode: "screenshots"`.
+- `SopStatus` already includes `"analyzing"` — Stage 0 uses it.
+
+## Language
+
+- Speech path: `outputLanguage` = Whisper-detected language. The upload form's
+  `defaultLanguage` is ignored for narrated videos.
+- Silent path: `outputLanguage` = `doc.defaultLanguage`, falling back to `"vi"`
+  if unset.
+- `normalize` still runs in the source (detected) language for speech videos.
+
+## Error Handling & Edge Cases
+
+- Stage 0 runs before transcribe — a non-app video is rejected after one cheap
+  VLM call, with nothing spent on Whisper.
+- Stage 0 VLM outage → `analysis_failed` (retryable), never a silent ingest of
+  an unverified video.
+- Stage 0 samples `[8,20]` frames for gating only. The silent `visualExtract`
+  still samples its own, denser frame set for step extraction — different
+  density need; the two sample sets are not shared.
+- A silent video with `defaultLanguage` unset falls back to `"vi"`.
+- Transcribe on a silent video returns no segments → `hasUsableSpeech` false →
+  silent head. No special-casing.
+
+## Testing
+
+- `analyzeVideo.test.ts` — fake VLM fn: threshold boundary (8/20 frames →
+  reject, 10/20 → accept), `appType` passthrough, VLM-error propagation (caller
+  maps the throw to `analysis_failed`).
+- `visualExtract.test.ts` — adapted: verifies it consumes injected
+  `category`/`domainSummary` and emits the converged `{title, steps[]}` shape.
+- Tests for deleted stages are removed with their stages.
+- E2E: the HubSpot narrated video (`samples/hubspot_crm.mp4`, existing
+  benchmark, ~96%) and a silent sample. **Open item:** `samples/` currently
+  holds `1.mp4`, `hubspot_crm.mp4`, `trimmed-hubspot_crm.mp4`; none is confirmed
+  silent. A silent app-recording sample must be supplied to E2E-verify the
+  silent head.
+
+## Out of Scope
+
+- Re-adding clip/PDF output (recoverable from git history when wanted).
+- Grounding-precision improvements beyond the current ~96% (separate effort;
+  see prior grounding-verification spec).
+- Per-frame appType (a video is classified with one overall `appType`).
