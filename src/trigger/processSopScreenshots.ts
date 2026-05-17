@@ -13,15 +13,12 @@ import { runExtract } from "./stages/extract";
 import { resolveTimes } from "./stages/clip";
 import { runBuildFramePool } from "./stages/buildFramePool";
 import { runUploadScreenshots } from "./stages/uploadScreenshots";
-import { buildScreenClusters, clusterFor, selectInClusterFrame } from "@/trigger/lib/screenId";
-import { assembleStepNarration, silentStepFallback, hasLocalizedViewCaption } from "@/trigger/lib/narration";
-import { runPlanStep } from "./stages/planStep";
-import { runPickFrame, computeSearchWindow, computeActionTime } from "./stages/pickFrame";
-import { runVerifyFrame } from "./stages/verifyFrame";
-import { runLocateHighlight } from "./stages/locateHighlight";
-import { buildAction } from "./stages/buildAction";
-import { runWithConcurrency } from "@/lib/concurrency";
-import { traceEnabled, persistTrace, makeTrace, persistStepPlanTrace, makeStepPlanTrace, type ClusterSnapshot, type RawSubStepSnapshot } from "@/lib/pipelineTrace";
+import { buildScreenClusters } from "@/trigger/lib/screenId";
+import { runExtractClickEvents } from "./stages/extractClickEvents";
+import { runClassifyAndMergeEvents } from "./stages/classifyAndMergeEvents";
+import { classifyAndRemap } from "./stages/classifyStepWithLLM";
+import { buildActionsForStep } from "./stages/buildActionsForStep";
+import { highlightActions } from "./stages/highlightActions";
 import type { Action } from "@/lib/schemas";
 
 async function setStatus(id: ObjectId, status: SopStatus, extra: Record<string, unknown> = {}) {
@@ -122,33 +119,51 @@ export const processSopScreenshots = task({
           return fail(_id, "screenshot_pool_failed");
         }
 
+        // Stage 6: detect click events, classify click-vs-input, merge typing.
         await setStatus(_id, "assigning");
-        // `resolved` (from resolveTimes) only carries times. The original segment IDs
-        // are on `extracted.steps[i]`. Pair them by index.
-        const stepInputs = resolved.map((rs, i) => {
-          const src = extracted.steps[i];
-          const narration = assembleStepNarration(
-            { startSegmentId: src.startSegmentId, endSegmentId: src.endSegmentId },
-            segments,
-            segmentsClean,
-          );
-          const tStart = narration.length > 0 ? Math.min(...narration.map(n => n.start)) : rs.startTime;
-          const tEnd = narration.length > 0 ? Math.max(...narration.map(n => n.end)) : rs.endTime;
-          return {
-            stepIndex: i,
-            title: rs.title,
-            description: rs.description,
-            tStart,
-            tEnd,
-            narration,
-          };
+        const stepInputs = resolved.map((rs, i) => ({
+          stepIndex: i,
+          title: rs.title,
+          tStart: rs.startTime,
+          tEnd: rs.endTime,
+        }));
+
+        let eventsByStep;
+        try {
+          eventsByStep = await runExtractClickEvents({
+            steps: stepInputs.map(s => ({ stepIndex: s.stepIndex, tStart: s.tStart, tEnd: s.tEnd })),
+            denseFrames: pool!.denseFrames,
+            opts: config.screenshots.clickDetect,
+            maxCandidatesPerStep: config.screenshots.clickDetect.maxCandidatesPerStep,
+          });
+        } catch (e) {
+          logger.error("click detect failed", { e: String(e) });
+          return fail(_id, "screenshot_pool_failed");
+        }
+
+        const rawCountByStep = [...eventsByStep.entries()].map(([s, evs]) => ({ stepIndex: s, count: evs.length }));
+        logger.info("pipeline.click_events", {
+          sopId: _id.toHexString(),
+          totalRaw: rawCountByStep.reduce((n, x) => n + x.count, 0),
+          byStep: rawCountByStep,
         });
 
-        const actionsByStep = new Map<number, Action[]>();
-        const perStepConcurrency = config.screenshots.classify.perStepConcurrency;
+        const merged = runClassifyAndMergeEvents({ byStep: eventsByStep });
+        logger.info("pipeline.classify_merge", {
+          sopId: _id.toHexString(),
+          byStep: [...merged.entries()].map(([s, evs]) => ({
+            stepIndex: s,
+            count: evs.length,
+            inputs: evs.filter(e => e.kindHint === "input").length,
+            clicks: evs.filter(e => e.kindHint === "click").length,
+          })),
+        });
 
+        // Stage 7: per-step LLM classification, dedup + assemble, highlight pass.
+        const actionsByStep = new Map<number, Action[]>();
         try {
-          await runWithConcurrency(stepInputs, perStepConcurrency, async (step) => {
+          for (const step of stepInputs) {
+            const stepEvents = merged.get(step.stepIndex) ?? [];
             const clusters = await buildScreenClusters({
               denseFrames: pool!.denseFrames,
               stepStart: step.tStart,
@@ -156,169 +171,29 @@ export const processSopScreenshots = task({
               samplingSec: config.screenshots.screenId.samplingSec,
               hammingThreshold: config.screenshots.screenId.hammingThreshold,
             });
-
-            let plan;
-            if (step.narration.length === 0) {
-              if (!hasLocalizedViewCaption(outputLanguage)) {
-                logger.warn("pipeline.silent_step.unlocalized_caption", { stepIndex: step.stepIndex, language: outputLanguage });
-              }
-              plan = silentStepFallback(clusters, { stepIndex: step.stepIndex }, config.screenshots.screenId.viewMinDurationSec, outputLanguage);
-            } else {
-              try {
-                plan = await runPlanStep({
-                  stepIndex: step.stepIndex,
-                  stepTitle: step.title,
-                  stepDescription: step.description,
-                  narration: step.narration,
-                  clusters,
-                  language: outputLanguage,
-                  onTrace: traceEnabled() ? async (info) => {
-                    const clusterSnapshots: ClusterSnapshot[] = clusters.map(c => ({
-                      letter: c.letter,
-                      start: c.timeSpan.start,
-                      end: c.timeSpan.end,
-                      representativeT: c.representative.t,
-                      memberCount: c.members.length,
-                    }));
-                    const toSnap = (p: typeof info.rawPlan): RawSubStepSnapshot[] => p.subSteps.map(s => ({
-                      intent: s.intent,
-                      verb: s.verb,
-                      visualConfidence: s.visualConfidence,
-                      narrationSegmentIds: [...s.narrationSegmentIds],
-                      timeWindow: s.timeWindow,
-                    }));
-                    await persistStepPlanTrace(makeStepPlanTrace({
-                      sopId: _id.toHexString(),
-                      stepIndex: step.stepIndex,
-                      stepTitle: step.title,
-                      stepWindow: { start: step.tStart, end: step.tEnd },
-                      narrationSegmentCount: step.narration.length,
-                      clusters: clusterSnapshots,
-                      rawPlan: toSnap(info.rawPlan),
-                      filteredPlan: toSnap(info.filteredPlan),
-                      drops: info.drops,
-                      repairUsed: info.repairUsed,
-                      rawRepairPlan: info.rawRepairPlan ? toSnap(info.rawRepairPlan) : null,
-                    }));
-                  } : undefined,
-                });
-              } catch (e) {
-                logger.error("plan failed", { stepIndex: step.stepIndex, e: String(e) });
-                throw new Error("plan_failed");
-              }
-            }
-
-            const actions: Action[] = [];
-            for (const subStep of plan.subSteps) {
-              const { pick, shortlist } = await runPickFrame({
-                subStep,
-                narration: step.narration,
-                step: { stepIndex: step.stepIndex, tStart: step.tStart, tEnd: step.tEnd },
-                clusters,
-                language: outputLanguage,
-              });
-              if (pick.picked === null) {
-                if (traceEnabled()) {
-                  await persistTrace(makeTrace({
-                    sopId: _id.toHexString(),
-                    stepIndex: step.stepIndex,
-                    intent: subStep.intent,
-                    pickedLetter: null,
-                    runnerUpLetter: pick.runnerUp,
-                    pickerReasoning: pick.reasoning,
-                    verifyMatch: "skipped",
-                    verifyReasoning: "",
-                    highlightOutcome: "skipped",
-                    finalActionRecorded: false,
-                    droppedAt: "pick",
-                  }));
-                }
-                continue;
-              }
-
-              const pickedCluster = clusterFor(pick.picked, shortlist);
-              const runnerCluster = clusterFor(pick.runnerUp, shortlist);
-              if (!pickedCluster) continue;
-
-              const window = computeSearchWindow(subStep, step.narration, step);
-              const actionTime = computeActionTime(subStep, step.narration, step);
-              const pickedFrame = await selectInClusterFrame(pickedCluster, window, actionTime);
-              const runnerFrame = runnerCluster
-                ? await selectInClusterFrame(runnerCluster, window, actionTime)
-                : null;
-
-              const { verify, finalFramePath } = await runVerifyFrame({
-                intent: subStep.intent,
-                verb: subStep.verb,
-                pickedFramePath: pickedFrame.localPath,
-                runnerUpFramePath: runnerFrame?.localPath ?? null,
-                pickerReasoning: pick.reasoning,
-                language: outputLanguage,
-                stepIndex: step.stepIndex,
-              });
-              if (finalFramePath === null) {
-                if (traceEnabled()) {
-                  await persistTrace(makeTrace({
-                    sopId: _id.toHexString(),
-                    stepIndex: step.stepIndex,
-                    intent: subStep.intent,
-                    pickedLetter: pick.picked,
-                    runnerUpLetter: pick.runnerUp,
-                    pickerReasoning: pick.reasoning,
-                    verifyMatch: verify.match,
-                    verifyReasoning: verify.reasoning,
-                    highlightOutcome: "skipped",
-                    finalActionRecorded: false,
-                    droppedAt: "verify",
-                  }));
-                }
-                continue;
-              }
-
-              const finalFrameTime = finalFramePath === runnerFrame?.localPath ? runnerFrame.t : pickedFrame.t;
-
-              const highlight = await runLocateHighlight({
-                intent: subStep.intent,
-                verb: subStep.verb,
-                framePath: finalFramePath,
-              });
-
-              if (traceEnabled()) {
-                await persistTrace(makeTrace({
-                  sopId: _id.toHexString(),
-                  stepIndex: step.stepIndex,
-                  intent: subStep.intent,
-                  pickedLetter: pick.picked,
-                  runnerUpLetter: pick.runnerUp,
-                  pickerReasoning: pick.reasoning,
-                  verifyMatch: verify.match,
-                  verifyReasoning: verify.reasoning,
-                  highlightOutcome: highlight.highlight,
-                  finalActionRecorded: true,
-                  droppedAt: "none",
-                }));
-              }
-
-              actions.push(buildAction({
-                stepIndex: step.stepIndex,
-                order: actions.length,
-                subStep,
-                verify,
-                highlight,
-                framePath: finalFramePath,
-                frameTime: finalFrameTime,
-                pickedClusterLetter: pick.picked,
-              }));
-            }
+            const classified = await classifyAndRemap({
+              stepTitle: step.title,
+              language: outputLanguage,
+              events: stepEvents,
+              screenClusters: clusters,
+            });
+            const actions = buildActionsForStep({
+              stepIndex: step.stepIndex,
+              classified,
+              screenClusters: clusters,
+              eventTimes: stepEvents.map(e => e.time),
+              viewMinDurationSec: config.screenshots.screenId.viewMinDurationSec,
+              language: outputLanguage,
+            });
+            await highlightActions({ actions });
             actionsByStep.set(step.stepIndex, actions);
-          });
+          }
         } catch (e) {
-          if (e instanceof Error && e.message === "plan_failed") return fail(_id, "plan_failed");
-          logger.error("screenshot pipeline failed", {
+          logger.error("screenshot classification failed", {
             e: String(e),
             stack: e instanceof Error ? e.stack : undefined,
           });
-          return fail(_id, "unknown");
+          return fail(_id, "generation_failed");
         }
 
         await setStatus(_id, "uploading-screenshots");
