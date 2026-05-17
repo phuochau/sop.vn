@@ -18,6 +18,12 @@ import type { Point } from "@/lib/grounding";
  * call threw / failed to parse — returns true. The critic must never cost the
  * pipeline a highlight; a missing verification just degrades to the old
  * no-verification behaviour.
+ *
+ * Verification runs on the same (downscaled) frame the grounder scored. The
+ * point is frame-normalized (0-1), so the circle's CENTRE — which the prompt
+ * tells the model to judge — sits on the identical element at any resolution;
+ * verifying in the grounder's own coordinate space keeps the check consistent
+ * with what was grounded, and the smaller frame is cheaper to send.
  */
 export type VerifyVisionFn = (opts: {
   model: string;
@@ -29,6 +35,11 @@ export type VerifyVisionFn = (opts: {
   maxRetries: number;
 }) => Promise<{ onElement: "yes" | "no" }>;
 
+// Checked binding: tsc validates that the real `llmJsonVision` satisfies
+// `VerifyVisionFn` (no `as unknown as` escape hatch). If the signature ever
+// drifts, this line fails to compile.
+const realVisionFn: VerifyVisionFn = llmJsonVision;
+
 export async function verifyGroundedPoint(args: {
   framePath: string;
   point: Point;
@@ -38,10 +49,12 @@ export async function verifyGroundedPoint(args: {
   visionFn?: VerifyVisionFn;
 }): Promise<boolean> {
   const { framePath, point, caption, model } = args;
-  const visionFn = args.visionFn ?? (llmJsonVision as unknown as VerifyVisionFn);
+  const visionFn = args.visionFn ?? realVisionFn;
 
-  const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "highlight-verify-"));
+  let tmpDir: string | null = null;
   try {
+    tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "highlight-verify-"));
+
     const { buf, error } = await buildBufferWithOptionalHighlight(framePath, { point });
     // error !== null ⇒ buf is the un-annotated original (no circle drawn) —
     // do not ask the critic to judge a circle-less image; fail open.
@@ -63,8 +76,8 @@ export async function verifyGroundedPoint(args: {
     });
     return out.onElement === "yes";
   } catch {
-    return true; // fail-open on any failure
+    return true; // fail-open on any failure (incl. mkdtemp)
   } finally {
-    await fs.promises.rm(tmpDir, { recursive: true, force: true });
+    if (tmpDir) await fs.promises.rm(tmpDir, { recursive: true, force: true });
   }
 }

@@ -147,18 +147,9 @@ test("runLocateHighlight keeps the downscaled frame alive until the highlighter 
   );
 });
 
-test("pointFallbackHighlight accepts the UI-TARS point when verification passes", async () => {
-  const out = await pointFallbackHighlight(
-    { intent: "Click Save", verb: "click", framePath: okFrame },
-    {
-      uiTars: async () => ({ point: { x: 0.4, y: 0.6 }, raw: "(x,y)" }),
-      qwen: async () => { throw new Error("should not be called"); },
-      verify: async () => true,
-    },
-  );
-  assert.equal(out.highlight, "yes");
-  assert.deepEqual(out.point, { x: 0.4, y: 0.6 });
-});
+// (the UI-TARS-point-passes common case is already covered by
+// "pointFallbackHighlight uses the UI-TARS point when found" above, which now
+// injects verify: async () => true.)
 
 test("pointFallbackHighlight retries to Qwen when the UI-TARS point fails verification", async () => {
   const out = await pointFallbackHighlight(
