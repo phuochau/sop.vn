@@ -32,7 +32,7 @@ async function fail(id: ObjectId, errorCode: ErrorCode) {
 
 export const processSopScreenshots = task({
   id: "process-sop-screenshots",
-  maxDuration: 60 * 15,
+  maxDuration: 60 * 40,
   run: async (payload: { sopId: string }) => {
     const _id = new ObjectId(payload.sopId);
     const { summary: aiCost } = await runWithCostTracking(() => runPipeline(_id));
