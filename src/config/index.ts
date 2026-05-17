@@ -168,6 +168,8 @@ Return strict JSON only.`,
       windowPostClickSec: 0.5,   // click/link: source-biased — cap reach past the click
       windowMaxSpanSec: 6.0,
       dedupWindowSec: 4.0,
+      duplicateGapSec: 5.0,           // collapse CV multi-fires within this gap
+      duplicateHammingThreshold: 6,   // ...when display frames are near-identical
     },
   },
 };

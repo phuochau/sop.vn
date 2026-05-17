@@ -18,6 +18,7 @@ import { runExtractClickEvents } from "./stages/extractClickEvents";
 import { runClassifyAndMergeEvents } from "./stages/classifyAndMergeEvents";
 import { classifyAndRemap } from "./stages/classifyStepWithLLM";
 import { buildActionsForStep } from "./stages/buildActionsForStep";
+import { collapseDuplicateActions } from "./stages/collapseDuplicateActions";
 import { highlightActions } from "./stages/highlightActions";
 import type { Action } from "@/lib/schemas";
 
@@ -177,13 +178,18 @@ export const processSopScreenshots = task({
               events: stepEvents,
               denseFrames: pool!.denseFrames,
             });
-            const actions = buildActionsForStep({
+            const assembled = buildActionsForStep({
               stepIndex: step.stepIndex,
               classified,
               screenClusters: clusters,
               eventTimes: stepEvents.map(e => e.time),
               viewMinDurationSec: config.screenshots.screenId.viewMinDurationSec,
               language: outputLanguage,
+            });
+            const actions = await collapseDuplicateActions({
+              actions: assembled,
+              gapSec: config.screenshots.classify.duplicateGapSec,
+              hammingThreshold: config.screenshots.classify.duplicateHammingThreshold,
             });
             await highlightActions({ actions });
             actionsByStep.set(step.stepIndex, actions);
