@@ -44,14 +44,16 @@ function grabAt(srcPath: string, outPath: string, atSec: number): Promise<void> 
 export async function sampleFrames(
   srcPath: string,
   durationSec: number,
-  opts: { mode: SampleMode }
+  opts: { mode: SampleMode } | { count: number }
 ): Promise<{
   paths: string[];
   timestamps: number[];
   tmpDir: string;
   dispose: () => Promise<void>;
 }> {
-  const count = computeFrameCount({ durationSec, mode: opts.mode });
+  const count = "count" in opts
+    ? Math.max(1, Math.floor(opts.count))
+    : computeFrameCount({ durationSec, mode: opts.mode });
   const timestamps = evenlySpacedTimestamps(durationSec, count);
   const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "sop-frames-"));
   const paths: string[] = [];
