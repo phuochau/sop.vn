@@ -165,7 +165,9 @@ Return strict JSON only.`,
       maxWindowFrames: 9,
       windowPreSec: 1.5,
       windowPostSec: 0.5,        // input/select: small reach past the typed-result frame
-      windowPostClickSec: 0.5,   // click/link: source-biased — cap reach past the click
+      windowPostClickSec: 0.0,   // click/link: window ends AT the event — event.time is
+                                 // the last pre-click frame, so the whole window is the
+                                 // source screen; the LLM cannot pick a destination frame
       windowMaxSpanSec: 6.0,
       dedupWindowSec: 4.0,
       duplicateGapSec: 5.0,           // collapse CV multi-fires within this gap
