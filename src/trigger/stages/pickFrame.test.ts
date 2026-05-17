@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert";
-import { computeSearchWindow, shortlistClusters, sanitizePick } from "./pickFrame";
+import { computeActionTime, computeSearchWindow, shortlistClusters, sanitizePick } from "./pickFrame";
 import type { ScreenCluster } from "@/trigger/lib/screenId";
 
 function fakeCluster(letter: string, start: number, end: number): ScreenCluster {
@@ -115,4 +115,44 @@ test("sanitizePick keeps valid distinct letters", () => {
   const out = sanitizePick({ picked: "A", runnerUp: "B", reasoning: "x" }, validLetters);
   assert.equal(out.picked, "A");
   assert.equal(out.runnerUp, "B");
+});
+
+test("computeActionTime returns the unpadded end of the narration range", () => {
+  const t = computeActionTime(
+    { narrationSegmentIds: [1, 2], timeWindow: null },
+    [
+      { id: 1, start: 10, end: 14, text: "a" },
+      { id: 2, start: 14, end: 19, text: "b" },
+      { id: 3, start: 30, end: 35, text: "c" },
+    ],
+    { tStart: 0, tEnd: 100 },
+  );
+  assert.equal(t, 19);
+});
+
+test("computeActionTime falls back to timeWindow.end when there are no narration segments", () => {
+  const t = computeActionTime(
+    { narrationSegmentIds: [], timeWindow: { start: 40, end: 52 } },
+    [],
+    { tStart: 0, tEnd: 100 },
+  );
+  assert.equal(t, 52);
+});
+
+test("computeActionTime falls back to step.tEnd when there is no narration and no timeWindow", () => {
+  const t = computeActionTime(
+    { narrationSegmentIds: [], timeWindow: null },
+    [],
+    { tStart: 5, tEnd: 88 },
+  );
+  assert.equal(t, 88);
+});
+
+test("computeActionTime falls back when narration ids match no segment", () => {
+  const t = computeActionTime(
+    { narrationSegmentIds: [99], timeWindow: { start: 1, end: 7 } },
+    [{ id: 1, start: 0, end: 3, text: "x" }],
+    { tStart: 0, tEnd: 100 },
+  );
+  assert.equal(t, 7);
 });

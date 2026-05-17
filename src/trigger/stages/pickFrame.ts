@@ -47,6 +47,29 @@ export function computeSearchWindow(
   return { start: step.tStart, end: step.tEnd };
 }
 
+/**
+ * The instant a sub-step's action happens: the *unpadded* end of its
+ * narration range. A narrator describes an action as or just before it
+ * completes, so the late edge of the narration best marks the action moment.
+ * Unlike computeSearchWindow, this applies no padding — padding only widens
+ * the candidate *search*, it does not locate the action. Falls back to the
+ * sub-step's timeWindow end, then to the step's end. The fallback *ordering*
+ * (narration -> timeWindow -> step) matches computeSearchWindow's; each
+ * fallback returns the end edge, since this is an instant, not a window.
+ */
+export function computeActionTime(
+  subStep: { narrationSegmentIds: number[]; timeWindow: { start: number; end: number } | null },
+  narration: NarrationSegment[],
+  step: { tStart: number; tEnd: number },
+): number {
+  if (subStep.narrationSegmentIds.length > 0) {
+    const refs = narration.filter(n => subStep.narrationSegmentIds.includes(n.id));
+    if (refs.length > 0) return Math.max(...refs.map(n => n.end));
+  }
+  if (subStep.timeWindow) return subStep.timeWindow.end;
+  return step.tEnd;
+}
+
 function inWindowDwell(cluster: ScreenCluster, window: { start: number; end: number }): number {
   return Math.max(
     0,
