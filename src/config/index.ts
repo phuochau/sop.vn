@@ -156,7 +156,12 @@ Return strict JSON only.`,
       viewMinDurationSec: 4.0,
     },
     classify: {
-      maxCandidatesPerCall: 12,
+      // One candidate per LLM call. Batching multiple candidates concatenates
+      // every candidate's window frames into one flat image list, and the model
+      // mis-maps which images belong to which candidate (caused wrong
+      // screenName/elementCaption on fast wizard screens). One call = one
+      // window = no cross-candidate confusion.
+      maxCandidatesPerCall: 1,
       maxWindowFrames: 9,
       windowPreSec: 1.5,
       windowPostSec: 0.5,        // input/select: small reach past the typed-result frame
