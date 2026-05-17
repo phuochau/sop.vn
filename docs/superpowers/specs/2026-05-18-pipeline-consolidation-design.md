@@ -114,11 +114,17 @@ per-path branching lives in the two heads.
 
 **Adapted:**
 - `src/trigger/processSopScreenshots.ts` — control flow rewritten per the
-  diagram (Stage 0 added, silent head added, status/error handling).
+  diagram. Explicitly: remove the `runContext` import + `withStage("context",
+  …)` call (line ~129) — Stage 0's `analyzeVideo` replaces it; add the Stage 0
+  call, the silent head, and the `not_an_app`/`analysis_failed` handling.
 - `src/trigger/stages/clip.ts` — trim to **only `resolveTimes`** (delete
-  `runClip`, which belongs to the removed clip pipeline) and rename the file to
-  `resolveTimes.ts`. `resolveTimes` is used by the speech head and must survive;
+  `runClip` and the imports it alone needed: `clipKey`/`posterKey`/`putObject`/
+  `grabFrame`/`ffmpeg`/`fs`/`path`/`os`) and rename the file to `resolveTimes.ts`.
+  `resolveTimes` is used by the speech head and must survive;
   `processSopScreenshots.ts` already imports it.
+- `src/trigger/stages/clip.test.ts` — rename to `resolveTimes.test.ts` and
+  repoint its `import { resolveTimes } from "./clip"` to `./resolveTimes`
+  (drop any `runClip` tests).
 - `src/trigger/ingestLoom.ts` — change both `tasks.trigger("process-sop", …)`
   calls (lines 65, 106) and their idempotency keys to `process-sop-screenshots`.
   Loom ingest must keep working after the `process-sop` task is deleted.
@@ -132,7 +138,12 @@ per-path branching lives in the two heads.
   `synthesizeOverview.ts`, `synthesizeStep.ts`, `renderPdf.tsx`, `visualStep.ts`,
   `visualOverview.ts`, `context.ts`, `visualContext.ts`.
 - PDF surface: `src/app/api/sop/[id]/pdf/route.ts` (triggers the deleted
-  `generate-sop-pdf` task) and `src/components/ExportPdfButton.tsx`.
+  `generate-sop-pdf` task), `src/app/api/sop/[id]/pdf/file/route.ts` (serves the
+  generated PDF), `src/components/ExportPdfButton.tsx`.
+- Clip surface: `src/app/api/clips/[sopId]/[key]/route.ts` (serves clip/poster
+  files), `src/components/HeroVideo.tsx` (clip player), `src/components/StepCard.tsx`
+  (clip-based step card — `StepCardScreenshots.tsx` is the screenshots one and is
+  kept).
 
 **`visualExtract.ts` — kept, effectively untouched.** It already accepts
 `category`/`domainSummary` as input and already emits the converged
@@ -141,10 +152,35 @@ context internally (`runVisualContext` was a separate function in the deleted
 `visualContext.ts`). The only change is that its `category`/`domainSummary` now
 come from Stage 0 instead of `runVisualContext`.
 
-**Frontend cleanup — `src/app/sop/[id]/page.tsx`:** remove the `mode !==
-"screenshots"` branches — the `<ExportPdfButton>` render (lines ~99-100), the
-clip-vs-screenshot rendering branch (lines ~123, ~138-146), and the now-unused
-`clipUrl`/`pdf` fields. Screenshots is the only mode, so the branching is dead.
+### Callers & Frontend Surface
+
+Removing the clip/PDF pipeline and the `mode` field touches several
+routes/components. All of these are in scope:
+
+- `src/app/api/sop/[id]/route.ts` — **Adapt.** Drop the `pdf` block (lines
+  21-24), drop per-step `clipUrl`/`posterUrl` (lines 31-32, clip pipeline gone),
+  and drop `mode` (line 11, 20) — there is only one mode. The response keeps
+  `title`, `category`, `steps[].screenshots`, etc.
+- `src/app/api/screenshots/[sopId]/[key]/route.ts` — **Adapt.** Remove the
+  `doc.mode !== "screenshots"` 404 gate (line 23) — one mode now; gate on
+  `status === "done"` instead.
+- `src/app/sop/[id]/page.tsx` — **Adapt.** Remove the `Sop` type's `mode`,
+  `pdf`, and `clipUrl` fields; remove the `<ExportPdfButton>` and `<HeroVideo>`
+  renders and the `<StepCard>` (clip) branch; always render the screenshots view
+  (`StepCardScreenshots`). Drop the now-dead imports.
+- `src/components/UploadZone.tsx` — **Adapt.** Remove the `mode` state (line 21),
+  the `mode` field in the commit POST body (line 58), and the "Video clips /
+  Screenshots" radio toggle (lines ~237-250).
+- `src/app/api/share/[token]/route.ts` — **Adapt.** Drop the per-step
+  `clipUrl`/`posterUrl` fields (lines 24-25) that point at the deleted
+  `/api/clips` route. It has no `pdf`/`mode` references.
+- `src/app/api/sop/[id]/status/route.ts` — **Untouched.** Verified: no
+  `pdf`/`mode`/`clip` references.
+
+The pipeline's final DB update already writes `mode: "screenshots"`
+(`processSopScreenshots.ts:277`); that line stays, so the persisted `mode` is
+always `"screenshots"`. The cleanup above removes every *read* of `mode` for
+branching, so a missing/legacy value can no longer mis-route.
 
 **Untouched:** `extract.ts` (already accepts `category`/`domainSummary`),
 `buildFramePool`, `extractClickEvents`, `classifyAndMergeEvents`,
