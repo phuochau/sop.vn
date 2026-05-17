@@ -128,6 +128,11 @@ Return strict JSON only.`,
   },
   retention: { videoRetentionDays: 30 },
   app: { shareTokenLength: 16, pollIntervalMs: 2000 },
+  costs: {
+    // fal-ai/whisper has no cost field in its response, so its cost is
+    // estimated as audioMinutes * this rate. Adjust to your fal plan's rate.
+    whisperPerMinuteUSD: 0.0001,
+  },
   screenshots: {
     sampleFps: 4,   // dense frames feed the classifier window + click-event timing;
                     // 4fps is needed to capture sub-1.5s onboarding-wizard screens

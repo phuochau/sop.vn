@@ -1,7 +1,26 @@
 import { z, type ZodTypeAny } from "zod";
 import fs from "node:fs";
+import { recordCost } from "./aiCost";
 
 const API = "https://openrouter.ai/api/v1/chat/completions";
+
+/**
+ * Record an OpenRouter call's usage into the active cost-tracking context.
+ * `data.usage.cost` is the provider-reported USD cost — present because every
+ * request body sets `usage: { include: true }`.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function recordOpenRouterUsage(data: any, fallbackModel: string): void {
+  const u = data?.usage ?? {};
+  recordCost({
+    provider: "openrouter",
+    model: typeof data?.model === "string" ? data.model : fallbackModel,
+    promptTokens: Number(u.prompt_tokens ?? 0),
+    completionTokens: Number(u.completion_tokens ?? 0),
+    costUSD: typeof u.cost === "number" ? u.cost : 0,
+    estimated: false,
+  });
+}
 
 type Fetcher = typeof fetch;
 
@@ -57,6 +76,7 @@ export async function llmJson<T extends ZodTypeAny>(opts: {
       },
     },
     temperature,
+    usage: { include: true },
   };
 
   let lastErr: unknown = null;
@@ -83,8 +103,9 @@ export async function llmJson<T extends ZodTypeAny>(opts: {
       const data = await res.json();
       const content = data.choices?.[0]?.message?.content;
       if (!content) throw new Error("Empty content");
-      const parsed = JSON.parse(content);
-      return opts.schema.parse(parsed);
+      const parsed = opts.schema.parse(JSON.parse(content));
+      recordOpenRouterUsage(data, opts.model);
+      return parsed;
     } catch (e) {
       lastErr = e;
       if (e instanceof NonRetryableError) throw e;
@@ -172,6 +193,7 @@ export async function llmJsonVision<T extends ZodTypeAny>(opts: {
       },
     },
     temperature,
+    usage: { include: true },
   };
 
   let lastErr: unknown = null;
@@ -198,8 +220,9 @@ export async function llmJsonVision<T extends ZodTypeAny>(opts: {
       const data = await res.json();
       const content = data.choices?.[0]?.message?.content;
       if (!content) throw new Error("Empty content");
-      const parsed = JSON.parse(content);
-      return opts.schema.parse(parsed);
+      const parsed = opts.schema.parse(JSON.parse(content));
+      recordOpenRouterUsage(data, opts.model);
+      return parsed;
     } catch (e) {
       lastErr = e;
       if (e instanceof NonRetryableError) throw e;

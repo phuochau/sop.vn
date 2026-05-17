@@ -20,6 +20,7 @@ import { classifyAndRemap } from "./stages/classifyStepWithLLM";
 import { buildActionsForStep } from "./stages/buildActionsForStep";
 import { collapseDuplicateActions } from "./stages/collapseDuplicateActions";
 import { highlightActions } from "./stages/highlightActions";
+import { runWithCostTracking, withStage, recordCost } from "@/lib/aiCost";
 import type { Action } from "@/lib/schemas";
 
 async function setStatus(id: ObjectId, status: SopStatus, extra: Record<string, unknown> = {}) {
@@ -34,6 +35,29 @@ export const processSopScreenshots = task({
   maxDuration: 60 * 15,
   run: async (payload: { sopId: string }) => {
     const _id = new ObjectId(payload.sopId);
+    const { summary: aiCost } = await runWithCostTracking(() => runPipeline(_id));
+
+    // Persist + log the AI cost of the run, even if the pipeline failed.
+    try {
+      await (await sops()).updateOne(
+        { _id },
+        { $set: { aiCost, updatedAt: new Date() } },
+      );
+    } catch (e) {
+      logger.error("aiCost write failed", { e: String(e) });
+    }
+    logger.info("pipeline.cost", {
+      sopId: _id.toHexString(),
+      totalUSD: aiCost.totalUSD,
+      exactUSD: aiCost.exactUSD,
+      estimatedUSD: aiCost.estimatedUSD,
+      callCount: aiCost.callCount,
+      byStage: aiCost.byStage,
+    });
+  },
+});
+
+async function runPipeline(_id: ObjectId): Promise<void> {
     const doc = await (await sops()).findOne({ _id });
     if (!doc || !doc.videoR2Key) { logger.error("sop not found"); return; }
 
@@ -54,7 +78,21 @@ export const processSopScreenshots = task({
       // Stage 1: transcribe.
       await setStatus(_id, "transcribing");
       let stage1;
-      try { stage1 = await runTranscribe(signedVideo); }
+      try {
+        stage1 = await withStage("transcribe", async () => {
+          const r = await runTranscribe(signedVideo);
+          // fal/Whisper returns no cost field — estimate from audio duration.
+          recordCost({
+            provider: "fal",
+            model: "fal-ai/whisper",
+            promptTokens: 0,
+            completionTokens: 0,
+            costUSD: (durationSec / 60) * config.costs.whisperPerMinuteUSD,
+            estimated: true,
+          });
+          return r;
+        });
+      }
       catch (e) { logger.error("transcribe failed", { e: String(e) }); return fail(_id, "transcription_failed"); }
       const { transcript, segments, language } = stage1;
 
@@ -77,21 +115,21 @@ export const processSopScreenshots = task({
 
       // Stage 2: normalize (in source language).
       await setStatus(_id, "normalizing");
-      const segmentsClean = await runNormalize(segments, language!);
+      const segmentsClean = await withStage("normalize", () => runNormalize(segments, language!));
       await (await sops()).updateOne({ _id }, { $set: { segmentsClean, updatedAt: new Date() } });
 
       // Stage 3: context.
       await setStatus(_id, "analyzing");
-      const { category, domainSummary } = await runContext({
+      const { category, domainSummary } = await withStage("context", () => runContext({
         cleanTranscript: segmentsClean.map(s => s.text).join(" "),
         language: outputLanguage,
-      });
+      }));
       await (await sops()).updateOne({ _id }, { $set: { category, domainSummary, updatedAt: new Date() } });
 
       // Stage 4: extract step list.
       await setStatus(_id, "generating");
       let extracted;
-      try { extracted = await runExtract({ segmentsClean, category, domainSummary, language: outputLanguage }); }
+      try { extracted = await withStage("extract", () => runExtract({ segmentsClean, category, domainSummary, language: outputLanguage })); }
       catch (e) { logger.error("extract failed", { e: String(e) }); return fail(_id, "generation_failed"); }
 
       const resolved = resolveTimes(segments, extracted.steps, durationSec);
@@ -172,12 +210,12 @@ export const processSopScreenshots = task({
               samplingSec: config.screenshots.screenId.samplingSec,
               hammingThreshold: config.screenshots.screenId.hammingThreshold,
             });
-            const classified = await classifyAndRemap({
+            const classified = await withStage("classify", () => classifyAndRemap({
               stepTitle: step.title,
               language: outputLanguage,
               events: stepEvents,
               denseFrames: pool!.denseFrames,
-            });
+            }));
             const assembled = buildActionsForStep({
               stepIndex: step.stepIndex,
               classified,
@@ -191,7 +229,7 @@ export const processSopScreenshots = task({
               gapSec: config.screenshots.classify.duplicateGapSec,
               hammingThreshold: config.screenshots.classify.duplicateHammingThreshold,
             });
-            await highlightActions({ actions });
+            await withStage("highlight", () => highlightActions({ actions }));
             actionsByStep.set(step.stepIndex, actions);
           }
         } catch (e) {
@@ -239,5 +277,4 @@ export const processSopScreenshots = task({
       logger.error("processSopScreenshots unhandled", { e: String(e) });
       await fail(_id, "unknown");
     }
-  },
-});
+}

@@ -1,4 +1,5 @@
 import { MongoClient, Db, Collection, ObjectId } from "mongodb";
+import type { CostSummary } from "./aiCost";
 
 let client: MongoClient | null = null;
 let db: Db | null = null;
@@ -105,6 +106,7 @@ export interface SopDoc {
   steps: Step[];
   shareToken: string;
   pdf?: SopPdfState;
+  aiCost?: CostSummary;              // total + per-stage AI cost of the run
   createdAt: Date;
   updatedAt: Date;
 }

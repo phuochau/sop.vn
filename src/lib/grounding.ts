@@ -14,6 +14,7 @@
 import fs from "node:fs";
 import { z } from "zod";
 import { llmJsonVision } from "@/lib/openrouter";
+import { recordCost } from "@/lib/aiCost";
 
 export type Point = { x: number; y: number }; // 0-1, normalized to the frame
 
@@ -68,6 +69,7 @@ export async function uiTarsPoint(args: {
       },
     ],
     temperature: 0,
+    usage: { include: true },
   };
   const res = await fetcher(OPENROUTER_API, {
     method: "POST",
@@ -81,6 +83,15 @@ export async function uiTarsPoint(args: {
   });
   if (!res.ok) throw new Error(`UI-TARS ${res.status}: ${await res.text()}`);
   const data = await res.json();
+  const u = data?.usage ?? {};
+  recordCost({
+    provider: "openrouter",
+    model: typeof data?.model === "string" ? data.model : args.model,
+    promptTokens: Number(u.prompt_tokens ?? 0),
+    completionTokens: Number(u.completion_tokens ?? 0),
+    costUSD: typeof u.cost === "number" ? u.cost : 0,
+    estimated: false,
+  });
   const raw: string = data.choices?.[0]?.message?.content ?? "";
   return { point: parseUiTarsReply(raw, args.frameW, args.frameH), raw };
 }
