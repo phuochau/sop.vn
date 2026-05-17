@@ -52,7 +52,7 @@ export function buildActionsForStep(args: BuildActionsArgs): Action[] {
       logger.info("pipeline.candidate.discarded", { stepIndex: args.stepIndex, index: c.index, reason });
       continue;
     }
-    if (!c.verb || !c.screenName || !c.elementCaption || !c.fullFrameBbox || !c.displayFrame) {
+    if (!c.verb || !c.screenName || !c.elementCaption || !c.displayFrame) {
       logger.warn("pipeline.classifier.incomplete_action", { stepIndex: args.stepIndex, index: c.index });
       continue;
     }
@@ -74,8 +74,10 @@ export function buildActionsForStep(args: BuildActionsArgs): Action[] {
   });
 
   const elementGroups: ElementGroup[] = [];
-  orderedScreens.forEach(([screenKey, records], seq) => {
+  let seq = 0;
+  for (const [, records] of orderedScreens) {
     const screenId = `${args.stepIndex}-${seq + 1}`;
+    seq += 1;
 
     const byElement = new Map<string, ClassifiedActionRecord[]>();
     for (const r of records) {
@@ -107,8 +109,7 @@ export function buildActionsForStep(args: BuildActionsArgs): Action[] {
         time: args.eventTimes[latest.index],
       });
     }
-    void screenKey;
-  });
+  }
 
   const elementTimes = elementGroups.map(a => a.time);
   const viewGroups: { caption: string; displayFramePath: string; time: number }[] = [];
