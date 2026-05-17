@@ -442,8 +442,13 @@ Upload `samples/hubspot_crm.mp4` via `scripts/upload-full.mjs`, trigger `process
 Baseline `stable-2026-05-17-caption-canonicalization`: 84 screenshots, ~96% sampled, $0.2229.
 
 Confirm in the new run:
-- `aiCost` total ≈ $0.26 (verification adds ~$0.035–0.05; it lands inside the
-  `highlight` stage — that stage's cost should rise from ~$0.009 to ~$0.045);
+- `aiCost` total ≈ $0.25–0.27 (verification adds ~$0.035–0.05). Verified: the
+  verify calls land inside the `highlight` stage — `processSopScreenshots.ts`
+  wraps `highlightActions` in `withStage("highlight")`, and `withStage` uses
+  `AsyncLocalStorage` (`als.run`), so the nested `verifyGroundedPoint` →
+  `llmJsonVision` → `recordCost` is tagged `stage: "highlight"`. Expect the
+  `highlight` stage line in `aiCost.byStage` to rise substantially (from
+  ~$0.009) and `callCount` there to roughly double;
 - sample screenshots across all 5 steps (download from R2 as in prior runs) and
   score image↔caption↔circle — expect sampled accuracy **≥ ~96%**, with the
   dense-list grounding misses (e.g. the Import-button case) reduced;
