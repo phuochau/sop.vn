@@ -66,7 +66,7 @@ test("dedupes same-element events within the window, keeping the earliest", () =
   assert.equal(elements[0].time, 46.0);
 });
 
-test("same-element events beyond dedupWindowSec stay separate actions", () => {
+test("same-element events collapse step-wide regardless of time gap", () => {
   const cls = [
     action({ index: 0, elementCaption: "Next button" }),
     action({ index: 1, elementCaption: "Next button" }),
@@ -75,7 +75,24 @@ test("same-element events beyond dedupWindowSec stay separate actions", () => {
     stepIndex: 0, classified: cls, screenClusters: [cluster("A", 0, 30)],
     eventTimes: [5.0, 20.0], viewMinDurationSec: 100.0, language: "en",
   });
-  assert.equal(out.filter(a => a.verb !== "view").length, 2);
+  const elements = out.filter(a => a.verb !== "view");
+  assert.equal(elements.length, 1);
+  assert.equal(elements[0].time, 5.0);
+});
+
+test("element actions carry screenName and elementCaption; view actions carry empty strings", () => {
+  const out = buildActionsForStep({
+    stepIndex: 0,
+    classified: [action({ index: 0, screenName: "Login page", elementCaption: "Sign in button" })],
+    screenClusters: [cluster("A", 0, 1), cluster("B", 10, 20, "/rep-b.jpg")],
+    eventTimes: [0.5], viewMinDurationSec: 4.0, language: "en",
+  });
+  const element = out.find(a => a.verb !== "view")!;
+  const view = out.find(a => a.verb === "view")!;
+  assert.equal(element.screenName, "Login page");
+  assert.equal(element.elementCaption, "Sign in button");
+  assert.equal(view.screenName, "");
+  assert.equal(view.elementCaption, "");
 });
 
 test("same-element events on different screens are NOT collapsed even within the window", () => {
