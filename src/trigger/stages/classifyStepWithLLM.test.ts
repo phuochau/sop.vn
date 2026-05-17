@@ -3,45 +3,32 @@ import assert from "node:assert";
 import { chunkCandidatesBySort, buildCandidateWindow, type CandidateForLLM } from "./classifyStepWithLLM";
 import type { RawEvent } from "./classifyAndMergeEvents";
 
-function c(index: number, time: number, cluster: string | null): CandidateForLLM {
-  return {
-    index,
-    time,
-    kindHint: "click",
-    beforeMarkedPath: "/b.jpg",
-    afterMarkedPath: "/a.jpg",
-    screenCluster: cluster,
-  };
+function c(index: number, time: number): CandidateForLLM {
+  return { index, time, kindHint: "click", windowFramePaths: [`/c${index}-w0.jpg`] };
 }
 
-test("chunkCandidatesBySort keeps same-screen candidates in one chunk", () => {
-  const cands = [
-    c(0, 1.0, "A"),
-    c(1, 2.0, "B"),
-    c(2, 3.0, "A"),
-    c(3, 4.0, "B"),
-    c(4, 5.0, "C"),
-  ];
-  const chunks = chunkCandidatesBySort(cands, 3);
-  assert.equal(chunks.length, 2);
-  const clustersInChunk0 = new Set(chunks[0].map(x => x.screenCluster));
-  assert.ok(clustersInChunk0.has("A"));
-  assert.equal(chunks[0].filter(x => x.screenCluster === "A").length, 2);
-});
-
 test("chunkCandidatesBySort produces single chunk when count <= cap", () => {
-  const cands = [c(0, 1, "A"), c(1, 2, "B")];
+  const cands = [c(0, 1), c(1, 2)];
   const chunks = chunkCandidatesBySort(cands, 12);
   assert.equal(chunks.length, 1);
   assert.equal(chunks[0].length, 2);
 });
 
-test("chunkCandidatesBySort handles null screenCluster (sorts to the end)", () => {
-  const cands = [c(0, 1, null), c(1, 2, "A"), c(2, 3, null), c(3, 4, "B")];
-  const chunks = chunkCandidatesBySort(cands, 4);
-  assert.equal(chunks.length, 1);
-  const ordered = chunks[0].map(x => x.screenCluster);
-  assert.deepEqual(ordered, ["A", "B", null, null]);
+test("chunkCandidatesBySort produces multiple chunks when count > cap, each <= cap", () => {
+  const cands = [c(0, 1), c(1, 2), c(2, 3), c(3, 4), c(4, 5)];
+  const chunks = chunkCandidatesBySort(cands, 2);
+  assert.ok(chunks.length > 1, "should produce more than one chunk");
+  for (const chunk of chunks) {
+    assert.ok(chunk.length <= 2, "each chunk should be <= cap");
+  }
+  assert.equal(chunks.flat().length, 5);
+});
+
+test("chunkCandidatesBySort flattened candidates are sorted by ascending time", () => {
+  const cands = [c(4, 50), c(0, 10), c(2, 30), c(1, 20), c(3, 40)];
+  const chunks = chunkCandidatesBySort(cands, 3);
+  const flat = chunks.flat().map(x => x.time);
+  assert.deepEqual(flat, [10, 20, 30, 40, 50]);
 });
 
 function frame(t: number): { t: number; localPath: string } {
@@ -96,8 +83,7 @@ test("classifyStepWithLLM forwards each chunk to the injected classifier and con
   const out = await classifyStepWithLLM({
     stepTitle: "t",
     language: "en",
-    candidates: [c(0,1,"A"), c(1,2,"A"), c(2,3,"B"), c(3,4,"B")],
-    montageImagePath: null,
+    candidates: [c(0, 1), c(1, 2), c(2, 3), c(3, 4)],
     maxCandidatesPerCall: 2,
     classifier: async ({ candidates }) => {
       calls++;
@@ -106,10 +92,9 @@ test("classifyStepWithLLM forwards each chunk to the injected classifier and con
           index: cand.index,
           decision: "action" as const,
           verb: "click" as const,
-          screenName: cand.screenCluster ?? "x",
-          screenCluster: cand.screenCluster,
+          screenName: "x",
           elementCaption: `el${cand.index}`,
-          displayFrame: "before" as const,
+          displayFrameIndex: 0,
           discardReason: null,
         })),
       };
