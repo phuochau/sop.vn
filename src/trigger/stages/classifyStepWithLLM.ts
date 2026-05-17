@@ -124,6 +124,7 @@ export async function classifyAndRemap(args: {
         maxFrames: config.screenshots.classify.maxWindowFrames,
         preSec: config.screenshots.classify.windowPreSec,
         postSec: config.screenshots.classify.windowPostSec,
+        postClickSec: config.screenshots.classify.windowPostClickSec,
         maxSpanSec: config.screenshots.classify.windowMaxSpanSec,
       });
       const windowFramePaths: string[] = [];
@@ -250,7 +251,7 @@ export async function classifyAndRemap(args: {
 export function buildCandidateWindow(
   denseFrames: DensePoolFrame[],
   event: RawEvent,
-  opts: { maxFrames: number; preSec: number; postSec: number; maxSpanSec: number },
+  opts: { maxFrames: number; preSec: number; postSec: number; postClickSec: number; maxSpanSec: number },
 ): DensePoolFrame[] {
   if (denseFrames.length === 0) return [];
   const sorted = [...denseFrames].sort((a, b) => a.t - b.t);
@@ -260,12 +261,22 @@ export function buildCandidateWindow(
   const afterAnchor = byPath.get(event.afterFramePath) ?? null;
   const afterT = afterAnchor ? afterAnchor.t : event.time;
 
+  // A click's element lives on the SOURCE screen — frames much past the click
+  // are the destination/next screen. So for clicks the window is source-biased:
+  // it ends a short fixed reach after the event and excludes the after-anchor
+  // (which, on a navigation, is the destination). Inputs keep the after side —
+  // the typed-result frame lives there.
+  const isClick = event.kindHint === "click";
   const rangeStart = event.time - opts.preSec;
-  const rangeEnd = Math.min(afterT, event.time + opts.maxSpanSec) + opts.postSec;
+  const rangeEnd = isClick
+    ? event.time + opts.postClickSec
+    : Math.min(afterT, event.time + opts.maxSpanSec) + opts.postSec;
 
   const anchors: DensePoolFrame[] = [];
   if (beforeAnchor) anchors.push(beforeAnchor);
-  if (afterAnchor && afterAnchor.localPath !== beforeAnchor?.localPath) anchors.push(afterAnchor);
+  if (!isClick && afterAnchor && afterAnchor.localPath !== beforeAnchor?.localPath) {
+    anchors.push(afterAnchor);
+  }
   const anchorPaths = new Set(anchors.map(a => a.localPath));
 
   let sampled = sorted.filter(

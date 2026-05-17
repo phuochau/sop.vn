@@ -41,29 +41,39 @@ function evt(over: Partial<RawEvent>): RawEvent {
     area: 1, density: 0.5, kindHint: "click", ...over,
   };
 }
-const WIN = { maxFrames: 9, preSec: 1.5, postSec: 1.5, maxSpanSec: 6.0 };
+const WIN = { maxFrames: 9, preSec: 1.5, postSec: 0.5, postClickSec: 1.0, maxSpanSec: 6.0 };
 
 test("buildCandidateWindow returns frames within the time range, sorted by t", () => {
   const pool = [frame(7), frame(9), frame(10), frame(11), frame(13)];
-  const w = buildCandidateWindow(pool, evt({}), WIN);
-  assert.deepEqual(w.map(f => f.t), [9, 10, 11]);
+  const w = buildCandidateWindow(pool, evt({ kindHint: "input" }), WIN);
+  assert.deepEqual(w.map(f => f.t), [9, 10, 11]); // input: [10-1.5 .. 11+0.5]
 });
 
 test("buildCandidateWindow downsamples to maxFrames but always keeps the anchors", () => {
   const pool = Array.from({ length: 30 }, (_, i) => frame(8.5 + i * 0.2));
-  const e = evt({ beforeFramePath: pool[2].localPath, afterFramePath: pool[20].localPath });
+  const e = evt({ kindHint: "input", beforeFramePath: pool[2].localPath, afterFramePath: pool[20].localPath });
   const w = buildCandidateWindow(pool, e, { ...WIN, maxFrames: 6 });
   assert.ok(w.length <= 6);
   assert.ok(w.some(f => f.localPath === pool[2].localPath), "before anchor kept");
   assert.ok(w.some(f => f.localPath === pool[20].localPath), "after anchor kept");
 });
 
-test("buildCandidateWindow caps the sampled span via maxSpanSec but force-includes the after anchor", () => {
+test("buildCandidateWindow (input) caps the sampled span via maxSpanSec but force-includes the after anchor", () => {
   const pool = [frame(9), frame(10), frame(11), frame(20), frame(30)];
-  const e = evt({ beforeFramePath: "/f9.jpg", afterFramePath: "/f30.jpg", time: 10 });
+  const e = evt({ kindHint: "input", beforeFramePath: "/f9.jpg", afterFramePath: "/f30.jpg", time: 10 });
   const w = buildCandidateWindow(pool, e, { ...WIN, maxSpanSec: 6.0 });
   assert.ok(w.some(f => f.t === 30), "far after-anchor still force-included");
   assert.ok(!w.some(f => f.t === 20), "frame inside the gap but outside the cap is excluded");
+});
+
+test("buildCandidateWindow (click) is source-biased — excludes the after frame and destination frames", () => {
+  const pool = [frame(9), frame(10), frame(11), frame(15), frame(30)];
+  // click navigates: afterFramePath is the destination screen at t=30
+  const e = evt({ kindHint: "click", beforeFramePath: "/f9.jpg", afterFramePath: "/f30.jpg", time: 10 });
+  const w = buildCandidateWindow(pool, e, WIN);
+  assert.deepEqual(w.map(f => f.t), [9, 10, 11]); // [10-1.5 .. 10+1.0]
+  assert.ok(!w.some(f => f.t === 30), "destination after-frame is NOT included for clicks");
+  assert.ok(!w.some(f => f.t === 15), "frame past the click reach is excluded");
 });
 
 test("buildCandidateWindow never returns empty — falls back to nearest frame", () => {

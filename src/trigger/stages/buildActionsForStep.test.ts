@@ -78,6 +78,18 @@ test("same-element events beyond dedupWindowSec stay separate actions", () => {
   assert.equal(out.filter(a => a.verb !== "view").length, 2);
 });
 
+test("same-element events on different screens are NOT collapsed even within the window", () => {
+  const cls = [
+    action({ index: 0, screenName: "Question one", elementCaption: "Skip button" }),
+    action({ index: 1, screenName: "Question two", elementCaption: "Skip button" }),
+  ];
+  const out = buildActionsForStep({
+    stepIndex: 0, classified: cls, screenClusters: [cluster("A", 0, 10)],
+    eventTimes: [1.0, 2.0], viewMinDurationSec: 100.0, language: "en",
+  });
+  assert.equal(out.filter(a => a.verb !== "view").length, 2);
+});
+
 test("verb-collapse rule: input wins over click", () => {
   const cls = [
     action({ index: 0, verb: "click", elementCaption: "Email field" }),

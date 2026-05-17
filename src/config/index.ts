@@ -157,7 +157,8 @@ Return strict JSON only.`,
       maxCandidatesPerCall: 12,
       maxWindowFrames: 9,
       windowPreSec: 1.5,
-      windowPostSec: 1.5,
+      windowPostSec: 0.5,        // input/select: small reach past the typed-result frame
+      windowPostClickSec: 1.0,   // click/link: source-biased — cap reach past the click
       windowMaxSpanSec: 6.0,
       dedupWindowSec: 4.0,
     },
