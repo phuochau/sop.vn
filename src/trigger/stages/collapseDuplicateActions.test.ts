@@ -9,6 +9,8 @@ function action(over: Partial<Action>): Action {
     order: 0,
     verb: "click",
     description: "a button",
+    screenName: "S",
+    elementCaption: "E",
     displayFramePath: "/f.jpg",
     time: 0,
     ...over,

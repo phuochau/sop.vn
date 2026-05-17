@@ -17,6 +17,7 @@ import { buildScreenClusters } from "@/trigger/lib/screenId";
 import { runExtractClickEvents } from "./stages/extractClickEvents";
 import { runClassifyAndMergeEvents } from "./stages/classifyAndMergeEvents";
 import { classifyAndRemap } from "./stages/classifyStepWithLLM";
+import { canonicalizeActions } from "./stages/canonicalizeActions";
 import { buildActionsForStep } from "./stages/buildActionsForStep";
 import { collapseDuplicateActions } from "./stages/collapseDuplicateActions";
 import { highlightActions } from "./stages/highlightActions";
@@ -221,9 +222,13 @@ async function runPipeline(_id: ObjectId): Promise<void> {
             events: stepEvents,
             denseFrames: pool!.denseFrames,
           }));
+          const canonical = await withStage("canonicalize", () => canonicalizeActions({
+            classified,
+            language: outputLanguage,
+          }));
           const assembled = buildActionsForStep({
             stepIndex: step.stepIndex,
-            classified,
+            classified: canonical,
             screenClusters: clusters,
             eventTimes: stepEvents.map(e => e.time),
             viewMinDurationSec: config.screenshots.screenId.viewMinDurationSec,

@@ -9,6 +9,8 @@ function act(over: Partial<Action>): Action {
     order: 0,
     verb: "click",
     description: "Click the Sign in button",
+    screenName: "S",
+    elementCaption: "E",
     displayFramePath: "/frame.jpg",
     time: 1.0,
     ...over,
