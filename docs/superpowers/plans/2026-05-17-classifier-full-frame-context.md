@@ -126,7 +126,7 @@ export async function markRegion(
 ```bash
 git add src/trigger/lib/markRegion.ts src/trigger/lib/markRegion.test.ts
 printf '%s\n' \
-  'Add markRegion helper for full-frame change markers' \
+  'feat(markRegion): add full-frame change-marker helper' \
   '' \
   'Draws a magenta stroked rect onto a full frame via a sharp SVG' \
   'composite sized to the frame pixel dimensions.' \
@@ -165,7 +165,7 @@ export const ClassifiedCandidate = z.object({
 ```bash
 git add src/lib/schemas.ts
 printf '%s\n' \
-  'Drop dead bbox field from ClassifiedCandidate schema' \
+  'refactor(schemas): drop dead bbox field from ClassifiedCandidate' \
   '' \
   'The classifier is point-based; nothing consumed the bbox. The BBox' \
   'export stays for Highlight/HighlightDecision.' \
@@ -386,7 +386,7 @@ function c(index: number, time: number, cluster: string | null): CandidateForLLM
 ```bash
 git add src/trigger/stages/classifyStepWithLLM.ts src/trigger/stages/classifyStepWithLLM.test.ts
 printf '%s\n' \
-  'Rework classifyStepWithLLM to full-frame marked context' \
+  'feat(classify): rework classifyStepWithLLM for full-frame context' \
   '' \
   'Replace per-event crops with magenta-marked full before/after frames.' \
   'Drop crop/bbox-mapping logic, fullFrameBbox, and the unused' \
@@ -440,7 +440,7 @@ function action(over: Partial<ClassifiedActionRecord>): ClassifiedActionRecord {
 ```bash
 git add src/trigger/stages/buildActionsForStep.test.ts
 printf '%s\n' \
-  'Drop bbox/fullFrameBbox from buildActionsForStep test fixtures' \
+  'test(classify): drop bbox/fullFrameBbox from buildActionsForStep fixtures' \
   '' \
   'Both fields are removed from ClassifiedActionRecord/ClassifiedCandidate.' \
   '' \
@@ -456,7 +456,7 @@ printf '%s\n' \
 - `src/trigger/lib/cropEvent.ts` (delete)
 - `src/trigger/lib/cropEvent.test.ts` (delete)
 
-- [ ] Confirm nothing imports it anymore: `grep -rln "cropEvent" src/ || echo "no importers"` — expect `no importers` (the only former importer, `classifyStepWithLLM.ts`, was reworked in Task 3).
+- [ ] Confirm nothing imports it anymore: `grep -rln "cropEvent" src/ | grep -v "src/trigger/lib/cropEvent" || echo "no importers"` — expect `no importers`. (The `grep -v` filters out `cropEvent.ts`/`cropEvent.test.ts` themselves, which a bare recursive grep matches by filename; only a real *importer* should remain, and the only former importer, `classifyStepWithLLM.ts`, was reworked in Task 3.)
 - [ ] Delete both files via git:
 
 ```bash
@@ -467,7 +467,7 @@ git rm src/trigger/lib/cropEvent.ts src/trigger/lib/cropEvent.test.ts
 
 ```bash
 printf '%s\n' \
-  'Delete cropEvent helper — no longer used after full-frame rework' \
+  'chore: delete unused cropEvent helper' \
   '' \
   'Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>' \
   | git commit -F -
@@ -541,7 +541,7 @@ Return strict JSON only.`,
 ```bash
 git add src/config/index.ts
 printf '%s\n' \
-  'Rewrite classifier prompt for full-frame input; drop dead config' \
+  'feat(classify): full-frame classifier prompt, drop dead config' \
   '' \
   'Prompt now describes magenta-marked full before/after frames and' \
   'strengthens discards (chat widgets, banners, toasts, loading screens,' \
