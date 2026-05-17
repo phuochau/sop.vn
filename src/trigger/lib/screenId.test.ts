@@ -105,22 +105,22 @@ test("clusterFor finds a cluster by letter", () => {
   assert.equal(clusterFor("Z", clusters), null);
 });
 
-test("selectInClusterFrame prefers in-window member, falls back to representative", () => {
+test("selectInClusterFrame prefers the in-window member nearest the action time", async () => {
   const c = fakeCluster("A", [
     { t: 1, localPath: "/m1.jpg", dHash: "aaaa" },
     { t: 5, localPath: "/m2.jpg", dHash: "aaab" },
     { t: 9, localPath: "/m3.jpg", dHash: "aaac" },
   ]);
-  const picked = selectInClusterFrame(c, { start: 4, end: 6 });
+  const picked = await selectInClusterFrame(c, { start: 4, end: 6 }, 5, async () => 1);
   assert.equal(picked.localPath, "/m2.jpg");
 });
 
-test("selectInClusterFrame falls back to representative when no member is in window", () => {
+test("selectInClusterFrame falls back to representative when no member is in window", async () => {
   const c = fakeCluster("A", [
     { t: 1, localPath: "/m1.jpg", dHash: "aaaa" },
     { t: 5, localPath: "/m2.jpg", dHash: "aaab" },
   ]);
-  const picked = selectInClusterFrame(c, { start: 100, end: 200 });
+  const picked = await selectInClusterFrame(c, { start: 100, end: 200 }, 150, async () => 1);
   assert.equal(picked.localPath, c.representative.localPath);
 });
 
@@ -139,4 +139,50 @@ test("frameSharpness scores a blurred frame lower than the sharp original", asyn
   } finally {
     await fs.promises.rm(tmp, { recursive: true, force: true });
   }
+});
+
+test("selectInClusterFrame picks the sharpest frame in the action-time neighborhood", async () => {
+  const c = fakeCluster("A", [
+    { t: 10, localPath: "/n10.jpg", dHash: "aaaa" },
+    { t: 11, localPath: "/n11.jpg", dHash: "aaab" },
+    { t: 12, localPath: "/n12.jpg", dHash: "aaac" },
+  ]);
+  // /n12.jpg is farthest from actionTime 10 but sharpest — it must still win.
+  const sharpness = async (p: string) => (p === "/n12.jpg" ? 9 : 1);
+  const picked = await selectInClusterFrame(c, { start: 0, end: 20 }, 10, sharpness);
+  assert.equal(picked.localPath, "/n12.jpg");
+});
+
+test("selectInClusterFrame returns distinct frames for distinct action times", async () => {
+  const c = fakeCluster("A", [
+    { t: 70, localPath: "/e70.jpg", dHash: "aaaa" },
+    { t: 72, localPath: "/e72.jpg", dHash: "aaab" },
+    { t: 74, localPath: "/e74.jpg", dHash: "aaac" },
+    { t: 76, localPath: "/e76.jpg", dHash: "aaad" },
+  ]);
+  const flat = async () => 1;
+  const early = await selectInClusterFrame(c, { start: 60, end: 90 }, 70, flat);
+  const late = await selectInClusterFrame(c, { start: 60, end: 90 }, 76, flat);
+  assert.notEqual(early.localPath, late.localPath);
+  assert.equal(early.localPath, "/e70.jpg");
+  assert.equal(late.localPath, "/e76.jpg");
+});
+
+test("selectInClusterFrame handles fewer than K frames in the window", async () => {
+  const c = fakeCluster("A", [
+    { t: 3, localPath: "/p3.jpg", dHash: "aaaa" },
+    { t: 4, localPath: "/p4.jpg", dHash: "aaab" },
+  ]);
+  const picked = await selectInClusterFrame(c, { start: 0, end: 10 }, 4, async () => 1);
+  assert.equal(picked.localPath, "/p4.jpg");
+});
+
+test("selectInClusterFrame breaks a sharpness tie by nearest action time", async () => {
+  const c = fakeCluster("A", [
+    { t: 20, localPath: "/q20.jpg", dHash: "aaaa" },
+    { t: 22, localPath: "/q22.jpg", dHash: "aaab" },
+  ]);
+  // Both frames score equally — the tie must resolve to the one nearer 22.
+  const picked = await selectInClusterFrame(c, { start: 0, end: 40 }, 22, async () => 5);
+  assert.equal(picked.localPath, "/q22.jpg");
 });

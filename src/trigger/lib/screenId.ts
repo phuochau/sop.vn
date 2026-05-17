@@ -1,5 +1,6 @@
 import sharp from "sharp";
 import { hammingDistance } from "./perceptualHash";
+import { config } from "@/config";
 
 export type DensePoolFrame = { t: number; localPath: string };
 
@@ -147,18 +148,40 @@ export function clusterFor(letter: string | null, clusters: ScreenCluster[]): Sc
   return clusters.find(c => c.letter === letter) ?? null;
 }
 
-export function selectInClusterFrame(
+export async function selectInClusterFrame(
   cluster: ScreenCluster,
   window: { start: number; end: number },
-): DensePoolFrame {
-  const inWindow = cluster.members.filter(m => m.frame.t >= window.start && m.frame.t <= window.end);
+  actionTime: number,
+  sharpnessFn: (localPath: string) => Promise<number> = frameSharpness,
+): Promise<DensePoolFrame> {
+  const inWindow = cluster.members.filter(
+    m => m.frame.t >= window.start && m.frame.t <= window.end,
+  );
   if (inWindow.length === 0) return cluster.representative;
-  const repMember = cluster.members.find(m => m.frame.localPath === cluster.representative.localPath) ?? cluster.members[0];
-  let best = inWindow[0];
-  let bestDist = hammingDistance(best.dHash, repMember.dHash);
-  for (let i = 1; i < inWindow.length; i++) {
-    const d = hammingDistance(inWindow[i].dHash, repMember.dHash);
-    if (d < bestDist) { best = inWindow[i]; bestDist = d; }
+
+  // Order by closeness to the action time; tie-break on lower t so the
+  // ordering — and therefore the final pick — is fully deterministic.
+  const byActionTime = [...inWindow].sort((a, b) => {
+    const da = Math.abs(a.frame.t - actionTime);
+    const db = Math.abs(b.frame.t - actionTime);
+    return da - db || a.frame.t - b.frame.t;
+  });
+
+  // Among the K frames nearest the action time, pick the sharpest. The
+  // neighborhood is already in deterministic nearest-first order, and the
+  // loop replaces `best` only on a strictly greater score, so a sharpness
+  // tie keeps the earlier (nearer / lower-t) frame.
+  const neighborhood = byActionTime.slice(
+    0, config.screenshots.selectFrame.actionNeighborhood,
+  );
+  let best = neighborhood[0];
+  let bestSharpness = await sharpnessFn(best.frame.localPath);
+  for (let i = 1; i < neighborhood.length; i++) {
+    const s = await sharpnessFn(neighborhood[i].frame.localPath);
+    if (s > bestSharpness) {
+      best = neighborhood[i];
+      bestSharpness = s;
+    }
   }
   return best.frame;
 }
