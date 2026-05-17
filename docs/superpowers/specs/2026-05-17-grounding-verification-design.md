@@ -59,46 +59,94 @@ extension; not built now.
 verifyGroundedPoint({ framePath, point, caption, model, visionFn? }): Promise<boolean>
 ```
 
-1. Render the yellow circle at `point` onto `framePath` (reuse
+1. `mkdtemp` a temp dir (mirrors `runLocateHighlight`'s pattern).
+2. Render the yellow circle at `point` onto `framePath` (reuse
    `buildBufferWithOptionalHighlight` from `uploadScreenshots.ts` with a
-   `{ point }` geom — it already composites `circleSvg` via `sharp`).
-2. Write the rendered buffer to a temp file.
-3. Call `llmJsonVision` with the rendered image, `config.ai.verifyModel`, and a
-   `GroundingCheck` schema → `{ onElement: "yes" | "no" }`.
-4. Return `true` for "yes", `false` for "no".
-5. **Fail-open:** if the verifier call throws (outage, parse failure after
-   retries), return `true` — never lose a highlight because the *critic* failed.
-6. Always clean up the temp file (`finally`).
+   `{ point }` geom — it already composites `circleSvg` via `sharp`) and write
+   the buffer to a file inside the temp dir.
+3. Call `llmJsonVision` with the rendered image, `model`, the `GroundingCheck`
+   schema, `maxRetries: config.ai.maxRetries` (= 1), and the user message
+   defined below.
+4. Return `true` for `onElement: "yes"`, `false` for `"no"`.
+5. **Fail-open:** if the verifier call throws (outage, or parse failure after
+   the 1 retry), return `true` — never lose a highlight because the *critic*
+   failed.
+6. `rm` the temp dir, recursive, in a `finally`.
 
-`framePath` passed in is already the downscaled (≤1280px) copy that
-`runLocateHighlight` produced, so no extra resizing is needed.
+`framePath` passed in is the downscaled (≤1280px) copy `runLocateHighlight`
+created — `pointFallbackHighlight` already receives that path as `args.framePath`
+— so no extra resizing is needed. `verifyGroundedPoint` does NOT depend on
+`runLocateHighlight`'s tmpdir surviving: it reads `framePath` and writes its own
+temp dir; it must run **awaited inside `pointFallbackHighlight`** (which is
+itself awaited by `runLocateHighlight` before that tmpdir is removed), so the
+`framePath` read completes before cleanup.
+
+**Verifier user message** (`llmJsonVision` requires a `userText`; the system
+prompt is the language-only template):
+```
+Target element: "${caption}". A yellow circle has been drawn on the screenshot.
+Is the centre of that circle on the target element? Answer strict JSON.
+```
+
+`caption` source: `pointFallbackHighlight` receives `args.intent`, which
+`highlightActions` sets to `action.description`. For element actions
+`description` equals the canonical `elementCaption` (set by `buildActionsForStep`).
+So `verifyGroundedPoint` is called with `caption: args.intent` — **no new
+plumbing through `HighlightFn` / `HighlighterFn` is needed.**
 
 ### Modified: `pointFallbackHighlight` in `locateHighlight.ts`
 
-The fallback chain becomes a verify-and-retry loop:
+The fallback chain becomes a verify-and-retry loop. Crucially, per grounder it
+records **three** distinct outcomes — `errored` (threw), `point` (a returned
+point, possibly null), and `verified` — because the final no-highlight reason
+still depends on the throw-vs-null distinction:
 
 ```
+results = []                            # one entry per grounder, in order
 for grounder in [uiTars, qwen]:
-    point = ground(grounder)            # null if it throws or finds nothing
-    if point is null: continue
-    if verify(point): return yesDecision(point)   # passed — accept
-    remember point as a fallback candidate
-# no grounder passed verification:
-if any fallback candidate: return yesDecision(first candidate)   # best-effort
-return no-highlight (no_specific_target / grounding_unavailable as today)
+    errored = false; point = null
+    try: point = ground(grounder)       # may return a point or null
+    except: errored = true
+    if point is not null:
+        if verify(point): return yesDecision(point)      # PASSED — accept, stop
+    results.push({ errored, point })     # record for the fallbacks below
+
+# no grounder passed verification — best-effort, then no-highlight:
+firstPoint = first results entry whose point is not null   # UI-TARS preferred (order)
+if firstPoint exists: return yesDecision(firstPoint)        # unverified best-effort
+# nothing was ever grounded:
+allErrored = every results entry has errored == true
+return no-highlight with reason:
+    "grounding_unavailable" if allErrored else "no_specific_target"
 ```
+
+**Full decision table** (UI-TARS row × Qwen column; cell = outcome):
+
+| UI-TARS \ Qwen | threw | found nothing | point fails verify | point passes verify |
+|---|---|---|---|---|
+| **threw** | no-highlight `grounding_unavailable` | no-highlight `no_specific_target` | use Qwen point (best-effort) | use Qwen point |
+| **found nothing** | no-highlight `no_specific_target` | no-highlight `no_specific_target` | use Qwen point (best-effort) | use Qwen point |
+| **point fails verify** | use UI-TARS point (best-effort) | use UI-TARS point (best-effort) | use UI-TARS point (best-effort) | use Qwen point |
+| **point passes verify** | use UI-TARS point | use UI-TARS point | use UI-TARS point | use UI-TARS point |
+
+Reading the table: a verified point always wins; UI-TARS is verified first, so
+a passing UI-TARS point short-circuits before Qwen is called at all. When no
+point verifies, the earliest grounder that *returned* a point wins (UI-TARS
+preferred). No-highlight only when neither grounder returned any point, and the
+reason is `grounding_unavailable` iff *both* threw.
 
 Behaviour notes:
 - **Common case (~96%)** — UI-TARS grounds, verification passes: one UI-TARS
   call + one verify call. No Qwen call.
 - **Miss case (~4%)** — UI-TARS point fails verification: one Qwen call + a
-  second verify call. If Qwen passes, its point is used; if neither passes, the
-  UI-TARS point is kept as best-effort (no regression vs today — today that
-  point would have been used unconditionally).
-- The `no-highlight` reasons (`grounding_unavailable` when both grounders threw,
-  `no_specific_target` when both found nothing) are unchanged.
+  second verify call. If Qwen passes, its point is used; else the UI-TARS point
+  is kept as best-effort — **no regression vs today**, where that point would
+  have been used unconditionally.
+- A point is verified **at most once** — each grounder yields one point,
+  verified immediately; the loop never re-verifies.
 - The verifier is **injectable** (a `verify` dependency alongside the existing
-  `GroundDeps`) so tests run without network.
+  `GroundDeps`) so tests run without network. `verify` has the signature of a
+  bound `verifyGroundedPoint` — `(point, framePath, caption) => Promise<boolean>`.
 
 ### New schema: `GroundingCheck` in `src/lib/schemas.ts`
 
@@ -114,34 +162,43 @@ Expressible with the `zodToJsonSchemaLike` subset (`ZodObject` + `ZodEnum`).
 
 `src/config/index.ts`:
 - `ai.verifyModel: "google/gemini-2.5-flash"` — the cheap critic VLM.
-- `ai.prompts.verifyHighlightSystem(lang)` — instructs the model: a yellow
-  circle has been drawn on the screenshot; answer whether its centre is on the
-  named UI element; output strict JSON `{ "onElement": "yes" | "no" }`.
+- `ai.prompts.verifyHighlightSystem(lang)` — a `(lang) => string` function
+  matching the existing prompt shape. Content: the model is shown a screenshot
+  with a yellow circle drawn on it; it must judge whether the circle's centre
+  lands on the named UI element; output strict JSON `{ "onElement": "yes" |
+  "no" }`. (`lang` is accepted for signature consistency with sibling prompts;
+  the task is language-agnostic, so the body need not vary by language.)
 
 ## Cost & latency
 
-- Verifier ≈ one `gemini-2.5-flash` vision call per element screenshot (~72/run):
+- Verifier ≈ one `gemini-2.5-flash` vision call per **element** screenshot
+  (~72/run — the baseline run had 84 screenshots total, of which ~12 are `view`
+  actions that have no highlight and are skipped):
   ~1,300-token image + tiny output ≈ **$0.0004–0.0006/call** → **~$0.03–0.04/run**.
 - Retries (the ~4–15% that fail): an extra Qwen ground (~$0.00013) + a second
   verify (~$0.0005) each → **+~$0.005** total.
 - **Total verification cost ≈ +$0.035–0.05/run** ($0.22 → ~$0.26).
-- The verify calls run inside `highlightActions`, which the pipeline already
-  wraps in `withStage("highlight")`, and `llmJsonVision` records OpenRouter
-  usage — so verification cost auto-attributes to the `highlight` stage in
-  `aiCost.byStage`. No new stage wrapper needed.
+- The verify call runs inside `verifyGroundedPoint` → inside
+  `pointFallbackHighlight` → inside `runLocateHighlight` → inside
+  `highlightActions`, which the pipeline wraps in `withStage("highlight")`.
+  `withStage` uses `AsyncLocalStorage`; the verify call is awaited within that
+  async chain, so `llmJsonVision`'s `recordOpenRouterUsage` → `recordCost`
+  reads the active `"highlight"` stage. Verification cost auto-attributes to
+  the `highlight` stage in `aiCost.byStage` — no new stage wrapper needed.
 - Latency: ~72 extra sequential vision calls add roughly 2–4 min wall-clock.
   Acceptable for this POC; parallelising the highlight stage is a separate,
   optional optimisation and is **not** in scope here.
 
 ## Error handling
 
-- **Verifier throws / unparseable** → `verifyGroundedPoint` returns `true`
-  (fail-open) — degrade to today's no-verification behaviour, never drop a
-  highlight because the critic failed.
-- **Grounder throws** → unchanged: that grounder contributes no candidate; the
-  loop moves on.
-- **Both grounders fail to produce a point** → unchanged no-highlight decision.
-- **Temp file** always removed in a `finally`.
+- **Verifier throws / unparseable** (after `maxRetries: 1`) → `verifyGroundedPoint`
+  returns `true` (fail-open) — degrade to today's no-verification behaviour,
+  never drop a highlight because the critic failed.
+- **Grounder throws** → recorded as `errored` for that grounder; the loop moves
+  on (see the decision table).
+- **Both grounders fail to produce a point** → unchanged no-highlight decision,
+  with `grounding_unavailable` iff both threw, else `no_specific_target`.
+- **Temp dir** always removed (recursive) in a `finally`.
 
 ## Risks
 
@@ -154,11 +211,14 @@ Expressible with the `zodToJsonSchemaLike` subset (`ZodObject` + `ZodEnum`).
 
 ## Testing
 
-- `verifyHighlight.test.ts` — injected fake `visionFn`:
+- `verifyHighlight.test.ts` — injected fake `visionFn`, real (small) fixture
+  image on disk so the `sharp` composite runs:
   - verifier returns `{onElement:"yes"}` → `verifyGroundedPoint` returns `true`;
   - returns `{onElement:"no"}` → returns `false`;
   - `visionFn` throws → returns `true` (fail-open);
-  - temp file is cleaned up (assert the temp dir is gone after the call).
+  - the temp dir created by the call no longer exists afterwards (capture the
+    path the implementation uses, or assert no stray `highlight-verify-*` dirs
+    remain in `os.tmpdir()`).
 - `locateHighlight.test.ts` — extend with injected `verify`:
   - UI-TARS point passes verification → used, Qwen never called;
   - UI-TARS point fails, Qwen point passes → Qwen point used;
