@@ -129,7 +129,9 @@ Return strict JSON only.`,
   retention: { videoRetentionDays: 30 },
   app: { shareTokenLength: 16, pollIntervalMs: 2000 },
   screenshots: {
-    sampleFps: 2,
+    sampleFps: 4,   // dense frames feed the classifier window + click-event timing;
+                    // 4fps is needed to capture sub-1.5s onboarding-wizard screens
+
     motionHammingThreshold: 8,    // <=8/64 between consecutive frames ⇒ stable
     dedupHammingThreshold: 5,     // <=5/64 within window ⇒ duplicate
     dedupWindowSeconds: 10,
@@ -158,7 +160,7 @@ Return strict JSON only.`,
       maxWindowFrames: 9,
       windowPreSec: 1.5,
       windowPostSec: 0.5,        // input/select: small reach past the typed-result frame
-      windowPostClickSec: 1.0,   // click/link: source-biased — cap reach past the click
+      windowPostClickSec: 0.5,   // click/link: source-biased — cap reach past the click
       windowMaxSpanSec: 6.0,
       dedupWindowSec: 4.0,
     },
