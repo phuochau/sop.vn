@@ -47,16 +47,19 @@ test("runVisualExtract parses valid response", async () => {
   await cleanup();
 });
 
-test("runVisualExtract rejects when endTime exceeds duration", async () => {
+test("runVisualExtract clamps endTime exceeding duration to durationSec", async () => {
+  // The vision LLM routinely rounds endTime slightly past the true duration;
+  // visualExtract clamps it rather than rejecting the whole extraction.
   const { paths, cleanup } = await tmpJpegs(2);
   await withStubbedFetch(
     { title: "x", steps: [{ title: "s", description: "d", startTime: 0, endTime: 999 }] },
     async () => {
       const { runVisualExtract } = await import("./visualExtract");
-      await assert.rejects(() => runVisualExtract({
+      const out = await runVisualExtract({
         framePaths: paths, frameTimestamps: [1, 2], durationSec: 5,
         category: "Other", domainSummary: "Test domain summary", language: "vi",
-      }));
+      });
+      assert.equal(out.steps[0].endTime, 5);
     }
   );
   await cleanup();
@@ -141,7 +144,9 @@ test("runVisualExtract user prompt includes language, durationSec, and per-frame
   }
 });
 
-test("runVisualExtract retries on assertion failure (out-of-range timestamp)", async () => {
+test("runVisualExtract retries on assertion failure (negative startTime)", async () => {
+  // A negative startTime is a hard violation (unlike an over-range endTime,
+  // which is clamped) — it throws on every attempt, so all retries run.
   const { paths, cleanup } = await tmpJpegs(2);
   let calls = 0;
   const original = global.fetch;
@@ -152,7 +157,7 @@ test("runVisualExtract retries on assertion failure (out-of-range timestamp)", a
       json: async () => ({
         choices: [{ message: { content: JSON.stringify({
           title: "x",
-          steps: [{ title: "s", description: "d", startTime: 0, endTime: 999 }],
+          steps: [{ title: "s", description: "d", startTime: -1, endTime: 3 }],
         }) } }],
       }),
       text: async () => "",
