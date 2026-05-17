@@ -16,7 +16,7 @@ import { runUploadScreenshots } from "./stages/uploadScreenshots";
 import { buildScreenClusters, clusterFor, selectInClusterFrame } from "@/trigger/lib/screenId";
 import { assembleStepNarration, silentStepFallback, hasLocalizedViewCaption } from "@/trigger/lib/narration";
 import { runPlanStep } from "./stages/planStep";
-import { runPickFrame, computeSearchWindow } from "./stages/pickFrame";
+import { runPickFrame, computeSearchWindow, computeActionTime } from "./stages/pickFrame";
 import { runVerifyFrame } from "./stages/verifyFrame";
 import { runLocateHighlight } from "./stages/locateHighlight";
 import { buildAction } from "./stages/buildAction";
@@ -241,8 +241,11 @@ export const processSopScreenshots = task({
               if (!pickedCluster) continue;
 
               const window = computeSearchWindow(subStep, step.narration, step);
-              const pickedFrame = selectInClusterFrame(pickedCluster, window);
-              const runnerFrame = runnerCluster ? selectInClusterFrame(runnerCluster, window) : null;
+              const actionTime = computeActionTime(subStep, step.narration, step);
+              const pickedFrame = await selectInClusterFrame(pickedCluster, window, actionTime);
+              const runnerFrame = runnerCluster
+                ? await selectInClusterFrame(runnerCluster, window, actionTime)
+                : null;
 
               const { verify, finalFramePath } = await runVerifyFrame({
                 intent: subStep.intent,
