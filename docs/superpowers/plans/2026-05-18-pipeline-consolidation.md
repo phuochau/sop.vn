@@ -1037,10 +1037,9 @@ Remove the per-step `clipUrl` and `posterUrl` fields (the two lines building
 
 - Remove `clipUrl` and `posterUrl` from the `Step` type.
 - Remove the `posterUrl` `<img>` renders and the `<ClientVideo clipUrl=… posterUrl=…>`
-  usage; render the screenshots view, mirroring `sop/[id]/page.tsx`.
-- Remove any now-unused `ClientVideo` import. If `ClientVideo` is a component
-  used only here, delete its file too (verify with
-  `grep -rn "ClientVideo" src/`).
+  usage (line ~231); render the screenshots view, mirroring `sop/[id]/page.tsx`.
+- Remove the local `ClientVideo` function definition (line ~237) — it is a
+  function declared in this same file, not an imported component.
 
 - [ ] **Step 8: Adapt `src/components/UploadZone.tsx`**
 
@@ -1052,11 +1051,35 @@ Remove the per-step `clipUrl` and `posterUrl` fields (the two lines building
 - [ ] **Step 9: Adapt `src/app/processing/[id]/page.tsx`**
 
 - Remove `"clipping"` from the local `Status` union.
-- Remove the `clipping: 4` entry from `STATUS_STEP_INDEX`.
-- Remove the `clipping_failed:` entry from the `ERROR_MSG` map.
-- Add a `not_an_app:` entry to `ERROR_MSG`, e.g.
+- Remove the `clipping_failed:` entry from the `ERROR_MSG` map. Add a
+  `not_an_app:` entry, e.g.
   `not_an_app: "Video không phải bản ghi ứng dụng. Vui lòng tải video quay màn hình một ứng dụng web, di động hoặc máy tính."`
   (`analysis_failed` may reuse the generic `unknown` fallback.)
+- **Fix the progress ordering.** Stage 0 (`analyzing`) now runs *first*, before
+  `transcribing` — but the current `STATUS_STEP_INDEX` maps `analyzing` to 2 and
+  `transcribing` to 0, so the progress bar would jump backward. Replace `STEPS`
+  and `STATUS_STEP_INDEX` with a monotonic mapping that matches the new stage
+  order (the Vietnamese labels are reasonable defaults — the user may refine the
+  copy):
+
+```typescript
+const STEPS = [
+  "Kiểm tra video",
+  "Chuyển giọng nói thành văn bản",
+  "Chuẩn hóa nội dung",
+  "Phân tích các bước",
+  "Tạo ảnh chụp màn hình",
+];
+
+const STATUS_STEP_INDEX: Record<Status, number> = {
+  uploading: 0, ingesting: 0, analyzing: 0,
+  transcribing: 1,
+  normalizing: 2,
+  generating: 3,
+  "building-pool": 4, "assigning": 4, "uploading-screenshots": 4,
+  done: 5, failed: 0,
+};
+```
 
 - [ ] **Step 10: Typecheck**
 
