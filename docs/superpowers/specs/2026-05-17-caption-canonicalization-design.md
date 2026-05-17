@@ -69,16 +69,33 @@ classifyAndRemap → canonicalizeActions → buildActionsForStep → collapseDup
 ### Stage A — `canonicalizeActions` (new stage)
 
 A text-only LLM pass over one step's surviving classified records. No images, so
-it is cheap (~$0.001–0.002 per step via `llmJson`).
+it is cheap (rough estimate ~$0.001–0.002 per step for a text-only Flash-class
+call — to be confirmed against the e2e cost re-run, not relied on as fact).
 
-**Input:** the step's `ClassifiedActionRecord[]` and the output `language`.
-**Output:** the same records with `screenName` and `elementCaption` rewritten to
-canonical form.
+**Input:** the step's full `ClassifiedActionRecord[]` and the output `language`.
+**Output:** an array of the **same length, in the same order, with the same
+`index` values** — discard records and incomplete-action records pass through
+byte-for-byte; only `decision === "action"` records with non-null `screenName` /
+`elementCaption` may have those two fields rewritten. This identity contract is
+load-bearing: `buildActionsForStep` consumes the array and indexes
+`args.eventTimes[c.index]` by each record's `index`, and logs discard reasons —
+so canonicalizeActions must NOT drop, reorder, or filter records.
 
-The LLM receives a JSON array of `{ index, screenName, elementCaption, verb }`
-for every record whose `decision === "action"` and whose `screenName` /
-`elementCaption` are non-null. It returns `{ index, screenName, elementCaption }`
-for each, applying these rules (encoded in the system prompt):
+If the input array contains zero canonicalizable (action, non-null-caption)
+records, `canonicalizeActions` short-circuits and returns the input unchanged
+without making an LLM call.
+
+(`buildActionsForStep` later also drops action records with a null `verb` or
+`displayFramePath` — so canonicalize's "canonicalizable" set is a superset of
+`buildActionsForStep`'s "surviving" set. Canonicalizing a record that is later
+dropped is harmless wasted effort, not a bug.)
+
+The LLM receives, in the user message, a JSON array of
+`{ index, screenName, elementCaption, verb }` for every record whose
+`decision === "action"` and whose `screenName` / `elementCaption` are non-null
+(`verb` is provided as context only — it is NOT part of the output schema). It
+returns `{ index, screenName, elementCaption }` for each, applying these rules
+(encoded in the system prompt):
 
 - Translate every `screenName` and `elementCaption` to `language`. Keep brand /
   product / technical terms (e.g. "HubSpot", "CRM", "CSV") in their original
@@ -90,11 +107,34 @@ for each, applying these rules (encoded in the system prompt):
   name, not a sentence).
 
 `canonicalizeActions` maps the LLM output back onto the records by `index`.
-Records the LLM omits, or that fail validation, keep their original values
-(fail-safe — never lose a record). Discarded records pass through untouched.
+Records the LLM omits, returns with an unknown `index`, or that fail validation,
+keep their original values (fail-safe — never lose a record). Discarded records
+pass through untouched.
 
-The pipeline wraps the call in `withStage("canonicalize")` so its cost lands in
-the per-run `aiCost` breakdown.
+**Call site.** `canonicalizeActions` is invoked **inside the per-step loop** in
+`processSopScreenshots.ts`, immediately after the `withStage("classify")` call
+that produces `classified` and before `buildActionsForStep`. The call itself is
+wrapped in `withStage("canonicalize")` (mirroring how `classify` and `highlight`
+are each wrapped inside that loop) so its cost lands in the per-run `aiCost`
+breakdown. The canonicalized array it returns replaces `classified` as the
+`classified:` argument passed to `buildActionsForStep`.
+
+**New Zod schema.** Stage A calls `llmJson`, which requires a `schema` /
+`schemaName`. Add a `CanonicalizationOutput` schema to `src/lib/schemas.ts`:
+an object with one array field, each element exactly
+`{ index: number, screenName: string, elementCaption: string }` — **`verb` is
+NOT in the output schema** (it is input-only context). This is expressible with
+the subset `zodToJsonSchemaLike` supports (`ZodObject` / `ZodArray` /
+`ZodString` / `ZodNumber`) — no extension to that converter is needed. While
+adding it, update the now-stale `zodToJsonSchemaLike` doc comment in
+`src/lib/openrouter.ts` ("sufficient for our 3 schemas") to reflect the real
+count.
+
+**`llmJson` call parameters.** `llmJson` has no default for `maxRetries` — it
+must be passed. Use `maxRetries: config.ai.maxRetries` (`1`), matching the rest
+of the pipeline. For the model, add a `canonicalizeModel:
+"google/gemini-2.5-flash"` key to `config.ai` (same Flash model the
+`normalize` / `context` text stages already use) and pass it as `model`.
 
 ### Stage B — step-wide dedup in `buildActionsForStep` (modified)
 
@@ -110,12 +150,25 @@ key collapse into one action**, regardless of time gap — drop the
 - The earliest record (by event time) anchors; later ones collapse into it.
 - `input`-verb precedence within a cluster is preserved (existing behaviour).
 - The `dedupWindowSec` config key becomes unused — remove it from
-  `src/config/index.ts` and the `classify` config object.
+  `src/config/index.ts` and the `classify` config object. **Do not touch the
+  similarly-named `dedupWindowSeconds` and `dedupHammingThreshold` keys** — those
+  belong to the frame-pool filter, are unrelated, and must stay.
 
-`collapseDuplicateActions` still runs afterward unchanged — it catches CV
-multi-fires whose canonical captions legitimately differ but whose frames are
+Note: `normalizeElementId` (which lowercases, strips punctuation, and drops a
+trailing `SUFFIX_SET` word such as "button"/"link") still runs on the canonical
+captions. This is intentional and additive — it absorbs minor residual variance
+if the LLM is inconsistent about appending a suffix word. Keying on the
+normalized form of canonical text is strictly more robust than today; no change
+to `normalizeElementId` itself.
+
+`collapseDuplicateActions` still runs afterward — it catches CV multi-fires
+whose canonical captions legitimately differ but whose frames are
 near-identical. The two are complementary: Stage B is text-keyed, collapse is
-frame-keyed.
+frame-keyed. Its logic is unchanged, but its doc comment (which currently states
+that one-candidate-per-call classification makes captions vary so text-keyed
+dedup "cannot catch them") must be updated — after Stage A that premise is
+weaker; the stage now exists for true CV multi-fires whose display frames differ
+slightly from the anchor.
 
 ### Action / Screenshot threading
 
@@ -124,10 +177,19 @@ Thread `screenName` and `elementCaption` through to the persisted doc so the
 schema (and Phase 2 / the UI can use them):
 
 - Add `screenName: string` and `elementCaption: string` to the `Action` type.
-  For `view` actions (no element), set `screenName` to the screen's functional
-  name if available else `""`, and `elementCaption` to `""`.
-- `buildActionsForStep` populates both on every `Action` it emits (it already
-  has the values on its input records).
+- For **element actions**, `buildActionsForStep` carries the cluster anchor's
+  canonical `screenName` / `elementCaption` through. This is multi-site threading
+  inside `buildActionsForStep` — all of the following must be updated together:
+  - the `ElementGroup` type (add `screenName`, `elementCaption`);
+  - the `Pending` type (add `screenName`, `elementCaption`);
+  - the `flush()` body that builds `ElementGroup` from the cluster anchor;
+  - the `elementGroups.map(...)` and `viewGroups.map(...)` spreads that build
+    `Pending`;
+  - the final `pending.map(...)` that builds `Action`.
+- For **view actions** there is no element and no source of a screen name — a
+  `ScreenCluster` carries only `timeSpan` and `representative.localPath`.
+  Therefore view actions get `screenName: ""` and `elementCaption: ""`. (Their
+  user-facing `description` remains the fixed view-caption, unchanged.)
 - `collapseDuplicateActions` carries both through unchanged (`{ ...a, order }`
   already preserves them).
 - `uploadScreenshots` writes `screenName` and `elementCaption` onto the
@@ -163,9 +225,13 @@ actions. No UI change required; this only fills the previously-empty fields.
 - `canonicalizeActions.test.ts` — unit tests with an injected fake LLM:
   - synonyms / mixed-language captions → identical canonical strings;
   - distinct elements → kept distinct;
-  - LLM omits an index → that record keeps original values;
+  - LLM omits an index, or returns an unknown index → handled, record keeps
+    original values;
   - LLM throws → returns input unchanged;
-  - discarded (`decision: "discard"`) records pass through untouched.
+  - discarded (`decision: "discard"`) records pass through untouched and the
+    returned array has the same length / order / `index` values as the input;
+  - empty or all-discard input → returns input unchanged with NO LLM call (the
+    injected fake LLM is asserted not to have been invoked).
 - `buildActionsForStep.test.ts` — extend / add:
   - two same-`(screen, element)` records 30s apart → one action;
   - same element name on two different `screenName`s → two actions;
