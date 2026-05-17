@@ -68,9 +68,15 @@ Draws an outlined rectangle at `bbox` (normalized 0..1) onto the full frame at
 confused with the yellow-circle highlight. Implementation: `sharp` composite of
 an SVG sized to the frame's pixel dimensions, with a stroked `<rect>` (no fill)
 at `bbox × {W,H}`. The stroke is a few pixels wide so it is visible on a
-1280px-wide frame.
+1280px-wide frame. The SVG is composited without `.rotate()` so marker and
+base frame share one coordinate space. When `bbox` touches a frame edge the
+outward half of the stroke is clipped — that is acceptable; do not inset or
+specially handle it.
 
 ### 2. `classifyStepWithLLM.ts` rework
+
+(File path: `src/trigger/stages/classifyStepWithLLM.ts`; its test is
+`src/trigger/stages/classifyStepWithLLM.test.ts`.)
 
 `classifyAndRemap`:
 - **Remove the crop.** Delete the `computeCropWindow` + `sharp().extract(...)`
@@ -91,9 +97,15 @@ at `bbox × {W,H}`. The stroke is a few pixels wide so it is visible on a
 `afterCropPath` with `beforeMarkedPath` / `afterMarkedPath`. `index`, `time`,
 `kindHint`, `screenCluster` stay.
 
-`defaultClassifier`: drop the `diffBboxInCrop=(…)` text line (the marker is now
-visual); send `beforeMarkedPath` / `afterMarkedPath` as the per-candidate
-images. The montage-first / candidates-after ordering is unchanged.
+`classifyAndRemap` also has an unused `perStepConcurrency?: number` arg (no
+caller passes it) — drop it while reworking the function.
+
+`defaultClassifier`: in the per-candidate user-text line, drop the
+`diffBboxInCrop=(…)` fragment (it is concatenated onto the same
+`- index=… time=… kindHint=… screenCluster=…` line — remove only that
+fragment, keep the rest of the line); the marker is now visual. Send
+`beforeMarkedPath` / `afterMarkedPath` as the per-candidate images. The
+montage-first / candidates-after ordering is unchanged.
 
 `chunkCandidatesBySort` is unchanged (it sorts on `screenCluster` / `time`
 only).
@@ -129,7 +141,10 @@ The `screenshots.ground` block (`cropMultiplier`, `cropMinPx`, `cropMaxFrac`,
 by the crop/bbox code being removed (verified: `grep` for `screenshots.ground`
 shows only the four crop/bbox call sites in `classifyStepWithLLM.ts`, and
 `ground.perStepConcurrency` has no reader at all). Delete the whole `ground`
-block. The `screenshots.classify` block stays (`maxCandidatesPerCall` is live).
+block. The `screenshots.classify` block stays — `maxCandidatesPerCall` is live
+(`classifyStepWithLLM.ts:162`) — but its sibling key `classify.perStepConcurrency`
+is also dead (no reader anywhere in `src`) and should be removed too, leaving
+`classify` as a single-key block.
 
 ### 6. Delete `cropEvent.ts`
 
@@ -157,15 +172,20 @@ ClickEvent (has e.bbox, e.beforeFramePath, e.afterFramePath)
   `src/trigger/stages/__fixtures__/sample-1080p.jpg` with a known bbox; assert
   the output file is a valid JPEG with the same pixel dimensions as the input
   (the marker must not resize the frame).
-- **`classifyStepWithLLM.test.ts`** — update the `CandidateForLLM` fixtures to
-  the new shape (`beforeMarkedPath` / `afterMarkedPath`, no `diffBboxInCrop` /
-  crop paths). The `chunkCandidatesBySort` tests are unaffected. The
-  injected-classifier test keeps its structure; only the candidate object shape
-  changes.
-- **`buildActionsForStep.test.ts`** — its `ClassifiedActionRecord` factory
-  currently sets `bbox` and `fullFrameBbox`; remove both fields (they no longer
-  exist on the type). `buildActionsForStep.ts` itself is unchanged — it already
-  never read `fullFrameBbox`.
+- **`classifyStepWithLLM.test.ts`** — two edits, both required for the
+  typecheck to pass:
+  1. the **input** `CandidateForLLM` fixtures move to the new shape
+     (`beforeMarkedPath` / `afterMarkedPath`, no `diffBboxInCrop` / crop paths);
+  2. the **output** objects the injected classifier returns currently carry a
+     `bbox` field — remove `bbox` from every returned candidate object, since
+     `ClassifiedCandidate` no longer has it.
+  The `chunkCandidatesBySort` tests are unaffected.
+- **`buildActionsForStep.test.ts`** — remove `bbox` and `fullFrameBbox` from
+  **both** the `ClassifiedActionRecord` factory **and** every inline `over`
+  partial that sets them (e.g. the discard-test partials pass `bbox: null` /
+  `fullFrameBbox: null` directly). Both fields are gone from the type, so any
+  literal that still names them fails the typecheck. `buildActionsForStep.ts`
+  itself is unchanged — it already never read `fullFrameBbox`.
 - **Typecheck** — `npx tsc --noEmit -p tsconfig.json` clean after the change.
 - Tests run with `node:test` via `npx tsx --test <file>`.
 
