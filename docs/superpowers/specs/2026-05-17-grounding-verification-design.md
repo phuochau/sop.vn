@@ -59,14 +59,19 @@ extension; not built now.
 verifyGroundedPoint({ framePath, point, caption, model, visionFn? }): Promise<boolean>
 ```
 
-1. `mkdtemp` a temp dir (mirrors `runLocateHighlight`'s pattern).
-2. Render the yellow circle at `point` onto `framePath` (reuse
-   `buildBufferWithOptionalHighlight` from `uploadScreenshots.ts` with a
-   `{ point }` geom — it already composites `circleSvg` via `sharp`) and write
-   the buffer to a file inside the temp dir.
-3. Call `llmJsonVision` with the rendered image, `model`, the `GroundingCheck`
-   schema, `maxRetries: config.ai.maxRetries` (= 1), and the user message
-   defined below.
+1. `mkdtemp` a temp dir (prefix `highlight-verify-`, mirrors
+   `runLocateHighlight`'s pattern).
+2. Render the yellow circle at `point` onto `framePath` via
+   `buildBufferWithOptionalHighlight(framePath, { point })` (from
+   `uploadScreenshots.ts` — it already composites `circleSvg` via `sharp`). It
+   returns `{ buf, error }`. **If `error !== null`** (e.g. missing image
+   metadata) `buf` is the *un-annotated* original — no circle was drawn — so
+   skip the verifier call and return `true` (fail-open: never ask the critic to
+   judge a circle-less image). Otherwise write `buf` to a file in the temp dir.
+3. Call `llmJsonVision` with: the rendered image path, `model`, `schema:
+   GroundingCheck`, `schemaName: "grounding_check"`, `maxRetries:
+   config.ai.maxRetries` (= 1), `system: config.ai.prompts.verifyHighlightSystem`
+   (a plain string — see config below), and the `userText` defined below.
 4. Return `true` for `onElement: "yes"`, `false` for `"no"`.
 5. **Fail-open:** if the verifier call throws (outage, or parse failure after
    the 1 retry), return `true` — never lose a highlight because the *critic*
@@ -89,10 +94,13 @@ Is the centre of that circle on the target element? Answer strict JSON.
 ```
 
 `caption` source: `pointFallbackHighlight` receives `args.intent`, which
-`highlightActions` sets to `action.description`. For element actions
-`description` equals the canonical `elementCaption` (set by `buildActionsForStep`).
-So `verifyGroundedPoint` is called with `caption: args.intent` — **no new
-plumbing through `HighlightFn` / `HighlighterFn` is needed.**
+`highlightActions` sets to `action.description`. For element actions (the only
+ones that reach the verifier — `highlightActions` skips `view`),
+`buildActionsForStep` sets `description` by copying the anchor record's
+`elementCaption` (already canonicalised upstream by `canonicalizeActions`), so
+`description` *is* the element caption. `verifyGroundedPoint` is therefore
+called with `caption: args.intent` — **no new plumbing through `HighlightFn` /
+`HighlighterFn` is needed.**
 
 ### Modified: `pointFallbackHighlight` in `locateHighlight.ts`
 
@@ -144,9 +152,27 @@ Behaviour notes:
   have been used unconditionally.
 - A point is verified **at most once** — each grounder yields one point,
   verified immediately; the loop never re-verifies.
-- The verifier is **injectable** (a `verify` dependency alongside the existing
-  `GroundDeps`) so tests run without network. `verify` has the signature of a
-  bound `verifyGroundedPoint` — `(point, framePath, caption) => Promise<boolean>`.
+
+**The `verify` dependency.** `GroundDeps` (today `{ uiTars, qwen }`) gains a
+**third field** `verify`, of type:
+
+```
+verify: (point: Point, framePath: string, caption: string) => Promise<boolean>
+```
+
+This is a **positional-arg adapter** — NOT `verifyGroundedPoint` itself
+(`verifyGroundedPoint` takes a single object arg and also needs `model`). The
+**default** `verify` is a closure that supplies `model` and adapts the shape:
+
+```
+verify: (point, framePath, caption) =>
+  verifyGroundedPoint({ point, framePath, caption, model: config.ai.verifyModel })
+```
+
+`defaultGroundDeps` is extended with this closure. Tests inject a fake
+`verify: (point, framePath, caption) => Promise<boolean>` directly — no network,
+no `model`/`visionFn` needed at the call site. `pointFallbackHighlight` calls
+`deps.verify(point, args.framePath, args.intent)`.
 
 ### New schema: `GroundingCheck` in `src/lib/schemas.ts`
 
@@ -162,12 +188,14 @@ Expressible with the `zodToJsonSchemaLike` subset (`ZodObject` + `ZodEnum`).
 
 `src/config/index.ts`:
 - `ai.verifyModel: "google/gemini-2.5-flash"` — the cheap critic VLM.
-- `ai.prompts.verifyHighlightSystem(lang)` — a `(lang) => string` function
-  matching the existing prompt shape. Content: the model is shown a screenshot
-  with a yellow circle drawn on it; it must judge whether the circle's centre
-  lands on the named UI element; output strict JSON `{ "onElement": "yes" |
-  "no" }`. (`lang` is accepted for signature consistency with sibling prompts;
-  the task is language-agnostic, so the body need not vary by language.)
+- `ai.prompts.verifyHighlightSystem` — a **plain string constant** (not a
+  `(lang) => string` function — the verifier task is language-agnostic: it
+  judges circle placement and emits `yes`/`no`, so there is no `lang` to
+  thread, and `verifyGroundedPoint` has no language input). Content: the model
+  is shown a screenshot with a yellow circle drawn on it; it must judge whether
+  the circle's centre lands on the named UI element; output strict JSON
+  `{ "onElement": "yes" | "no" }`. Deviating from the sibling prompts'
+  `(lang) => string` shape is intentional and correct here.
 
 ## Cost & latency
 
