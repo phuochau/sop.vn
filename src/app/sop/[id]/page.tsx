@@ -1,11 +1,8 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { Calendar, Clock3, List, Pencil, Info, Plus, ThumbsUp, ThumbsDown } from "lucide-react";
-import { StepCard } from "@/components/StepCard";
 import { StepCardScreenshots, type ScreenshotItem } from "@/components/StepCardScreenshots";
-import { HeroVideo } from "@/components/HeroVideo";
 import { ShareButton } from "@/components/ShareButton";
-import { ExportPdfButton } from "@/components/ExportPdfButton";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
 import { headers } from "next/headers";
@@ -16,8 +13,6 @@ type Step = {
   description: string;
   startTime?: number;
   endTime?: number;
-  clipUrl: string;
-  posterUrl: string;
   screenshots: ScreenshotItem[];
   screenshotsError?: string;
 };
@@ -27,8 +22,6 @@ type Sop = {
   category: string;
   createdAt: string;
   shareToken: string;
-  mode: "clips" | "screenshots";
-  pdf: { status: string; url: string | null };
   steps: Step[];
 };
 
@@ -96,9 +89,6 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
           <div className="flex flex-wrap items-center gap-2 pt-2">
             <ShareButton token={sop.shareToken} variant="outline" />
             <ShareButton token={sop.shareToken} variant="primary" />
-            {sop.mode !== "screenshots" && (
-              <ExportPdfButton sopId={sop.id} initial={sop.pdf} />
-            )}
             <button className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-4 py-2.5 text-[13px] font-medium text-[#0A0A0A] hover:bg-gray-50 transition">
               <Pencil className="w-3.5 h-3.5" strokeWidth={2} />
               Chỉnh sửa
@@ -119,15 +109,6 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
         <div className="max-w-6xl mx-auto grid md:grid-cols-[1fr_280px] gap-8">
           {/* Main column */}
           <div className="min-w-0 space-y-5">
-            {/* Privacy note */}
-            {sop.mode !== "screenshots" && sop.steps.length > 0 && (
-              <HeroVideo
-                sopId={sop.id}
-                posterUrl={sop.steps[0].posterUrl}
-                totalSeconds={duration}
-              />
-            )}
-
             <div className="flex items-center gap-2.5 rounded-xl bg-[#F3F4F6] px-4 py-3">
               <Info className="w-3.5 h-3.5 text-[#666666] shrink-0" strokeWidth={2} />
               <p className="text-[12px] text-[#666666]">
@@ -135,18 +116,16 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
               </p>
             </div>
 
-            {sop.mode === "screenshots"
-              ? sop.steps.map((s) => (
-                  <StepCardScreenshots
-                    key={s.index}
-                    index={s.index}
-                    title={s.title}
-                    description={s.description}
-                    screenshots={s.screenshots}
-                    screenshotsError={s.screenshotsError}
-                  />
-                ))
-              : sop.steps.map((s) => <StepCard key={s.index} {...s} />)}
+            {sop.steps.map((s) => (
+              <StepCardScreenshots
+                key={s.index}
+                index={s.index}
+                title={s.title}
+                description={s.description}
+                screenshots={s.screenshots}
+                screenshotsError={s.screenshotsError}
+              />
+            ))}
 
             {/* Feedback card */}
             <div className="rounded-[20px] border border-gray-200 bg-white px-6 py-6 flex flex-col md:flex-row items-center justify-between gap-4">

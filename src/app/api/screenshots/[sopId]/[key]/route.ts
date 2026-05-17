@@ -17,10 +17,9 @@ export async function GET(
 
   const doc = await (await sops()).findOne(
     { _id: new ObjectId(sopId), status: "done" },
-    { projection: { mode: 1, steps: 1 } },
+    { projection: { steps: 1 } },
   );
   if (!doc) return NextResponse.json({ error: "not_found" }, { status: 404 });
-  if (doc.mode !== "screenshots") return NextResponse.json({ error: "not_found" }, { status: 404 });
 
   let r2Key: string | null = null;
   for (const step of doc.steps) {

@@ -11,6 +11,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     _id: new ObjectId(), type: "share_view", sopId: doc._id, createdAt: new Date(),
   });
 
+  const sopId = doc._id.toHexString();
+
   return NextResponse.json({
     title: doc.title,
     category: doc.category,
@@ -21,8 +23,15 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
       description: s.description,
       startTime: s.startTime,
       endTime: s.endTime,
-      clipUrl: `/api/clips/${doc._id.toHexString()}/step-${i}.mp4`,
-      posterUrl: `/api/clips/${doc._id.toHexString()}/step-${i}.jpg`,
+      screenshots: (s.screenshots ?? []).map(ss => ({
+        frameId: ss.frameId,
+        url: `/api/screenshots/${sopId}/${ss.frameId}.jpg`,
+        t: ss.t,
+        order: ss.order,
+        description: ss.description,
+        highlight: ss.highlight,
+      })),
+      screenshotsError: s.screenshotsError,
     })),
   });
 }

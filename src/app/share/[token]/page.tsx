@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { Eye, FileText, Link as LinkIcon, Users, ListOrdered, Timer, Calendar, Shield, ArrowRight, Play } from "lucide-react";
+import { Eye, FileText, Link as LinkIcon, Users, ListOrdered, Timer, Calendar, Shield, ArrowRight } from "lucide-react";
 import { Footer } from "@/components/Footer";
+import { StepCardScreenshots, type ScreenshotItem } from "@/components/StepCardScreenshots";
 import { headers } from "next/headers";
 
 type Step = {
@@ -9,8 +10,8 @@ type Step = {
   description: string;
   startTime?: number;
   endTime?: number;
-  clipUrl: string;
-  posterUrl: string;
+  screenshots: ScreenshotItem[];
+  screenshotsError?: string;
 };
 type SharedSop = {
   title: string;
@@ -82,7 +83,7 @@ export default async function Page({ params }: { params: Promise<{ token: string
             {sop.title}
           </h1>
           <p className="text-[17px] text-[#666666] leading-[1.5] max-w-2xl mx-auto">
-            Hướng dẫn từng bước được tạo tự động từ video — gồm video ngắn kèm mô tả cho từng thao tác.
+            Hướng dẫn từng bước được tạo tự động từ video — gồm ảnh chụp màn hình kèm mô tả cho từng thao tác.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[13px] text-[#666666] pt-1">
             <span className="inline-flex items-center gap-1.5">
@@ -104,51 +105,18 @@ export default async function Page({ params }: { params: Promise<{ token: string
           </div>
         </section>
 
-        {/* Cascade preview */}
-        {sop.steps.length >= 3 && (
-          <section className="max-w-[820px] mx-auto h-[340px] relative my-4 hidden md:block">
-            {/* Mid, rotated 4 */}
-            <div
-              className="absolute left-0 top-[50px] w-[280px] h-[280px] rounded-xl border border-[#EEEEEE] bg-white p-5 space-y-2.5"
-              style={{ transform: "rotate(4deg)", boxShadow: "0 12px 32px rgba(0,0,0,0.06), 0 2px 4px rgba(0,0,0,0.03)" }}
-            >
-              <p className="text-[11px] font-semibold text-[#0066FF]" style={{ fontFamily: "var(--font-inter)" }}>Bước 2</p>
-              <p className="text-sm font-semibold text-[#1A1A1A] truncate" style={{ fontFamily: "var(--font-inter)" }}>{sop.steps[1]?.title}</p>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={sop.steps[1]?.posterUrl} alt="" className="w-full h-[120px] object-cover rounded-md bg-[#F2F2F2]" />
-              <div className="h-1.5 rounded bg-[#EDEDED]" />
-              <div className="h-1.5 rounded bg-[#EDEDED] w-2/3" />
-            </div>
-            {/* Back, rotated -5 */}
-            <div
-              className="absolute left-[540px] top-[30px] w-[280px] h-[280px] rounded-xl border border-[#EEEEEE] bg-white p-5 space-y-2.5"
-              style={{ transform: "rotate(-5deg)", boxShadow: "0 12px 32px rgba(0,0,0,0.06), 0 2px 4px rgba(0,0,0,0.03)" }}
-            >
-              <p className="text-[11px] font-semibold text-[#0066FF]" style={{ fontFamily: "var(--font-inter)" }}>Bước 3</p>
-              <p className="text-sm font-semibold text-[#1A1A1A] truncate" style={{ fontFamily: "var(--font-inter)" }}>{sop.steps[2]?.title}</p>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={sop.steps[2]?.posterUrl} alt="" className="w-full h-[110px] object-cover rounded-md bg-[#F2F2F2]" />
-              <div className="h-1.5 rounded bg-[#EDEDED]" />
-              <div className="h-1.5 rounded bg-[#EDEDED]" />
-            </div>
-            {/* Front */}
-            <div
-              className="absolute left-[270px] top-[30px] w-[280px] h-[280px] rounded-xl border border-[#EEEEEE] bg-white p-5 space-y-2.5"
-              style={{ boxShadow: "0 12px 32px rgba(0,0,0,0.06), 0 2px 4px rgba(0,0,0,0.03)" }}
-            >
-              <p className="text-[11px] font-semibold text-[#0066FF]" style={{ fontFamily: "var(--font-inter)" }}>Bước 1</p>
-              <p className="text-sm font-semibold text-[#1A1A1A] truncate" style={{ fontFamily: "var(--font-inter)" }}>{sop.steps[0]?.title}</p>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={sop.steps[0]?.posterUrl} alt="" className="w-full h-[120px] object-cover rounded-md bg-[#F2F2F2]" />
-              <div className="h-1.5 rounded bg-[#EDEDED]" />
-              <div className="h-1.5 rounded bg-[#EDEDED] w-3/4" />
-            </div>
-          </section>
-        )}
-
         {/* Steps list */}
-        <section className="max-w-[840px] mx-auto px-6 md:px-12 py-10 space-y-8">
-          {sop.steps.map((s) => <ShareStep key={s.index} step={s} />)}
+        <section className="max-w-[840px] mx-auto px-6 md:px-12 py-10 space-y-5">
+          {sop.steps.map((s) => (
+            <StepCardScreenshots
+              key={s.index}
+              index={s.index}
+              title={s.title}
+              description={s.description}
+              screenshots={s.screenshots}
+              screenshotsError={s.screenshotsError}
+            />
+          ))}
         </section>
 
         {/* Footer CTA */}
@@ -208,50 +176,5 @@ function SimpleNav() {
         </button>
       </div>
     </header>
-  );
-}
-
-function ShareStep({ step }: { step: Step }) {
-  return (
-    <article id={`step-${step.index + 1}`} className="flex gap-5">
-      <div
-        className="w-12 h-12 rounded-full bg-[#0066FF] text-white flex items-center justify-center font-semibold text-xl shrink-0"
-        style={{ fontFamily: "var(--font-inter)" }}
-      >
-        {step.index + 1}
-      </div>
-      <div className="flex-1 min-w-0 space-y-3">
-        <h3
-          className="font-semibold text-[#1A1A1A] text-xl md:text-[22px]"
-          style={{ fontFamily: "var(--font-inter)" }}
-        >
-          {step.title}
-        </h3>
-        <p className="text-[16px] text-[#333333] leading-[1.6] whitespace-pre-line">{step.description}</p>
-        <ClientVideo clipUrl={step.clipUrl} posterUrl={step.posterUrl} />
-      </div>
-    </article>
-  );
-}
-
-function ClientVideo({ clipUrl, posterUrl }: { clipUrl: string; posterUrl: string }) {
-  return (
-    <div className="rounded-xl overflow-hidden border border-gray-200 bg-[#F2F2F2] aspect-video relative">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={posterUrl} alt="" className="w-full h-full object-cover" />
-      <a
-        href={clipUrl}
-        target="_blank"
-        rel="noopener"
-        className="absolute inset-0 flex items-center justify-center group"
-      >
-        <span
-          className="w-16 h-16 rounded-full bg-white/95 flex items-center justify-center group-hover:scale-110 transition"
-          style={{ boxShadow: "0 6px 20px rgba(0,0,0,0.2)" }}
-        >
-          <Play className="w-6 h-6 text-[#0066FF] ml-1" strokeWidth={2} fill="#0066FF" />
-        </span>
-      </a>
-    </div>
   );
 }

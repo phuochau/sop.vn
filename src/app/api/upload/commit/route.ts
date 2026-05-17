@@ -7,7 +7,6 @@ import { tasks } from "@trigger.dev/sdk/v3";
 const Body = z.object({
   sopId: z.string().length(24),
   defaultLanguage: z.enum(["vi", "en"]).default("vi"),
-  mode: z.enum(["clips", "screenshots"]).default("clips"),
 });
 
 export async function POST(req: Request) {
@@ -21,7 +20,6 @@ export async function POST(req: Request) {
     { $set: {
         status: "transcribing",
         defaultLanguage: parsed.data.defaultLanguage,
-        mode: parsed.data.mode,
         updatedAt: new Date(),
     } },
   );
@@ -31,7 +29,6 @@ export async function POST(req: Request) {
     _id: new ObjectId(), type: "upload", sopId: _id, createdAt: new Date(),
   });
 
-  const taskId = parsed.data.mode === "screenshots" ? "process-sop-screenshots" : "process-sop";
-  await tasks.trigger(taskId, { sopId: _id.toHexString() });
+  await tasks.trigger("process-sop-screenshots", { sopId: _id.toHexString() });
   return NextResponse.json({ ok: true });
 }

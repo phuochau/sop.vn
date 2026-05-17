@@ -9,24 +9,26 @@ import { Button } from "@/components/ui/button";
 import { config } from "@/config";
 
 type Status =
-  | "uploading" | "ingesting" | "transcribing" | "normalizing" | "analyzing"
-  | "generating" | "clipping" | "building-pool" | "assigning" | "uploading-screenshots"
+  | "uploading" | "ingesting" | "analyzing" | "transcribing" | "normalizing"
+  | "generating" | "building-pool" | "assigning" | "uploading-screenshots"
   | "done" | "failed";
 
+const STEPS = [
+  "Kiểm tra video",
+  "Chuyển giọng nói thành văn bản",
+  "Chuẩn hóa nội dung",
+  "Phân tích các bước",
+  "Tạo ảnh chụp màn hình",
+];
+
 const STATUS_STEP_INDEX: Record<Status, number> = {
-  uploading: 0, ingesting: 0, transcribing: 0, normalizing: 1, analyzing: 2,
-  generating: 3, clipping: 4,
+  uploading: 0, ingesting: 0, analyzing: 0,
+  transcribing: 1,
+  normalizing: 2,
+  generating: 3,
   "building-pool": 4, "assigning": 4, "uploading-screenshots": 4,
   done: 5, failed: 0,
 };
-
-const STEPS = [
-  "Trích xuất âm thanh",
-  "Chuyển đổi giọng nói thành văn bản",
-  "Phân tích các bước thao tác",
-  "Dịch sang tiếng Việt",
-  "Định dạng SOP",
-];
 
 const ERROR_MSG: Record<string, string> = {
   video_too_short: "Video quá ngắn. Tải video dài ít nhất 10 giây.",
@@ -36,7 +38,7 @@ const ERROR_MSG: Record<string, string> = {
   silent_audio: "Không nghe rõ lời. Hãy thu video có giọng nói rõ ràng.",
   transcription_failed: "Lỗi nhận dạng giọng nói. Vui lòng thử lại.",
   generation_failed: "Lỗi tạo SOP. Vui lòng thử lại.",
-  clipping_failed: "Lỗi cắt video. Vui lòng thử lại.",
+  not_an_app: "Video không phải bản ghi ứng dụng. Vui lòng tải video quay màn hình một ứng dụng web, di động hoặc máy tính.",
   screenshot_pool_failed: "Lỗi tạo ảnh chụp màn hình. Vui lòng thử lại.",
   loom_ingest_failed: "Không thể tải video Loom. Hãy đảm bảo liên kết đã đặt 'Anyone with the link can view' rồi thử lại.",
   unknown: "Đã xảy ra lỗi. Vui lòng thử lại.",
