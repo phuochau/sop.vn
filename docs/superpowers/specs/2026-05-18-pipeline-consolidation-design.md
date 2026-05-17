@@ -136,6 +136,17 @@ per-path branching lives in the two heads.
   `pdf.status`. Update the final log line that counts `pdfs`.
 - `src/lib/utils.ts` — remove the orphaned `pdfKey` helper (line ~28-30); its
   only consumer was the deleted `generateSopPdf.ts`.
+- `src/config/index.ts` — add `analyzeVideoSystem` prompt for Stage 0 (Stage 0
+  uses the existing `ai.visionModel`, no new model field). Remove config
+  orphaned by the deletions: model fields `contextModel`, `pdfModel`; prompts
+  `contextSystem`, `pdfOverviewSystem`, `pdfStepSystem`, `visualContextSystem`,
+  `pdfVisualOverviewSystem`, `pdfVisualStepSystem`. Keep `visualSopSystem`
+  (`visualExtract` uses it) and `visionModel`.
+- `src/app/processing/[id]/page.tsx` — remove `"clipping"` from its local
+  `Status` union (line ~13) and the `clipping: 4` entry in `STATUS_STEP_INDEX`
+  (line ~18); `SopStatus` no longer has `"clipping"` (see below).
+- `src/trigger/ingestLoom.test.ts` — remove `"clipping"` from the `as const`
+  status array (line ~19) passed to `decideIngest`; `SopStatus` drops it.
 
 **Deleted** (document/clip pipeline + superseded stages), each with its
 `.test.ts` where one exists:
@@ -218,7 +229,10 @@ trigger references for a cosmetic gain.
   pipeline is gone: `clipping_failed`, `visual_context_failed`. Keep
   `visual_extract_failed` (reused for a silent-head failure) and
   `loom_ingest_failed` (`ingestLoom.ts` is kept).
-- `SopStatus` already includes `"analyzing"` — Stage 0 uses it.
+- `SopStatus` already includes `"analyzing"` — Stage 0 uses it. Remove the
+  `"clipping"` member — it was set only by the deleted `processSop.ts`. (`new`
+  consumers of the remaining statuses are unchanged: `building-pool`,
+  `assigning`, `uploading-screenshots`, `generating` are all still used.)
 
 **`src/lib/mongo.ts` type pruning.** The clip/PDF removal orphans several DB
 types — all are pruned (there is only one pipeline now, so legacy fields add
