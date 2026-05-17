@@ -106,64 +106,7 @@ Coordinates are normalized 0..1 (top-left origin). Bbox is measured against the 
 LANGUAGE: Output every screenName and elementCaption in ${lang}. Keep technical / industry / brand terms in their original form.
 
 Return strict JSON only.`,
-      planStepSystem: (lang: string) =>
-        `You convert a single training-video step into a list of sub-steps the reader will follow. You receive:
-- The step's title and brief description.
-- The step's narration: cleaned transcript segments with timestamps, in the trainer's voice.
-- A screen montage: up to 6 representative frames from this step, labeled A/B/C/... showing the distinct application screens the user encountered.
 
-Sub-steps come from what the trainer ASKS THE READER TO DO. One sub-step per discrete action (one click, one input, one selection, one view).
-
-For each sub-step:
-- intent: a short imperative sentence in ${lang}, ≤ 20 words. Use the screen name visible in the montage. Examples: "On the Check your email screen, enter the verification code.", "Click the Verify email button.", "Review the dashboard."
-- verb: "click" | "input" | "select" | "link" | "view". Use "view" only when the trainer points to a screen without directing an action.
-- narrationSegmentIds: the segment IDs from the input narration that describe this sub-step. Must reference real IDs from the input. May be empty if the action is silent.
-- timeWindow: { start, end } seconds within the step's time range, OR null if narrationSegmentIds is non-empty. Required only when narrationSegmentIds is empty.
-- visualConfidence: "high" when the montage shows clear evidence that the action happens on one of the labeled screens. "low" when the narration describes something but no montage frame plausibly matches (e.g., trainer mentions a screen never shown). Low-confidence sub-steps will be dropped.
-
-Rules:
-- Do NOT invent actions the trainer doesn't mention.
-- Combine micro-actions only if the trainer treats them as one ("fill out the form" = one input sub-step over a single field; "fill out first name, last name, then click Next" = three sub-steps).
-- Sub-steps appear in chronological order.
-
-Return strict JSON only.`,
-      pickFrameSystem: (lang: string) =>
-        `You pick the single frame that best illustrates a given sub-step from a candidate shortlist.
-
-You receive:
-- The sub-step's intent (one sentence) and verb.
-- A montage image: up to 6 candidate frames labeled A/B/C/..., each a representative full-screen image from a distinct application screen the user visited during the relevant time window.
-
-Choose the letter whose frame best illustrates the intent. "Best" means: a reader given the intent text alone would clearly recognize where to perform the action (or what to observe, for verb="view"), and the frame shows the screen in a stable state — NOT a transition, NOT a partial render, NOT a non-UI frame.
-
-Set picked to NULL if no candidate matches:
-- The action target is not visible in any candidate frame.
-- Every candidate is a non-UI frame (presenter/webcam, slide, intro animation).
-- The intent describes an element that simply does not appear in this shortlist.
-
-Set runnerUp to the second-best letter if at least one other candidate also plausibly matches. Otherwise null. runnerUp must NOT equal picked.
-
-reasoning: one short sentence explaining the choice (or the null), in ${lang} when convenient.
-
-Return strict JSON only.`,
-      verifyFrameSystem: (lang: string) =>
-        `You verify whether a single frame matches a sub-step description. Answer ONLY based on what is visible in the frame — no outside knowledge.
-
-You receive:
-- The sub-step's intent and verb.
-- The picker's rationale (one sentence) explaining why this frame was chosen.
-- The frame itself (a single full image).
-
-Decide:
-- "yes" — the screen, element, and state described in the intent are clearly visible in the frame.
-- "partially" — the screen is right but the specific element or state is unclear; OR the element is visible but the surrounding screen context is ambiguous.
-- "no" — the frame contradicts the intent: a different screen entirely, non-UI content (webcam, slide, intro animation), blank, or mid-transition.
-
-For verb="view": "yes" requires that the frame shows the screen the trainer is pointing to.
-
-reasoning: one short sentence, in ${lang} when convenient.
-
-Return strict JSON only.`,
     },
   },
   limits: {

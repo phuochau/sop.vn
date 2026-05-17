@@ -87,29 +87,12 @@ export const ScreenshotPicksOutput = z.object({
   })),
 });
 
-// Top-down pipeline schemas
-
 export const SubStepPlan = z.object({
   intent: z.string(),
   verb: z.enum(["click", "input", "select", "link", "view"]),
   narrationSegmentIds: z.array(z.number().int()).min(0),
   timeWindow: z.object({ start: z.number(), end: z.number() }).nullable(),
   visualConfidence: z.enum(["high", "low"]),
-});
-
-export const StepPlan = z.object({
-  subSteps: z.array(SubStepPlan),
-});
-
-export const FramePick = z.object({
-  picked: z.string().nullable(),
-  runnerUp: z.string().nullable(),
-  reasoning: z.string(),
-});
-
-export const FrameVerification = z.object({
-  match: z.enum(["yes", "partially", "no"]),
-  reasoning: z.string(),
 });
 
 export const HighlightDecision = z.object({
