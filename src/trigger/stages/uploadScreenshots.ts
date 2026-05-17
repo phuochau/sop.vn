@@ -127,6 +127,8 @@ export async function runUploadScreenshots(args: {
         order,
         description: action.description,
         verb: action.verb,
+        screenName: action.screenName,
+        elementCaption: action.elementCaption,
       };
       if (action.highlight && !error) {
         rec.highlight = action.highlight;
