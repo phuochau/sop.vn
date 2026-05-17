@@ -317,9 +317,6 @@ async function runPipeline(_id: ObjectId): Promise<void> {
           description: rs.description,
           startTime: rs.startTime,
           endTime: rs.endTime,
-          clipR2Key: "",
-          posterR2Key: "",
-          keyframeR2Keys: [],
           screenshots: ss as Screenshot[],
         };
         return base;
@@ -327,7 +324,7 @@ async function runPipeline(_id: ObjectId): Promise<void> {
 
       await (await sops()).updateOne(
         { _id },
-        { $set: { title, steps: stepsOut, mode: "screenshots", status: "done" as SopStatus, updatedAt: new Date() } },
+        { $set: { title, steps: stepsOut, status: "done" as SopStatus, updatedAt: new Date() } },
       );
       await (await events()).insertOne({
         _id: new ObjectId(), type: "sop_completed", sopId: _id, createdAt: new Date(),

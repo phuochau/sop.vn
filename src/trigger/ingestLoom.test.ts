@@ -16,7 +16,7 @@ test("decideIngest: transcribing + no r2 → noop (something is wrong, leave it)
 });
 
 test("decideIngest: any other status → noop", () => {
-  for (const s of ["uploading", "normalizing", "analyzing", "generating", "clipping", "done", "failed"] as const) {
+  for (const s of ["uploading", "normalizing", "analyzing", "generating", "done", "failed"] as const) {
     assert.deepEqual(decideIngest(s, true), { action: "noop" });
   }
 });

@@ -16,15 +16,15 @@ export async function getDb(): Promise<Db> {
 
 export type SopStatus =
   | "uploading" | "ingesting" | "transcribing" | "normalizing" | "analyzing"
-  | "generating" | "clipping" | "building-pool" | "assigning" | "uploading-screenshots"
+  | "generating" | "building-pool" | "assigning" | "uploading-screenshots"
   | "done" | "failed";
 
 export type ErrorCode =
   | null
   | "video_too_short" | "video_too_long" | "unsupported_format"
   | "file_too_large" | "transcription_failed"
-  | "generation_failed" | "clipping_failed"
-  | "visual_context_failed" | "visual_extract_failed"
+  | "generation_failed"
+  | "visual_extract_failed"
   | "frame_sampling_failed" | "video_download_failed"
   | "screenshot_pool_failed"
   | "not_an_app"           // Stage 0: < 50% of sampled frames show an app UI
@@ -65,24 +65,8 @@ export interface Step {
   description: string;
   startTime: number;
   endTime: number;
-  // Clip-mode (existing — present when SopDoc.mode === "clips" or absent):
-  clipR2Key: string;
-  posterR2Key: string;
-  keyframeR2Keys: string[]; // 3 keyframes evenly spaced across [startTime, endTime]
-  // Screenshot-mode (new — present when SopDoc.mode === "screenshots"):
   screenshots?: Screenshot[];
   screenshotsError?: string;
-}
-
-export type PdfStatus = "idle" | "generating" | "ready" | "error";
-
-export interface SopPdfState {
-  status: PdfStatus;
-  r2Key?: string;        // R2 key of the latest generated PDF
-  generatedAt?: Date;    // when status flipped to "ready"
-  startedAt?: Date;      // when status flipped to "generating"; used for staleness
-  errorMessage?: string;
-  runId?: string;        // current Trigger.dev run id, for dedupe
 }
 
 export interface SopDoc {
@@ -91,7 +75,6 @@ export interface SopDoc {
   category: string;                  // AI-detected in Stage 3
   inputMode?: "speech" | "silent";
   appType?: "web" | "mobile" | "desktop" | "none"; // detected by Stage 0
-  mode?: "clips" | "screenshots"; // NEW — set at upload time; absent ⇒ "clips"
   defaultLanguage?: string;
   sourceType?: "upload" | "loom";   // absent ⇒ "upload" (legacy rows)
   sourceUrl?: string;               // original Loom share URL (sourceType === "loom")
@@ -108,7 +91,6 @@ export interface SopDoc {
   domainSummary: string | null;
   steps: Step[];
   shareToken: string;
-  pdf?: SopPdfState;
   aiCost?: CostSummary;              // total + per-stage AI cost of the run
   createdAt: Date;
   updatedAt: Date;
