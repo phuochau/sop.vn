@@ -144,7 +144,10 @@ per-path branching lives in the two heads.
   (`visualExtract` uses it) and `visionModel`.
 - `src/app/processing/[id]/page.tsx` — remove `"clipping"` from its local
   `Status` union (line ~13) and the `clipping: 4` entry in `STATUS_STEP_INDEX`
-  (line ~18); `SopStatus` no longer has `"clipping"` (see below).
+  (line ~18); `SopStatus` no longer has `"clipping"` (see below). Also remove
+  the `clipping_failed` entry from the `ERROR_MSG` map (line ~39) and add an
+  entry for the new `not_an_app` code; `analysis_failed` can reuse the generic
+  fallback or get its own entry.
 - `src/trigger/ingestLoom.test.ts` — remove `"clipping"` from the `as const`
   status array (line ~19) passed to `decideIngest`; `SopStatus` drops it.
 
