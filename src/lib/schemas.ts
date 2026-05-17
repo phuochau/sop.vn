@@ -68,9 +68,8 @@ export const ClassifiedCandidate = z.object({
   decision: z.enum(["action", "discard"]),
   verb: z.enum(["click", "input", "select", "link"]).nullable(),
   screenName: z.string().nullable(),
-  screenCluster: z.string().nullable(),
   elementCaption: z.string().nullable(),
-  displayFrame: z.enum(["before", "after"]).nullable(),
+  displayFrameIndex: z.number().int().nullable(),
   discardReason: z.enum(["transition", "hover", "press_flicker", "animation", "not_a_ui", "other"]).nullable(),
 });
 
