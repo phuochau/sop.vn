@@ -76,12 +76,12 @@ LANGUAGE: Write every description in ${lang}. Keep technical / industry / brand 
 
 Return strict JSON only.`,
       classifyStepSystem: (lang: string) =>
-        `You classify candidate user actions from a screen recording into structured records, and discard candidates that are not real user actions (transitions, hovers, press-state flickers, animations).
+        `You classify candidate user actions from a screen recording into structured records, and discard candidates that are not real user actions.
 
 You receive:
 - The step's title.
 - An optional SCREEN MONTAGE image: a row of up to 6 representative full BEFORE frames for this step, each labeled with a cluster letter (A, B, C, ...). When present, every candidate's BEFORE frame matches one of these clusters. When absent, treat each candidate independently.
-- A series of candidates. Each candidate has: an index, an event time, a kind hint (click | input), a diff bbox normalized to the candidate's CROP, a BEFORE crop image, and an AFTER crop image. The candidate also references its cluster letter (or null if no montage).
+- A series of candidates. Each candidate has: an index, an event time, a kind hint (click | input), a full BEFORE frame and a full AFTER frame. On both frames the detected change region is outlined with a MAGENTA rectangle — that outline marks the element this candidate is about; it is not part of the UI. The candidate also references its cluster letter (or null if no montage).
 
 For each candidate, decide:
 
@@ -89,19 +89,24 @@ For each candidate, decide:
 
 2) If "action":
    - verb: "click" (button, link, tab, menu item, icon, row, card, checkbox, radio), "input" (typing into a text field, textarea, search), "select" (picking an option from an open dropdown / autocomplete), or "link" (clicking a hyperlink that navigates).
-   - screenName: the visible page/screen identifier from the BEFORE crop or the matching montage frame — usually the page heading text or modal title. If no heading is visible, give a short functional name ("Signup form", "Contacts list"). Lower-case, trimmed, normalize whitespace.
+   - screenName: the visible page/screen identifier from the BEFORE frame or the matching montage frame — usually the page heading text or modal title. If no heading is visible, give a short functional name ("Signup form", "Contacts list"). Lower-case, trimmed, normalize whitespace.
    - screenCluster: the letter (A/B/C...) of the candidate's BEFORE frame in the montage, or null if no montage was provided.
-   - elementCaption: a SHORT REUSABLE element name — NOT a sentence. Examples: "Verify email button", "verification code input", "Companies link", "Search field". For two candidates targeting the same element, the elementCaption MUST be identical.
-   - bbox: tightly wrap the WHOLE clickable element (background + border + padding), normalized 0..1 against the CROP you picked as displayFrame. Never crop just the text inside.
-   - displayFrame: "after" for verb === "input" (typed text only appears in AFTER) and for click verbs whose action REVEALS new UI in the AFTER crop (flyout, dropdown, modal, autocomplete). "before" otherwise.
+   - elementCaption: a SHORT REUSABLE element name — NOT a sentence. Examples: "Verify email button", "verification code input", "Companies link", "Search field". Name the element inside the magenta outline. For two candidates targeting the same element, the elementCaption MUST be identical.
+   - displayFrame: "after" for verb === "input" (typed text only appears in AFTER) and for click verbs whose action REVEALS new UI in the AFTER frame (flyout, dropdown, modal, autocomplete). "before" otherwise.
 
 3) If "discard":
-   - discardReason: "transition" (large-area pixel change, page navigation), "hover" (state-only change with no click target), "press_flicker" (second event in a tiny window after a click on the same element — animation by-product), "animation" (repeating motion in same region — spinner, loader, banner), "not_a_ui" (the BEFORE crop is NOT an application UI — e.g., a person on camera / webcam talking-head, a presenter holding props or illustrative icons, a title slide, an intro/outro animation, a generic stock graphic, a logo bug overlaid on non-UI content), "other".
+   - discardReason: "transition" (large-area pixel change, page navigation, OR a frame caught mid-transition / fade while the screen is animating between two states), "hover" (state-only change with no click target), "press_flicker" (second event in a tiny window after a click on the same element — animation by-product), "animation" (repeating motion in same region — spinner, loader, progress screen, or a loading / "setting up..." page with no user control), "not_a_ui" (the marked region is NOT a real interactive UI element the user deliberately operated — e.g., a person on camera / webcam talking-head, a presenter holding props or illustrative icons, a title slide, an intro/outro animation, a generic stock graphic, a logo bug, OR incidental product chrome such as a chat-widget bubble, a cookie / consent banner, or a notification toast), "other".
    - All "action" fields must be null.
 
-IMPORTANT: Many training videos open with a presenter on camera or an animated intro before any real application screen is shown. Icons or graphics appearing in those segments (e.g., a HubSpot logo being held up by the presenter, a spreadsheet icon animating onto a stage) are NOT clickable UI elements. They MUST be discarded with discardReason: "not_a_ui". Only emit verb: "click" / "input" / "select" / "link" when the BEFORE crop clearly shows an application interface that the user is interacting with.
+You now see the WHOLE screen, so you can and must recognise context that a crop would hide. DISCARD aggressively when the marked region is:
+- incidental product chrome — chat-widget bubbles, cookie / consent banners, notification toasts (discardReason: "not_a_ui");
+- a loading / progress screen — spinners, progress bars, "setting up..." pages with no control the user can act on (discardReason: "animation");
+- a mid-transition / fade frame — the screen is visibly animating between two states (discardReason: "transition").
+Only emit verb: "click" / "input" / "select" / "link" when the BEFORE frame clearly shows an application interface and the marked region is an element the user deliberately interacted with.
 
-Coordinates are normalized 0..1 (top-left origin). Bbox is measured against the CROP only, never the full BEFORE frame.
+IMPORTANT: Many training videos open with a presenter on camera or an animated intro before any real application screen is shown. Icons or graphics appearing in those segments are NOT clickable UI elements and MUST be discarded with discardReason: "not_a_ui".
+
+Coordinates are normalized 0..1 (top-left origin).
 
 LANGUAGE: Output every screenName and elementCaption in ${lang}. Keep technical / industry / brand terms in their original form.
 
@@ -142,13 +147,6 @@ Return strict JSON only.`,
       diffMaxEdge: 640,
       maxCandidatesPerStep: 25,
     },
-    ground: {
-      cropMultiplier: 3,
-      cropMinPx: 400,
-      cropMaxFrac: 0.50,
-      perStepConcurrency: 5,
-      bboxPadPx: 8,
-    },
     screenId: {
       samplingSec: 1.5,
       hammingThreshold: 10,
@@ -157,7 +155,6 @@ Return strict JSON only.`,
     },
     classify: {
       maxCandidatesPerCall: 12,
-      perStepConcurrency: 5,
     },
   },
 };
