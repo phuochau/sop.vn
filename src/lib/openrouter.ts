@@ -7,10 +7,11 @@ const API = "https://openrouter.ai/api/v1/chat/completions";
 /**
  * Record an OpenRouter call's usage into the active cost-tracking context.
  * `data.usage.cost` is the provider-reported USD cost — present because every
- * request body sets `usage: { include: true }`.
+ * request body sets `usage: { include: true }`. Exported so the raw UI-TARS
+ * call in `grounding.ts` reuses the exact same coercion.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function recordOpenRouterUsage(data: any, fallbackModel: string): void {
+export function recordOpenRouterUsage(data: any, fallbackModel: string): void {
   const u = data?.usage ?? {};
   recordCost({
     provider: "openrouter",
@@ -104,6 +105,9 @@ export async function llmJson<T extends ZodTypeAny>(opts: {
       const content = data.choices?.[0]?.message?.content;
       if (!content) throw new Error("Empty content");
       const parsed = opts.schema.parse(JSON.parse(content));
+      // Record AFTER a successful parse so failed/retried attempts are never
+      // counted. Keep this call here — moving it above the parse would
+      // double-count when a 200 response has malformed JSON and is retried.
       recordOpenRouterUsage(data, opts.model);
       return parsed;
     } catch (e) {
@@ -221,6 +225,9 @@ export async function llmJsonVision<T extends ZodTypeAny>(opts: {
       const content = data.choices?.[0]?.message?.content;
       if (!content) throw new Error("Empty content");
       const parsed = opts.schema.parse(JSON.parse(content));
+      // Record AFTER a successful parse so failed/retried attempts are never
+      // counted. Keep this call here — moving it above the parse would
+      // double-count when a 200 response has malformed JSON and is retried.
       recordOpenRouterUsage(data, opts.model);
       return parsed;
     } catch (e) {
