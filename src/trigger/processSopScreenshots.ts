@@ -10,7 +10,7 @@ import { runTranscribe } from "./stages/transcribe";
 import { runNormalize } from "./stages/normalize";
 import { runContext } from "./stages/context";
 import { runExtract } from "./stages/extract";
-import { resolveTimes } from "./stages/clip";
+import { resolveTimes } from "./stages/resolveTimes";
 import { runBuildFramePool } from "./stages/buildFramePool";
 import { runUploadScreenshots } from "./stages/uploadScreenshots";
 import { buildScreenClusters } from "@/trigger/lib/screenId";

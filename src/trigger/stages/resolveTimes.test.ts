@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert";
-import { resolveTimes } from "./clip";
+import { resolveTimes } from "./resolveTimes";
 
 test("resolveTimes clamps, orders, drops invalid", () => {
   const segs = [

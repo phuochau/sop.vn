@@ -5,31 +5,8 @@ import ffmpeg from "fluent-ffmpeg";
 import { logger } from "@trigger.dev/sdk/v3";
 import { putObject } from "@/lib/r2";
 import { clipKey, posterKey } from "@/lib/utils";
-import type { Segment, Step } from "@/lib/mongo";
+import type { Step } from "@/lib/mongo";
 import { grabFrame } from "@/trigger/lib/videoTmp";
-
-export function resolveTimes(
-  rawSegments: Segment[],
-  extractedSteps: { title: string; description: string; startSegmentId: number; endSegmentId: number }[],
-  videoDurationSec: number
-): { title: string; description: string; startTime: number; endTime: number }[] {
-  const byId = new Map(rawSegments.map(s => [s.id, s]));
-  const resolved: { title: string; description: string; startTime: number; endTime: number }[] = [];
-  let prevEnd = 0;
-  for (const s of extractedSteps) {
-    const a = byId.get(s.startSegmentId);
-    const b = byId.get(s.endSegmentId);
-    if (!a || !b) continue;
-    let start = Math.max(0, Math.min(a.start, videoDurationSec));
-    let end   = Math.max(0, Math.min(b.end,   videoDurationSec));
-    if (end <= start) continue;
-    if (start < prevEnd) start = prevEnd; // keep monotonic
-    if (end <= start) continue;
-    prevEnd = end;
-    resolved.push({ title: s.title, description: s.description, startTime: start, endTime: end });
-  }
-  return resolved;
-}
 
 function cutClip(input: string, out: string, start: number, end: number): Promise<void> {
   return new Promise((resolve, reject) => {
