@@ -113,10 +113,11 @@ neighbouring prompts:
         `frames provided.`,
 ```
 
-Note: `config.ai.prompts.languageRule` is referenced the same way the existing
-prompts reference sibling prompts — verify the existing prompts do this (e.g.
-`classifyStepSystem`) and match their style. If sibling prompts inline the rule
-differently, follow that pattern instead.
+Note: `config.ai.prompts.languageRule` is a defined helper in `config/index.ts`
+(currently unused — no existing prompt calls it). Calling it here is valid and
+compiles. If you prefer to match the sibling prompts, note they instead inline a
+`LANGUAGE:`-style rule as a literal string — either approach works; the call
+above is the simplest.
 
 - [ ] **Step 5: Typecheck**
 
@@ -889,13 +890,11 @@ git rm src/trigger/processSop.ts src/trigger/generateSopPdf.ts \
   src/trigger/stages/visualContext.ts
 ```
 
-Then delete any of these test files that exist (use `git rm` for each that
-`ls` confirms — `keyframes.test.ts`, `synthesizeStep.test.ts`,
-`renderPdf.test.ts`, `visualStep.test.ts`, `visualOverview.test.ts`):
-
-```bash
-ls src/trigger/stages/*.test.ts
-```
+Then delete the test files for these deleted stages (run `ls
+src/trigger/stages/*.test.ts` first to confirm which exist, then `git rm`
+each): `keyframes.test.ts`, `synthesizeStep.test.ts`, `renderPdf.test.ts`,
+`visualStep.test.ts`, `visualOverview.test.ts`, `visualContext.test.ts`.
+(`context.ts` and `synthesizeOverview.ts` have no test file.)
 
 - [ ] **Step 2: Adapt `ingestLoom.ts` to trigger the screenshots task**
 
