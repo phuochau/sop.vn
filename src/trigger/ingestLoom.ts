@@ -60,11 +60,11 @@ export const ingestLoom = task({
       return;
     }
     if (decision.action === "resume") {
-      logger.info("ingestLoom: resuming process-sop trigger");
+      logger.info("ingestLoom: resuming process-sop-screenshots trigger");
       await tasks.trigger(
-        "process-sop",
+        "process-sop-screenshots",
         { sopId: payload.sopId },
-        { idempotencyKey: `${payload.sopId}-process-sop` },
+        { idempotencyKey: `${payload.sopId}-process-sop-screenshots` },
       );
       return;
     }
@@ -103,9 +103,9 @@ export const ingestLoom = task({
     );
 
     await tasks.trigger(
-      "process-sop",
+      "process-sop-screenshots",
       { sopId: payload.sopId },
-      { idempotencyKey: `${payload.sopId}-process-sop` },
+      { idempotencyKey: `${payload.sopId}-process-sop-screenshots` },
     );
   },
 });
