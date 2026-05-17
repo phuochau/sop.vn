@@ -72,7 +72,7 @@ export type Action = {
   };
 };
 ```
-Leave `BBox`, `Point`, `Highlight`, `HighlightDecision`, `SubStepPlan`, `StepPlan`, `FramePick`, `FrameVerification` untouched — they are still imported by `narration.ts` and `locateHighlight.ts` and are not in scope to delete.
+Leave every other schema (`BBox`, `Point`, `Highlight`, `HighlightDecision`, `SubStepPlan`, `StepPlan`, `FramePick`, `FrameVerification`) untouched. `HighlightDecision`/`SubStepPlan` are still imported by `locateHighlight.ts` and `StepPlan` by `narration.ts`; `FramePick`/`FrameVerification` may end up unused after the top-down stage deletions, but removing unused schema *exports* is out of scope for this plan.
 
 - [ ] Immediately after the `Highlight` const (after line ~64) add the restored classifier schemas (these were deleted by `6a3da48`):
 ```ts
@@ -162,7 +162,7 @@ git show 6a3da48~1:src/trigger/stages/extractClickEvents.ts > src/trigger/stages
   - It imports `type { DenseFrame } from "./buildFramePool"` — `DenseFrame` still exists in `src/trigger/stages/buildFramePool.ts` as `interface DenseFrame { t: number; localPath: string }`. Compatible.
   - It imports `detectClickEvents`, `ClickEvent`, `ClickDetectOptions` from `@/trigger/lib/clickEventDetect` (restored in Task 2). Compatible.
   - It imports `logger` from `@trigger.dev/sdk/v3`. Present.
-  - `runExtractClickEvents` reads `args.opts` and `args.maxCandidatesPerStep`. The caller (Task 7) passes `config.screenshots.clickDetect` as `opts`; `clickDetect` carries `maxCandidatesPerStep` as a sibling key. `ClickDetectOptions` does NOT include `maxCandidatesPerStep`, so passing the whole `clickDetect` object as `opts` is type-incompatible. Fix at the call site in Task 7 (pass `opts` and `maxCandidatesPerStep` separately) — no change to this module.
+  - `runExtractClickEvents` reads `args.opts` (a `ClickDetectOptions`) and a separate `args.maxCandidatesPerStep`. The `config.screenshots.clickDetect` block carries `maxCandidatesPerStep` as a sibling key alongside the `ClickDetectOptions` fields. The Task 8 call site therefore passes `opts: config.screenshots.clickDetect` and `maxCandidatesPerStep: config.screenshots.clickDetect.maxCandidatesPerStep` as two separate arguments — clearer, and it keeps the `maxCandidatesPerStep` value explicit. No change to this module.
   - No other drift. Module is pure step-assignment-by-time + per-step cap.
 
 - [ ] Create `src/trigger/stages/extractClickEvents.test.ts`. `detectClickEvents` reads real image files, so the test mocks it via the module loader is not viable; instead test the pure step-assignment + cap logic by exercising `runExtractClickEvents` with a `denseFrames` array of two identical solid frames (yields zero detected events) AND by directly testing the assignment math. Since the assignment/cap logic is internal, expose it by testing through `runExtractClickEvents` with a stubbed detector. Use Node's module mocking via a thin re-export is overkill — instead the test covers the cap + assignment by calling `runExtractClickEvents` with frames that produce known events. Simplest reliable approach: generate real frames with planted changes at known times. Write:
@@ -233,36 +233,52 @@ test("last step uses an inclusive end so an event exactly at tEnd is kept", asyn
   }
 });
 
-test("caps a step at maxCandidatesPerStep, keeping the highest area*density events", async () => {
+test("caps a step at maxCandidatesPerStep", async () => {
   const tmp = await fs.promises.mkdtemp(path.join(os.tmpdir(), "extract-"));
   try {
-    // Build a frame sequence with 4 distinct planted changes -> 4 events in one step.
-    const frames: { t: number; localPath: string }[] = [];
+    // f0 blank, then each frame adds one distinct block at a new location, so
+    // consecutive diffs yield several separate events inside one step.
     const positions = [
       { x: 100, y: 100, w: 200, h: 60 },
-      { x: 100, y: 100, w: 200, h: 60 },
-      { x: 600, y: 100, w: 200, h: 60 },
       { x: 600, y: 100, w: 200, h: 60 },
       { x: 100, y: 400, w: 200, h: 60 },
-      { x: 100, y: 400, w: 200, h: 60 },
+      { x: 600, y: 400, w: 200, h: 60 },
+      { x: 350, y: 250, w: 200, h: 60 },
+    ];
+    const frames: { t: number; localPath: string }[] = [
+      { t: 0, localPath: await frame(tmp, "f0.jpg", []) },
     ];
     let accum: { x: number; y: number; w: number; h: number }[] = [];
     for (let i = 0; i < positions.length; i++) {
       accum = [...accum, positions[i]];
-      frames.push({ t: i, localPath: await frame(tmp, `f${i}.jpg`, accum) });
+      frames.push({ t: i + 1, localPath: await frame(tmp, `f${i + 1}.jpg`, accum) });
     }
-    const byStep = await runExtractClickEvents({
-      steps: [{ stepIndex: 0, tStart: 0, tEnd: 100 }],
-      denseFrames: frames,
-      maxCandidatesPerStep: 1,
+    const step = [{ stepIndex: 0, tStart: 0, tEnd: 100 }];
+
+    // Uncapped first: the fixture MUST yield >= 2 events, otherwise the cap
+    // assertion below would pass vacuously. Assert it so a too-weak fixture
+    // fails loudly instead of silently.
+    const uncapped = await runExtractClickEvents({ steps: step, denseFrames: frames });
+    assert.ok(
+      uncapped.get(0)!.length >= 2,
+      `fixture must produce >=2 events for a meaningful cap test, got ${uncapped.get(0)!.length}`,
+    );
+
+    // Capped at 1: must trim to exactly 1.
+    const capped = await runExtractClickEvents({
+      steps: step, denseFrames: frames, maxCandidatesPerStep: 1,
     });
-    assert.equal(byStep.get(0)!.length, 1);
+    assert.equal(capped.get(0)!.length, 1);
   } finally {
     await fs.promises.rm(tmp, { recursive: true, force: true });
   }
 });
 ```
-Note: the cap test depends on `detectClickEvents` producing more than one event from the planted sequence; if it produces fewer, relax the assertion to `assert.ok(byStep.get(0)!.length <= 1)` — the cap can never exceed `maxCandidatesPerStep`.
+Note: the cap test first runs uncapped and asserts the fixture produced >=2
+events — so if the planted sequence is too weak to exercise the cap, the test
+**fails loudly** rather than passing vacuously. If that assertion fails during
+implementation, add more distinct planted blocks until the fixture yields >=2
+events; do not weaken the assertion.
 
 - [ ] Run the test:
 ```
@@ -832,7 +848,7 @@ printf '%s\n\n%s\n' "feat: highlight pass — per-action yellow-circle point gro
 **Files:**
 - `src/trigger/processSopScreenshots.ts` (modify)
 
-This task replaces the top-down middle (the `runWithConcurrency` block with `planStep`/`pickFrame`/`verifyFrame`/`buildAction`/trace plumbing, current lines ~147-322) with the bottom-up middle. It MUST run before Tasks 9-12 so that the deleted files are no longer imported when their deletions land.
+This task replaces the top-down middle (the `runWithConcurrency` block with `planStep`/`pickFrame`/`verifyFrame`/`buildAction`/trace plumbing, current lines ~125-322 — from `await setStatus(_id, "assigning");` through the close of the `try/catch` around `runWithConcurrency`) with the bottom-up middle. It MUST run before Tasks 9-12 so that the deleted files are no longer imported when their deletions land.
 
 - [ ] Replace the import block at the top of the file. Remove these imports:
 ```ts
@@ -872,7 +888,7 @@ Keep `import type { Action } from "@/lib/schemas";` and all stage 1-5 imports un
         try {
           eventsByStep = await runExtractClickEvents({
             steps: stepInputs.map(s => ({ stepIndex: s.stepIndex, tStart: s.tStart, tEnd: s.tEnd })),
-            denseFrames: pool.denseFrames,
+            denseFrames: pool!.denseFrames,
             opts: config.screenshots.clickDetect,
             maxCandidatesPerStep: config.screenshots.clickDetect.maxCandidatesPerStep,
           });
@@ -905,7 +921,7 @@ Keep `import type { Action } from "@/lib/schemas";` and all stage 1-5 imports un
           for (const step of stepInputs) {
             const stepEvents = merged.get(step.stepIndex) ?? [];
             const clusters = await buildScreenClusters({
-              denseFrames: pool.denseFrames,
+              denseFrames: pool!.denseFrames,
               stepStart: step.tStart,
               stepEnd: step.tEnd,
               samplingSec: config.screenshots.screenId.samplingSec,
