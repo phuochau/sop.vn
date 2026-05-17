@@ -233,6 +233,7 @@ export async function classifyAndRemap(args: {
     }
 
     const records: ClassifiedActionRecord[] = [];
+    const debugRows: Record<string, unknown>[] = [];
     for (const cc of classified) {
       const cand = candidates.find(c => c.index === cc.index);
       if (!cand) {
@@ -263,6 +264,53 @@ export async function classifyAndRemap(args: {
         beforeFramePath: cand.event.beforeFramePath,
         afterFramePath: cand.event.afterFramePath,
       });
+      debugRows.push({
+        index: cc.index,
+        time: cand.time,
+        kindHint: cand.kindHint,
+        decision: cc.decision,
+        verb: cc.verb,
+        screenName: cc.screenName,
+        elementCaption: cc.elementCaption,
+        discardReason: cc.discardReason,
+        llmDisplayFrame: cc.displayFrame,
+        finalDisplayFrame: displayFrame,
+        screenCluster: cc.screenCluster,
+        beforeMarkedPath: cand.beforeMarkedPath,
+        afterMarkedPath: cand.afterMarkedPath,
+      });
+    }
+
+    // STEPIKA_DEBUG_DIR: env-gated dump of marked frames + classifier decisions
+    // for offline accuracy investigation. No-op when the var is unset.
+    const debugDir = process.env.STEPIKA_DEBUG_DIR;
+    if (debugDir) {
+      const stepSlug = args.stepTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40);
+      const outDir = path.join(debugDir, `${Date.now()}-${stepSlug}`);
+      await fs.promises.mkdir(outDir, { recursive: true });
+      for (const row of debugRows) {
+        const i = row.index as number;
+        try {
+          await fs.promises.copyFile(row.beforeMarkedPath as string, path.join(outDir, `c${i}-before.jpg`));
+          await fs.promises.copyFile(row.afterMarkedPath as string, path.join(outDir, `c${i}-after.jpg`));
+        } catch { /* frame may be missing for discards */ }
+      }
+      const clusterInfo = args.screenClusters.map(c => ({
+        letter: c.letter,
+        repT: c.representative.t,
+        span: c.timeSpan,
+        memberTimes: c.members.map(m => m.frame.t),
+      }));
+      for (const c of args.screenClusters) {
+        try {
+          await fs.promises.copyFile(c.representative.localPath, path.join(outDir, `cluster-${c.letter}.jpg`));
+        } catch { /* representative frame may be gone */ }
+      }
+      await fs.promises.writeFile(
+        path.join(outDir, "decisions.json"),
+        JSON.stringify({ stepTitle: args.stepTitle, clusters: clusterInfo, rows: debugRows }, null, 2),
+      );
+      logger.info("pipeline.classifier.debug_dump", { outDir, rows: debugRows.length });
     }
     return records;
   } finally {
