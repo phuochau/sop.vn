@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert";
-import { chunkCandidatesBySort, type CandidateForLLM } from "./classifyStepWithLLM";
+import { chunkCandidatesBySort, buildCandidateWindow, type CandidateForLLM } from "./classifyStepWithLLM";
+import type { RawEvent } from "./classifyAndMergeEvents";
 
 function c(index: number, time: number, cluster: string | null): CandidateForLLM {
   return {
@@ -41,6 +42,52 @@ test("chunkCandidatesBySort handles null screenCluster (sorts to the end)", () =
   assert.equal(chunks.length, 1);
   const ordered = chunks[0].map(x => x.screenCluster);
   assert.deepEqual(ordered, ["A", "B", null, null]);
+});
+
+function frame(t: number): { t: number; localPath: string } {
+  return { t, localPath: `/f${t}.jpg` };
+}
+function evt(over: Partial<RawEvent>): RawEvent {
+  return {
+    time: 10, bbox: { x: 0, y: 0, w: 0.1, h: 0.1 },
+    beforeFramePath: "/f9.jpg", afterFramePath: "/f11.jpg",
+    area: 1, density: 0.5, kindHint: "click", ...over,
+  };
+}
+const WIN = { maxFrames: 9, preSec: 1.5, postSec: 1.5, maxSpanSec: 6.0 };
+
+test("buildCandidateWindow returns frames within the time range, sorted by t", () => {
+  const pool = [frame(7), frame(9), frame(10), frame(11), frame(13)];
+  const w = buildCandidateWindow(pool, evt({}), WIN);
+  assert.deepEqual(w.map(f => f.t), [9, 10, 11]);
+});
+
+test("buildCandidateWindow downsamples to maxFrames but always keeps the anchors", () => {
+  const pool = Array.from({ length: 30 }, (_, i) => frame(8.5 + i * 0.2));
+  const e = evt({ beforeFramePath: pool[2].localPath, afterFramePath: pool[20].localPath });
+  const w = buildCandidateWindow(pool, e, { ...WIN, maxFrames: 6 });
+  assert.ok(w.length <= 6);
+  assert.ok(w.some(f => f.localPath === pool[2].localPath), "before anchor kept");
+  assert.ok(w.some(f => f.localPath === pool[20].localPath), "after anchor kept");
+});
+
+test("buildCandidateWindow caps the sampled span via maxSpanSec but force-includes the after anchor", () => {
+  const pool = [frame(9), frame(10), frame(11), frame(20), frame(30)];
+  const e = evt({ beforeFramePath: "/f9.jpg", afterFramePath: "/f30.jpg", time: 10 });
+  const w = buildCandidateWindow(pool, e, { ...WIN, maxSpanSec: 6.0 });
+  assert.ok(w.some(f => f.t === 30), "far after-anchor still force-included");
+  assert.ok(!w.some(f => f.t === 20), "frame inside the gap but outside the cap is excluded");
+});
+
+test("buildCandidateWindow never returns empty — falls back to nearest frame", () => {
+  const pool = [frame(100), frame(200)];
+  const w = buildCandidateWindow(pool, evt({ time: 10, beforeFramePath: "/x", afterFramePath: "/y" }), WIN);
+  assert.equal(w.length, 1);
+  assert.equal(w[0].t, 100);
+});
+
+test("buildCandidateWindow returns empty only for an empty pool", () => {
+  assert.deepEqual(buildCandidateWindow([], evt({}), WIN), []);
 });
 
 test("classifyStepWithLLM forwards each chunk to the injected classifier and concatenates", async () => {

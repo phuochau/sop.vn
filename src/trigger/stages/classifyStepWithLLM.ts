@@ -9,7 +9,7 @@ import { StepClassification, ClassifiedCandidate as ClassifiedCandidateSchema } 
 import { config } from "@/config";
 import { markRegion } from "@/trigger/lib/markRegion";
 import type { RawEvent } from "./classifyAndMergeEvents";
-import { maskedDHash, type ScreenCluster } from "@/trigger/lib/screenId";
+import { maskedDHash, type ScreenCluster, type DensePoolFrame } from "@/trigger/lib/screenId";
 import { hammingDistance } from "@/trigger/lib/perceptualHash";
 
 export type ClassifiedCandidate = z.infer<typeof ClassifiedCandidateSchema>;
@@ -316,6 +316,63 @@ export async function classifyAndRemap(args: {
   } finally {
     await fs.promises.rm(tmpDir, { recursive: true, force: true });
   }
+}
+
+export function buildCandidateWindow(
+  denseFrames: DensePoolFrame[],
+  event: RawEvent,
+  opts: { maxFrames: number; preSec: number; postSec: number; maxSpanSec: number },
+): DensePoolFrame[] {
+  if (denseFrames.length === 0) return [];
+  const sorted = [...denseFrames].sort((a, b) => a.t - b.t);
+  const byPath = new Map(sorted.map(f => [f.localPath, f] as const));
+
+  const beforeAnchor = byPath.get(event.beforeFramePath) ?? null;
+  const afterAnchor = byPath.get(event.afterFramePath) ?? null;
+  const afterT = afterAnchor ? afterAnchor.t : event.time;
+
+  const rangeStart = event.time - opts.preSec;
+  const rangeEnd = Math.min(afterT, event.time + opts.maxSpanSec) + opts.postSec;
+
+  const anchors: DensePoolFrame[] = [];
+  if (beforeAnchor) anchors.push(beforeAnchor);
+  if (afterAnchor && afterAnchor.localPath !== beforeAnchor?.localPath) anchors.push(afterAnchor);
+  const anchorPaths = new Set(anchors.map(a => a.localPath));
+
+  let sampled = sorted.filter(
+    f => f.t >= rangeStart && f.t <= rangeEnd && !anchorPaths.has(f.localPath),
+  );
+  const budget = Math.max(0, opts.maxFrames - anchors.length);
+  if (sampled.length > budget) sampled = decimateEvenly(sampled, budget);
+
+  const seen = new Set<string>();
+  const out: DensePoolFrame[] = [];
+  for (const f of [...anchors, ...sampled].sort((a, b) => a.t - b.t)) {
+    if (seen.has(f.localPath)) continue;
+    seen.add(f.localPath);
+    out.push(f);
+  }
+  if (out.length > 0) return out;
+
+  let nearest = sorted[0];
+  for (const f of sorted) {
+    if (Math.abs(f.t - event.time) < Math.abs(nearest.t - event.time)) nearest = f;
+  }
+  return [nearest];
+}
+
+function decimateEvenly(frames: DensePoolFrame[], n: number): DensePoolFrame[] {
+  if (n <= 0) return [];
+  if (frames.length <= n) return frames;
+  if (n === 1) return [frames[0]];
+  const picked: DensePoolFrame[] = [];
+  const seen = new Set<string>();
+  for (let i = 0; i < n; i++) {
+    const idx = Math.round((i * (frames.length - 1)) / (n - 1));
+    const f = frames[idx];
+    if (!seen.has(f.localPath)) { seen.add(f.localPath); picked.push(f); }
+  }
+  return picked;
 }
 
 function nearestCluster(clusters: ScreenCluster[], t: number): ScreenCluster | null {
