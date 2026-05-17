@@ -131,6 +131,11 @@ per-path branching lives in the two heads.
 - `src/app/api/upload/commit/route.ts` — remove the `mode` enum field, its
   `"clips"` default, and the `taskId` branch (line 34); always trigger
   `process-sop-screenshots`. Stop persisting `mode` from the request body.
+- `src/trigger/cleanupVideos.ts` — remove the "Sweep stale PDFs" block (lines
+  ~41-67) and the `PDF_TTL_MS` constant; the PDF pipeline no longer sets
+  `pdf.status`. Update the final log line that counts `pdfs`.
+- `src/lib/utils.ts` — remove the orphaned `pdfKey` helper (line ~28-30); its
+  only consumer was the deleted `generateSopPdf.ts`.
 
 **Deleted** (document/clip pipeline + superseded stages), each with its
 `.test.ts` where one exists:
@@ -174,13 +179,16 @@ routes/components. All of these are in scope:
 - `src/app/api/share/[token]/route.ts` — **Adapt.** Drop the per-step
   `clipUrl`/`posterUrl` fields (lines 24-25) that point at the deleted
   `/api/clips` route. It has no `pdf`/`mode` references.
+- `src/app/share/[token]/page.tsx` — **Adapt.** Remove `clipUrl`/`posterUrl`
+  from the `Step` type (lines ~12-13), the `posterUrl` `<img>` renders (lines
+  ~118, 130, 142), and the `<ClientVideo clipUrl/posterUrl>` usage (lines ~231,
+  237-243) — render the screenshots view instead, mirroring `sop/[id]/page.tsx`.
 - `src/app/api/sop/[id]/status/route.ts` — **Untouched.** Verified: no
   `pdf`/`mode`/`clip` references.
 
-The pipeline's final DB update already writes `mode: "screenshots"`
-(`processSopScreenshots.ts:277`); that line stays, so the persisted `mode` is
-always `"screenshots"`. The cleanup above removes every *read* of `mode` for
-branching, so a missing/legacy value can no longer mis-route.
+The cleanup above removes every read of `mode` for branching, and the `mode`
+field itself is dropped from `SopDoc` (see Data & Schema). One pipeline, no
+discriminator.
 
 **Untouched:** `extract.ts` (already accepts `category`/`domainSummary`),
 `buildFramePool`, `extractClickEvents`, `classifyAndMergeEvents`,
@@ -210,10 +218,22 @@ trigger references for a cosmetic gain.
   pipeline is gone: `clipping_failed`, `visual_context_failed`. Keep
   `visual_extract_failed` (reused for a silent-head failure) and
   `loom_ingest_failed` (`ingestLoom.ts` is kept).
-- The sop doc persists `appType` alongside the existing `category`,
-  `domainSummary`, `inputMode`, and `mode: "screenshots"`. The `mode` field is
-  always `"screenshots"` (no longer set from the upload request).
 - `SopStatus` already includes `"analyzing"` — Stage 0 uses it.
+
+**`src/lib/mongo.ts` type pruning.** The clip/PDF removal orphans several DB
+types — all are pruned (there is only one pipeline now, so legacy fields add
+only confusion):
+- `Step` interface — remove `clipR2Key`, `posterR2Key`, `keyframeR2Keys` (the
+  deleted `clip.ts`/`keyframes.ts` populated them). Correspondingly, remove the
+  `clipR2Key:""`/`posterR2Key:""`/`keyframeR2Keys:[]` writes in
+  `processSopScreenshots.ts` (lines ~267-269). `screenshots`/`screenshotsError`
+  stay. Update the now-stale clip/screenshot-mode comments.
+- Remove `SopPdfState` interface, `PdfStatus` type, and the `SopDoc.pdf` field.
+- Remove the `SopDoc.mode` field entirely. There is one pipeline, so a `mode`
+  discriminator is meaningless; remove the `mode: "screenshots"` write in
+  `processSopScreenshots.ts` (line ~277) and the stale `mode` comment.
+- The sop doc persists `appType` (new) alongside the existing `category`,
+  `domainSummary`, `inputMode`.
 
 ## Language
 
