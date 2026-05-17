@@ -93,9 +93,13 @@ New exported pure helper `buildCandidateWindow`:
 buildCandidateWindow(
   denseFrames: DensePoolFrame[],
   event: RawEvent,
-  maxFrames: number,
+  opts: { maxFrames: number; preSec: number; postSec: number; maxSpanSec: number },
 ): DensePoolFrame[]
 ```
+
+`classifyAndRemap` passes `opts` from config:
+`{ maxFrames: config.screenshots.classify.maxWindowFrames, preSec: windowPreSec,
+postSec: windowPostSec, maxSpanSec: windowMaxSpanSec }`.
 
 - `buildCandidateWindow` takes a `RawEvent`. `RawEvent` has **no `index`
   field** — the candidate `index` is the loop position in `classifyAndRemap`
@@ -157,9 +161,14 @@ temp dir — what the LLM sees. They are positionally 1:1 with the clean
 `DensePoolFrame[]` window from `buildCandidateWindow`; `displayFrameIndex`
 indexes both.
 
-`defaultClassifier` sends, per candidate, its `windowFramePaths` as an ordered
-image list and states each window's length in the user text so the model knows
-the valid index range. The montage image and all montage code are removed:
+`defaultClassifier` sends all candidates' `windowFramePaths` as one flat ordered
+image list — **candidate-by-candidate in `index` order**: candidate 0's window
+frames first, then candidate 1's, etc. The user text lists, per candidate, its
+`index` and the length of its window, so the model can map flat image positions
+to `(candidate, displayFrameIndex)` and knows each candidate's valid index
+range is `0 .. windowLength-1` (the index is **into that candidate's own
+window**, not the flat list). The montage image and all montage code are
+removed:
 `buildMontage`, `nearestCluster`, and the `montageImagePath` parameter — which
 threads through the `ClassifierFn` type, the `classifyStepWithLLM` args, and
 `defaultClassifier` args — are all deleted.
@@ -167,10 +176,13 @@ threads through the `ClassifierFn` type, the `classifyStepWithLLM` args, and
 `classifyAndRemap`:
 - Per event, calls `buildCandidateWindow` → a clean `DensePoolFrame[]` window;
   marks each window frame with the bbox into the temp dir → marked paths.
-  The per-candidate internal record retains **both** the clean
-  `DensePoolFrame[]` window (with `t`, for resolution) and the marked
-  `windowFramePaths` (for the LLM) — analogous to how the current code carries
-  `CandidateForLLM & { event: RawEvent }`. Both lists are positionally 1:1.
+  The per-candidate internal record is
+  `CandidateForLLM & { event: RawEvent; window: DensePoolFrame[] }` — it retains
+  the clean `DensePoolFrame[]` window (with `t`, for index resolution) and the
+  `event` (for the nearest-`event.time` fallback), alongside the marked
+  `windowFramePaths`. `window` and `windowFramePaths` are positionally 1:1.
+  Candidates are matched back after classification by
+  `candidates.find(c => c.index === cc.index)`, as today.
 - After classification, resolves each `action` candidate's `displayFrameIndex`
   and produces `ClassifiedActionRecord`.
 - **Index resolution rule** — for a record with `decision === "action"`, let
@@ -186,6 +198,11 @@ threads through the `ClassifierFn` type, the `classifyStepWithLLM` args, and
   unmarked** pool frame. Downstream (`highlightActions`, `uploadScreenshots`)
   must receive the clean frame, never the magenta-marked one.
   The window is never empty (see §1), so resolution always yields a path.
+- **Discard records:** `classifyAndRemap` still emits a `ClassifiedActionRecord`
+  for every classified candidate (discards included, as today). For
+  `decision === "discard"` there is no frame to resolve — set
+  `displayFramePath: ""`. `buildActionsForStep` drops discards before the
+  validity guard, so the empty string is never used.
 - The cross-screen hamming guard and `maskedDHash`/`hammingDistance` use here
   are deleted.
 
@@ -231,9 +248,14 @@ classifier returning candidates in chunk order is harmless. Do **not** renumber
 ### 4. `classifyStepSystem` prompt — `src/config/index.ts`
 
 Rewrite to match the new input/output:
-- Input: each candidate has an **ordered series of full window frames**
-  covering a short time span around the action; the detected change region is
-  outlined in magenta on every frame.
+- Input: the images for all candidates in the batch are supplied as one flat
+  list, **grouped per candidate in `index` order** — each candidate's user-text
+  line states its `index` and window length so the model knows which images
+  belong to it. Each candidate's images are an **ordered series of full window
+  frames** covering a short time span around the action; the detected change
+  region is outlined in magenta on every frame.
+- `displayFrameIndex` is **0-based into that candidate's own window** (range
+  `0 .. windowLength-1`), not the flat image list.
 - Magenta box is an **approximate motion hint** — explicitly tell the model it
   may be inaccurate or land on heading text during fast screen transitions, and
   to trust the cursor position and what visibly changed over the box.
