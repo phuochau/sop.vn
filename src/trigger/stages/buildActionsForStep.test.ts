@@ -10,12 +10,10 @@ function action(over: Partial<ClassifiedActionRecord>): ClassifiedActionRecord {
     decision: "action",
     verb: "click",
     screenName: "Login page",
-    screenCluster: "A",
     elementCaption: "Sign in button",
-    displayFrame: "before",
+    displayFrameIndex: 0,
     discardReason: null,
-    beforeFramePath: "/b.jpg",
-    afterFramePath: "/a.jpg",
+    displayFramePath: "/frame.jpg",
     ...over,
   };
 }
@@ -44,8 +42,8 @@ test("normalizeElementId lowercases, trims, collapses whitespace, strips closed-
 test("drops discards including those with null discardReason", () => {
   const cls = [
     action({ index: 0 }),
-    action({ index: 1, decision: "discard", verb: null, screenName: null, screenCluster: null, elementCaption: null, displayFrame: null, discardReason: "hover" }),
-    action({ index: 2, decision: "discard", verb: null, screenName: null, screenCluster: null, elementCaption: null, displayFrame: null, discardReason: null }),
+    action({ index: 1, decision: "discard", verb: null, screenName: null, elementCaption: null, displayFrameIndex: null, displayFramePath: "", discardReason: "hover" }),
+    action({ index: 2, decision: "discard", verb: null, screenName: null, elementCaption: null, displayFrameIndex: null, displayFramePath: "", discardReason: null }),
   ];
   const out = buildActionsForStep({
     stepIndex: 0, classified: cls, screenClusters: [cluster("A", 0, 3)],
@@ -54,7 +52,7 @@ test("drops discards including those with null discardReason", () => {
   assert.equal(out.filter(a => a.verb !== "view").length, 1);
 });
 
-test("dedupes same (screenName, elementId) keeping the latest event", () => {
+test("dedupes same-element events within the window, keeping the earliest", () => {
   const cls = [
     action({ index: 0, elementCaption: "Get started free button" }),
     action({ index: 1, elementCaption: "Get started free" }),
@@ -65,7 +63,19 @@ test("dedupes same (screenName, elementId) keeping the latest event", () => {
   });
   const elements = out.filter(a => a.verb !== "view");
   assert.equal(elements.length, 1);
-  assert.equal(elements[0].time, 47.5);
+  assert.equal(elements[0].time, 46.0);
+});
+
+test("same-element events beyond dedupWindowSec stay separate actions", () => {
+  const cls = [
+    action({ index: 0, elementCaption: "Next button" }),
+    action({ index: 1, elementCaption: "Next button" }),
+  ];
+  const out = buildActionsForStep({
+    stepIndex: 0, classified: cls, screenClusters: [cluster("A", 0, 30)],
+    eventTimes: [5.0, 20.0], viewMinDurationSec: 100.0, language: "en",
+  });
+  assert.equal(out.filter(a => a.verb !== "view").length, 2);
 });
 
 test("verb-collapse rule: input wins over click", () => {
