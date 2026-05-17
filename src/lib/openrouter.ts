@@ -120,7 +120,7 @@ export async function llmJson<T extends ZodTypeAny>(opts: {
 }
 
 /**
- * Minimal Zod → JSON Schema conversion sufficient for our 3 schemas.
+ * Minimal Zod → JSON Schema conversion sufficient for the pipeline's schemas.
  * If schemas grow, switch to `zod-to-json-schema` npm package.
  */
 function zodToJsonSchemaLike(schema: ZodTypeAny): unknown {

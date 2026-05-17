@@ -8,10 +8,10 @@ import type { Action } from "@/lib/schemas";
  *
  * The click-event detector often fires several times across a single click
  * (the click highlight, then the transition). Those become separate actions
- * with the same displayed screen. With one-candidate-per-call classification
- * their screenName / elementCaption text varies, so the text-keyed dedup in
- * `buildActionsForStep` cannot catch them — but their *display frames* are
- * near-identical.
+ * with the same displayed screen. The `canonicalizeActions` pass unifies most
+ * caption text so the text-keyed dedup in `buildActionsForStep` catches the
+ * obvious repeats; this pass is the frame-keyed backstop for CV multi-fires
+ * whose captions still differ but whose *display frames* are near-identical.
  *
  * Two actions are treated as the same action when they are close in time,
  * share a verb, and their display frames are within `hammingThreshold` of each
