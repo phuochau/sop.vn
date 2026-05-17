@@ -77,7 +77,9 @@ New function in `src/trigger/stages/pickFrame.ts`, next to
 
 The `step` parameter has type `{ tStart: number; tEnd: number }` — the same
 shape `computeSearchWindow` already receives at the call site. The fallback
-chain mirrors `computeSearchWindow`'s exactly so the two stay in lockstep.
+*ordering* (narration → `timeWindow` → `step`) matches `computeSearchWindow`'s;
+each fallback returns the end edge, since this is an action *instant*, not a
+window.
 
 Padding (`searchWindowPrePadSec` / `searchWindowPostPadSec`) stays exclusive to
 `computeSearchWindow`; it widens the candidate *search*, it does not locate the

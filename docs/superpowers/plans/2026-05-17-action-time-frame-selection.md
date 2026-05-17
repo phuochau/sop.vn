@@ -137,8 +137,9 @@ In `src/trigger/stages/pickFrame.ts`, add this function immediately after `compu
  * completes, so the late edge of the narration best marks the action moment.
  * Unlike computeSearchWindow, this applies no padding — padding only widens
  * the candidate *search*, it does not locate the action. Falls back to the
- * sub-step's timeWindow end, then to the step's end. The fallback chain
- * mirrors computeSearchWindow so the two stay in lockstep.
+ * sub-step's timeWindow end, then to the step's end. The fallback *ordering*
+ * (narration -> timeWindow -> step) matches computeSearchWindow's; each
+ * fallback returns the end edge, since this is an instant, not a window.
  */
 export function computeActionTime(
   subStep: { narrationSegmentIds: number[]; timeWindow: { start: number; end: number } | null },
