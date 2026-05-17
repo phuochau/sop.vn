@@ -212,6 +212,7 @@ export async function classifyAndRemap(args: {
         screenName: cc.screenName,
         elementCaption: cc.elementCaption,
         discardReason: cc.discardReason,
+        llmDisplayFrameIndex: cc.displayFrameIndex,
         displayFrameIndex: resolvedIndex,
         displayFramePath,
         windowFramePaths: cand.windowFramePaths,
