@@ -4,6 +4,7 @@ export const config = {
     transcriptionModel: "fal-ai/whisper",
     normalizeModel: "google/gemini-2.5-flash",
     contextModel: "google/gemini-2.5-flash",
+    canonicalizeModel: "google/gemini-2.5-flash",
     sopModel: "anthropic/claude-sonnet-4.5",
     pdfModel: "google/gemini-2.5-flash",
     visionModel: "google/gemini-2.5-flash",
@@ -113,6 +114,25 @@ LANGUAGE: Output every screenName and elementCaption in ${lang}. Keep technical 
 
 Return strict JSON only.`,
 
+      canonicalizeSystem: (lang: string) =>
+        `You reconcile a list of UI action labels extracted from ONE step of a screen recording.
+
+Each action was labelled independently, so the same element can appear under different wording, casing, or language. Your job is to make the labels consistent.
+
+You receive a JSON array of actions, each with: index, screenName, elementCaption, verb. (verb is context only — do not output it.)
+
+For EACH input action, return: index, screenName, elementCaption.
+
+Rules:
+- Output every screenName and elementCaption in ${lang}. Keep brand, product, and technical terms (e.g. "HubSpot", "CRM", "CSV", "URL") in their original form.
+- When two or more actions clearly refer to the SAME element, output an IDENTICAL screenName and elementCaption for all of them.
+- Do NOT merge labels for elements that are genuinely different, even if their wording is similar.
+- Keep elementCaption a SHORT reusable element name — not a sentence.
+- Normalize casing and whitespace.
+- Return exactly one entry per input index. Do not add, drop, or renumber indices.
+
+Return strict JSON only.`,
+
     },
   },
   limits: {
@@ -174,7 +194,6 @@ Return strict JSON only.`,
                                  // the last pre-click frame, so the whole window is the
                                  // source screen; the LLM cannot pick a destination frame
       windowMaxSpanSec: 6.0,
-      dedupWindowSec: 4.0,
       duplicateGapSec: 5.0,           // collapse CV multi-fires within this gap
       duplicateHammingThreshold: 6,   // ...when display frames are near-identical
     },
