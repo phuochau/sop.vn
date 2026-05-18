@@ -882,7 +882,7 @@ Expected: PASS — both tests.
 
 - [ ] **Step 5: Wire the helper into the route**
 
-In `src/app/api/share/[token]/route.ts`, change the imports (line 3 area) to add `presignGet` and the helper:
+In `src/app/api/share/[token]/route.ts`, **replace the existing single line** `import { sops, events } from "@/lib/mongo";` with these three lines (the `NextResponse` and `ObjectId` imports above it are unchanged — do not duplicate them):
 
 ```ts
 import { sops, events } from "@/lib/mongo";
