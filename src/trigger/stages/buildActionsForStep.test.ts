@@ -253,3 +253,23 @@ test("buildActionsForStep omits automation when the record has none", () => {
   assert.equal(out.length, 1);
   assert.equal(out[0].automation ?? null, null);
 });
+
+test("buildActionsForStep keeps inputValue for a select action", () => {
+  const out = buildActionsForStep({
+    stepIndex: 0,
+    classified: [action({
+      index: 0, verb: "select",
+      automation: {
+        target: { text: "Country", role: "dropdown", location: "signup form" },
+        inputValue: { field: "country", valueType: "selection", example: "Vietnam" },
+      },
+    })],
+    screenClusters: [],
+    eventTimes: [5],
+    viewMinDurationSec: 3,
+    language: "en",
+  });
+  assert.equal(out.length, 1);
+  assert.equal(out[0].automation?.action, "select");
+  assert.equal(out[0].automation?.inputValue?.example, "Vietnam");
+});
