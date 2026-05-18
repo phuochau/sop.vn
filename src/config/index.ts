@@ -1,3 +1,5 @@
+import { INDUSTRY_VALUES } from "@/lib/schemas";
+
 export const config = {
   ai: {
     transcriptionProvider: "fal" as const,
@@ -131,7 +133,7 @@ Pick the single best overall "appType":
 - "web", "mobile", "desktop": a screen recording of that kind of software application.
 - "physical": real-world footage of a hands-on process — assembly, cooking, machine operation, maintenance, lab work, inspection. Includes fixed-camera and un-narrated footage.
 - "none": none of the above — a person talking to camera, a slideshow/presentation, a static title card, or gameplay.
-Pick the best "industry" from EXACTLY this list: "manufacturing", "healthcare", "food-and-beverage", "hospitality", "logistics-and-warehousing", "retail", "field-service-and-maintenance", "construction", "laboratory-and-pharma", "agriculture", "software-and-it", "office-and-admin", "other". Choose from what the video shows (screen content and/or narration). Use "other" when no industry clearly fits. "software-and-it" is valid for any appType — use it for a screen recording of a generic SaaS tool with no clear vertical.
+Pick the best "industry" from EXACTLY this list: ${INDUSTRY_VALUES.map((v) => `"${v}"`).join(", ")}. Choose from what the video shows (screen content and/or narration). Use "other" when no industry clearly fits. "software-and-it" is valid for any appType — use it for a screen recording of a generic SaaS tool with no clear vertical.
 Also return a short freeform "category" naming the domain and a one-sentence "domainSummary".
 ${config.ai.prompts.languageRule(lang)}
 Return JSON: { "appUIFrameCount": int, "totalFrames": int, "appType": "web"|"mobile"|"desktop"|"physical"|"none", "industry": <one of the list above>, "category": string, "domainSummary": string }. "totalFrames" MUST equal the number of frames provided.`,
