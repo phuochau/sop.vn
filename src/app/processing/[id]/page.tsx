@@ -11,6 +11,7 @@ import { config } from "@/config";
 type Status =
   | "uploading" | "ingesting" | "analyzing" | "transcribing" | "normalizing"
   | "generating" | "building-pool" | "assigning" | "uploading-screenshots"
+  | "building-clips" | "uploading-clips"
   | "done" | "failed";
 
 const STEPS = [
@@ -27,6 +28,7 @@ const STATUS_STEP_INDEX: Record<Status, number> = {
   normalizing: 2,
   generating: 3,
   "building-pool": 4, "assigning": 4, "uploading-screenshots": 4,
+  "building-clips": 4, "uploading-clips": 4,
   done: 5, failed: 0,
 };
 
@@ -40,6 +42,7 @@ const ERROR_MSG: Record<string, string> = {
   generation_failed: "Lỗi tạo SOP. Vui lòng thử lại.",
   not_an_app: "Video không phải bản ghi ứng dụng. Vui lòng tải video quay màn hình một ứng dụng web, di động hoặc máy tính.",
   screenshot_pool_failed: "Lỗi tạo ảnh chụp màn hình. Vui lòng thử lại.",
+  clip_extract_failed: "Lỗi cắt video thành các đoạn. Vui lòng thử lại.",
   loom_ingest_failed: "Không thể tải video Loom. Hãy đảm bảo liên kết đã đặt 'Anyone with the link can view' rồi thử lại.",
   unknown: "Đã xảy ra lỗi. Vui lòng thử lại.",
 };
