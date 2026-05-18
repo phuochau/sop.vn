@@ -55,6 +55,7 @@ test("runAnalyzeVideo returns the vision fn output", async () => {
           appUIFrameCount: opts.imagePaths.length,
           totalFrames: opts.imagePaths.length,
           appType: "web",
+          industry: "software-and-it",
           category: "CRM",
           domainSummary: "A CRM walkthrough.",
         };
@@ -79,6 +80,30 @@ test("runAnalyzeVideo propagates a vision fn error", async () => {
       }),
       /provider down/,
     );
+  } finally {
+    await cleanup();
+  }
+});
+
+test("runAnalyzeVideo carries appType physical + industry, and the gate still rejects it", async () => {
+  const { srcPath, cleanup } = await tmpVideo();
+  try {
+    const out = await runAnalyzeVideo({
+      srcPath,
+      durationSec: TEST_DURATION_SEC,
+      language: "en",
+      visionFn: async (opts) => ({
+        appUIFrameCount: 0,
+        totalFrames: opts.imagePaths.length,
+        appType: "physical",
+        industry: "manufacturing",
+        category: "Assembly",
+        domainSummary: "A worker assembles a part.",
+      }),
+    });
+    assert.equal(out.appType, "physical");
+    assert.equal(out.industry, "manufacturing");
+    assert.equal(decideAppGate(out.appUIFrameCount, out.totalFrames), false);
   } finally {
     await cleanup();
   }

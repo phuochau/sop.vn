@@ -109,10 +109,10 @@ async function runPipeline(_id: ObjectId): Promise<void> {
         });
         return fail(_id, "not_an_app");
       }
-      const { category, domainSummary, appType } = analysis;
+      const { category, domainSummary, appType, industry } = analysis;
       await (await sops()).updateOne(
         { _id },
-        { $set: { category, domainSummary, appType, updatedAt: new Date() } },
+        { $set: { category, domainSummary, appType, industry, updatedAt: new Date() } },
       );
 
       // Stage 1: transcribe (always run).
