@@ -95,6 +95,23 @@ export async function buildBufferWithOptionalHighlight(
 
 const newFrameId = customAlphabet("abcdefghijklmnopqrstuvwxyz0123456789", 10);
 
+/**
+ * The non-IO metadata fields copied verbatim from an `Action` onto its
+ * `Screenshot` record. `automation` is included only when the action has it,
+ * so the persisted document has no `automation: undefined` key.
+ */
+export function screenshotMetaFromAction(
+  action: Action,
+): Pick<Screenshot, "description" | "verb" | "screenName" | "elementCaption" | "automation"> {
+  return {
+    description: action.description,
+    verb: action.verb,
+    screenName: action.screenName,
+    elementCaption: action.elementCaption,
+    ...(action.automation ? { automation: action.automation } : {}),
+  };
+}
+
 export async function runUploadScreenshots(args: {
   sopId: string;
   byStep: Map<number, Action[]>;
@@ -125,10 +142,7 @@ export async function runUploadScreenshots(args: {
         r2Key,
         t: action.time,
         order,
-        description: action.description,
-        verb: action.verb,
-        screenName: action.screenName,
-        elementCaption: action.elementCaption,
+        ...screenshotMetaFromAction(action),
       };
       if (action.highlight && !error) {
         rec.highlight = action.highlight;

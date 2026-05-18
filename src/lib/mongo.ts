@@ -58,6 +58,18 @@ export interface Screenshot {
     point?: { x: number; y: number };
   };
   highlightError?: string; // set when rectangle drawing failed; un-annotated JPEG was uploaded instead
+  // Automation metadata: a DOM-agnostic descriptor for a future automation
+  // agent. Present only on actionable sub-steps generated after 2026-05-18.
+  automation?: {
+    action: "click" | "type" | "select" | "navigate";
+    target: { text: string; role: string; location: string };
+    inputValue?: {
+      field: string;
+      valueType: "text" | "email" | "password" | "number" | "date" | "url" | "selection" | "other";
+      example?: string;
+    };
+    expectedOutcome?: string;
+  };
 }
 
 export interface Step {

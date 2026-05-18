@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert";
-import { rectSvg, circleSvg } from "./uploadScreenshots";
+import { rectSvg, circleSvg, screenshotMetaFromAction } from "./uploadScreenshots";
+import type { Action } from "@/lib/schemas";
 
 test("rectSvg renders a yellow rect with pixel-scaled coords", () => {
   const svg = rectSvg(1920, 1080, { x: 0.1, y: 0.2, w: 0.3, h: 0.05 });
@@ -94,4 +95,28 @@ test("buildBufferWithOptionalHighlight draws a circle for a point geom", async (
   });
   assert.equal(error, null);
   assert.ok(!buf.equals(raw), "should differ from raw (circle composited)");
+});
+
+function baseAction(over: Partial<Action>): Action {
+  return {
+    stepIndex: 0, order: 0, verb: "click", description: "Click Save",
+    screenName: "contacts", elementCaption: "Save button",
+    displayFramePath: "/f.jpg", time: 5, ...over,
+  };
+}
+
+test("screenshotMetaFromAction copies automation when present", () => {
+  const meta = screenshotMetaFromAction(baseAction({
+    automation: {
+      action: "click",
+      target: { text: "Save", role: "button", location: "toolbar" },
+    },
+  }));
+  assert.equal(meta.automation?.action, "click");
+  assert.equal(meta.automation?.target.role, "button");
+});
+
+test("screenshotMetaFromAction omits the automation key when the action has none", () => {
+  const meta = screenshotMetaFromAction(baseAction({}));
+  assert.ok(!("automation" in meta), "automation key should be absent");
 });
