@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { Calendar, Clock3, List, Pencil, Info, Plus, ThumbsUp, ThumbsDown } from "lucide-react";
 import { StepCardScreenshots, type ScreenshotItem } from "@/components/StepCardScreenshots";
+import { StepCardClips, type ClipItem } from "@/components/StepCardClips";
 import { ShareButton } from "@/components/ShareButton";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
@@ -13,8 +14,10 @@ type Step = {
   description: string;
   startTime?: number;
   endTime?: number;
-  screenshots: ScreenshotItem[];
+  screenshots?: ScreenshotItem[];
   screenshotsError?: string;
+  clips?: ClipItem[];
+  clipsError?: string;
 };
 type Sop = {
   id: string;
@@ -116,16 +119,27 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
               </p>
             </div>
 
-            {sop.steps.map((s) => (
-              <StepCardScreenshots
-                key={s.index}
-                index={s.index}
-                title={s.title}
-                description={s.description}
-                screenshots={s.screenshots}
-                screenshotsError={s.screenshotsError}
-              />
-            ))}
+            {sop.steps.map((s) =>
+              (s.clips && s.clips.length > 0) || s.clipsError ? (
+                <StepCardClips
+                  key={s.index}
+                  index={s.index}
+                  title={s.title}
+                  description={s.description}
+                  clips={s.clips ?? []}
+                  clipsError={s.clipsError}
+                />
+              ) : (
+                <StepCardScreenshots
+                  key={s.index}
+                  index={s.index}
+                  title={s.title}
+                  description={s.description}
+                  screenshots={s.screenshots ?? []}
+                  screenshotsError={s.screenshotsError}
+                />
+              ),
+            )}
 
             {/* Feedback card */}
             <div className="rounded-[20px] border border-gray-200 bg-white px-6 py-6 flex flex-col md:flex-row items-center justify-between gap-4">

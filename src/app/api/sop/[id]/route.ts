@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { sops } from "@/lib/mongo";
+import { presignGet } from "@/lib/r2";
+import { mapClipsForStep } from "@/lib/shareClips";
+
+const CLIP_URL_TTL_SEC = 21600; // 6 hours — long enough to outlast clip playback
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -16,7 +20,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     category: doc.category,
     createdAt: doc.createdAt,
     shareToken: doc.shareToken,
-    steps: doc.steps.map((s, i) => ({
+    steps: await Promise.all(doc.steps.map(async (s, i) => ({
       index: i,
       title: s.title,
       description: s.description,
@@ -31,6 +35,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
         highlight: ss.highlight,
       })),
       screenshotsError: s.screenshotsError,
-    })),
+      clips: await mapClipsForStep(s.clips, (key) => presignGet(key, CLIP_URL_TTL_SEC)),
+      clipsError: s.clipsError,
+    }))),
   });
 }
