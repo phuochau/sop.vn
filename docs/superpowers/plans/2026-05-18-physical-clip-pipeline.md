@@ -426,13 +426,13 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 
 ---
 
-## Task 4: `runUploadClips` stage
+## Task 4: `runUploadClips` stage + `composeClipSteps`
 
 **Files:**
 - Create: `src/trigger/stages/uploadClips.ts`
 - Test: `src/trigger/stages/uploadClips.test.ts`
 
-`putObject` is injected (the spec notes `uploadScreenshots.ts` hard-imports it with no seam, so it is not a mirror-able pattern). The stage uploads the mp4 + poster per successfully-extracted step and produces `Clip` records; a step that failed extraction (has `error`) is passed through as a `clipsError` with no upload.
+`putObject` is injected (the spec notes `uploadScreenshots.ts` hard-imports it with no seam, so it is not a mirror-able pattern). The stage uploads the mp4 + poster per successfully-extracted step and produces `Clip` records; a step that failed extraction (has `error`) is passed through as a `clipsError` with no upload. This file also exports `composeClipSteps` — a pure function that assembles the final `Step[]` — so the physical compose logic is testable without the orchestrator.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -490,7 +490,29 @@ test("runUploadClips passes a failed-extraction step through as clipsError, no u
   assert.equal(entry.clips.length, 0);
   assert.ok(entry.error && entry.error.includes("ffmpeg boom"));
 });
+
+test("composeClipSteps sets clips / clipsError per step and never sets screenshots", () => {
+  const byStep = new Map([
+    [0, { clips: [{ clipId: "c", r2Key: "k", posterR2Key: "p", startTime: 0, endTime: 5, order: 0 }] }],
+    [1, { clips: [], error: "boom" }],
+  ]);
+  const steps = composeClipSteps(
+    [
+      { title: "A", description: "a", startTime: 0, endTime: 5 },
+      { title: "B", description: "b", startTime: 5, endTime: 10 },
+    ],
+    byStep,
+  );
+  assert.equal(steps.length, 2);
+  assert.equal(steps[0].clips?.length, 1);
+  assert.equal(steps[0].clipsError, undefined);
+  assert.equal(steps[0].screenshots, undefined);
+  assert.equal(steps[1].clips, undefined);
+  assert.equal(steps[1].clipsError, "boom");
+});
 ```
+
+Add `composeClipSteps` to the import line: `import { runUploadClips, composeClipSteps } from "./uploadClips";`.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
@@ -506,14 +528,14 @@ import fs from "node:fs";
 import { customAlphabet } from "nanoid";
 import { putObject as realPutObject } from "@/lib/r2";
 import { clipKey, clipPosterKey } from "@/lib/utils";
-import type { Clip } from "@/lib/mongo";
+import type { Clip, Step } from "@/lib/mongo";
 import type { ExtractedClip } from "./extractClips";
 
 export type PutObjectFn = (key: string, body: Buffer, contentType: string) => Promise<void>;
 
-const newClipId = customAlphabet(
-  "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", 10,
-);
+// Lowercase + digits, length 10 — matches the `newFrameId` convention in
+// uploadScreenshots.ts.
+const newClipId = customAlphabet("abcdefghijklmnopqrstuvwxyz0123456789", 10);
 
 export interface StepClips {
   clips: Clip[];
@@ -553,12 +575,43 @@ export async function runUploadClips(args: {
   }
   return out;
 }
+
+/** One resolved step's metadata — the subset `composeClipSteps` needs. */
+export interface ResolvedStepLite {
+  title: string;
+  description: string;
+  startTime: number;
+  endTime: number;
+}
+
+/**
+ * Assembles the final `Step[]` for a physical SOP: each resolved step gets its
+ * uploaded `clips` (or a `clipsError`) from `clipsByStep`. `screenshots` is
+ * never set. Pure — testable without the orchestrator.
+ */
+export function composeClipSteps(
+  resolved: ResolvedStepLite[],
+  clipsByStep: Map<number, StepClips>,
+): Step[] {
+  return resolved.map((rs, i) => {
+    const entry = clipsByStep.get(i);
+    const base: Step = {
+      title: rs.title,
+      description: rs.description,
+      startTime: rs.startTime,
+      endTime: rs.endTime,
+    };
+    if (entry?.clips.length) base.clips = entry.clips;
+    if (entry?.error) base.clipsError = entry.error;
+    return base;
+  });
+}
 ```
 
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `npx tsx --test src/trigger/stages/uploadClips.test.ts`
-Expected: PASS — both tests.
+Expected: PASS — all three tests (`runUploadClips` ×2, `composeClipSteps` ×1).
 
 - [ ] **Step 5: Type-check**
 
@@ -569,7 +622,7 @@ Expected: PASS.
 
 ```bash
 git add src/trigger/stages/uploadClips.ts src/trigger/stages/uploadClips.test.ts
-git commit -m "feat(clips): runUploadClips stage — mp4 + poster to R2
+git commit -m "feat(clips): runUploadClips stage + composeClipSteps
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 ```
@@ -589,7 +642,7 @@ At the top of `src/trigger/processSopScreenshots.ts`, add imports for the two ne
 
 ```ts
 import { runExtractClips } from "./stages/extractClips";
-import { runUploadClips } from "./stages/uploadClips";
+import { runUploadClips, composeClipSteps } from "./stages/uploadClips";
 ```
 
 - [ ] **Step 2: Declare the clip-dispose handle at outer scope**
@@ -641,11 +694,15 @@ Replace it with:
 
 The `updateOne` persisting `category`/`domainSummary`/`appType`/`industry` immediately below is unchanged and still runs for both paths.
 
-- [ ] **Step 4: Wrap the screen back-half in `if (isPhysical) { ... } else { ... }`**
+`analysis` is the resolved `VideoAnalysisOutput` (`runAnalyzeVideo`'s return type). Its `appType` field is a required `z.enum(["web","mobile","desktop","physical","none"])` — never `undefined` — so the `=== "none"` / `=== "physical"` checks are exhaustive and type-safe.
+
+- [ ] **Step 4: Wrap the screen back-half — insert the physical branch + `else {` opener**
 
 The screen back-half runs from the `// Stage 4: build frame pool.` comment (~line 202) through the `sop_completed` event insert (~line 331), ending just before the `} finally {` at ~line 332.
 
-Insert the physical branch and an `else {` opening immediately before `// Stage 4: build frame pool.`:
+This step inserts **only the opening**: the physical branch followed by `} else {`. The matching closing `}` for the `else` is added in Step 5 (folded into the `finally`-block edit) — this avoids an ambiguous edit anchor, because the physical branch below contains its own `sop_completed` insert identical to the screen path's.
+
+Insert the following immediately before `// Stage 4: build frame pool.` (i.e. the new text ends with `} else {` and the existing `// Stage 4` line follows it):
 
 ```ts
       if (isPhysical) {
@@ -669,18 +726,7 @@ Insert the physical branch and an `else {` opening immediately before `// Stage 
           clips: extracted.clips,
         });
 
-        const stepsOut: Step[] = resolved.map((rs, i) => {
-          const entry = clipsByStep.get(i);
-          const base: Step = {
-            title: rs.title,
-            description: rs.description,
-            startTime: rs.startTime,
-            endTime: rs.endTime,
-          };
-          if (entry?.clips.length) base.clips = entry.clips;
-          if (entry?.error) base.clipsError = entry.error;
-          return base;
-        });
+        const stepsOut: Step[] = composeClipSteps(resolved, clipsByStep);
 
         await (await sops()).updateOne(
           { _id },
@@ -694,7 +740,25 @@ Insert the physical branch and an `else {` opening immediately before `// Stage 
       await setStatus(_id, "building-pool", { title });
 ```
 
-Then add a single closing `}` for the `else` block immediately after the existing `sop_completed` event insert (after line ~331, before `} finally {`):
+The screen-path lines from `// Stage 4` through the `sop_completed` insert are now inside the `else` block. Re-indent that moved region by one level (two spaces) so the file stays consistently formatted — `npx next build` runs ESLint, and a clean diff is easier to review. The `else`'s closing `}` is **not** added here; Step 5 adds it.
+
+Note on empty extraction: if `resolved` is empty, `composeClipSteps` returns `[]` and the SOP is persisted `done` with zero steps — the same behaviour the screen path already has for an empty `resolved` (there is no separate empty-steps guard in the existing code). No new guard is added; the physical path matches the screen path here.
+
+- [ ] **Step 5: Close the `else` block and dispose the clip temp dir**
+
+Find the `finally` block (~line 332) — the screen path's `sop_completed` insert sits immediately above it:
+
+```ts
+      await (await events()).insertOne({
+        _id: new ObjectId(), type: "sop_completed", sopId: _id, createdAt: new Date(),
+      });
+    } finally {
+      if (pool) await pool.dispose();
+      await src.dispose();
+    }
+```
+
+Replace it with (this single edit both closes the `else` opened in Step 4 — the `}` before `} finally {` — and adds the clip-dispose call):
 
 ```ts
       await (await events()).insertOne({
@@ -702,30 +766,13 @@ Then add a single closing `}` for the `else` block immediately after the existin
       });
       }
     } finally {
-```
-
-The screen-path lines between are not otherwise modified. (Re-indentation of the moved block is optional — correctness does not depend on it; if `tsc`/lint is satisfied, leave indentation as-is to keep the diff small.)
-
-- [ ] **Step 5: Dispose the clip temp dir in the outer `finally`**
-
-Find the `finally` block (~line 332):
-
-```ts
-    } finally {
-      if (pool) await pool.dispose();
-      await src.dispose();
-    }
-```
-
-Add the clip dispose:
-
-```ts
-    } finally {
       if (pool) await pool.dispose();
       if (clipDispose) await clipDispose();
       await src.dispose();
     }
 ```
+
+This `old_string` is unique in the file (the `} finally {` line anchors it), so the edit is unambiguous even though a second `sop_completed` insert exists in the physical branch.
 
 - [ ] **Step 6: Type-check**
 
@@ -906,7 +953,14 @@ No automated test — the codebase has no React component test harness. Verified
 
 - [ ] **Step 1: Create the `StepCardClips` component**
 
-Create `src/components/StepCardClips.tsx`:
+First **read `src/components/StepCardScreenshots.tsx`** in full. `StepCardClips` must reuse that component's card shell *verbatim* so the two card types look identical on the page — specifically, copy exactly:
+
+- the `<article>` wrapper (its `className`, any `id` attribute such as `id={`step-${index+1}`}`, and any inline `style`),
+- the step-number badge markup and classes,
+- the title `<h3>` and the description `<p>` markup and classes,
+- the `screenshotsError` amber-notice element's markup and classes (for the `clipsError` notice).
+
+Only the body differs: where `StepCardScreenshots` renders its PhotoSwipe image gallery, `StepCardClips` renders a one-column grid of `<video>` players. Create `src/components/StepCardClips.tsx` with this shape — fill the shell pieces marked `/* copy from StepCardScreenshots */` from the file you just read:
 
 ```tsx
 export type ClipItem = {
@@ -931,18 +985,14 @@ export function StepCardClips({
   clips: ClipItem[];
   clipsError?: string;
 }) {
-  const n = String(index + 1).padStart(2, "0");
   const sorted = [...clips].sort((a, b) => a.order - b.order);
 
   return (
-    <article className="rounded-[20px] border border-gray-200 bg-white p-6 space-y-4">
-      <div className="flex items-center gap-3">
-        <span className="inline-flex h-7 min-w-7 items-center justify-center rounded-full bg-[#0A0A0A] px-2 text-[13px] font-semibold text-white">
-          {n}
-        </span>
-        <h3 className="text-[20px] font-semibold">{title}</h3>
-      </div>
-      <p className="text-sm text-[#4B5563]">{description}</p>
+    /* <article> wrapper — copy attributes/classes/style from StepCardScreenshots */
+    <article /* copy from StepCardScreenshots */>
+      {/* step-number badge — copy markup from StepCardScreenshots */}
+      {/* <h3> title — copy markup from StepCardScreenshots */}
+      {/* <p> description — copy markup from StepCardScreenshots */}
 
       {sorted.length > 0 ? (
         <div className="grid grid-cols-1 gap-3">
@@ -958,7 +1008,9 @@ export function StepCardClips({
           ))}
         </div>
       ) : clipsError ? (
-        <p className="rounded-md bg-[#FFFBEB] px-3 py-2 text-[13px] text-[#B45309]">
+        /* amber notice — copy the screenshotsError <p> markup/classes from
+           StepCardScreenshots, with the text below */
+        <p /* copy classes from StepCardScreenshots screenshotsError notice */>
           Clip không khả dụng cho bước này.
         </p>
       ) : null}
@@ -967,7 +1019,7 @@ export function StepCardClips({
 }
 ```
 
-(The number-badge markup mirrors `StepCardScreenshots`; if that component's badge differs, match it. The amber-notice classes are copied from `StepCardScreenshots`'s `screenshotsError` branch.)
+Keep the `index`/`title`/`description` prop names and types identical to `StepCardScreenshots` so the page's render loop can pass the same props.
 
 - [ ] **Step 2: Widen the `Step` type and add per-step selection in `page.tsx`**
 
@@ -1108,5 +1160,5 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 - [ ] `npx tsc --noEmit` — clean.
 - [ ] `npx tsx --test src/lib/utils.test.ts src/trigger/lib/extractClip.test.ts src/trigger/stages/extractClips.test.ts src/trigger/stages/uploadClips.test.ts src/app/api/share/[token]/mapClips.test.ts` — all pass.
 - [ ] `npx next build` — succeeds.
-- [ ] Spec coverage check: `Clip` model + statuses + error code (Task 1), `extractClip` helper (Task 2), `runExtractClips` (Task 3), `runUploadClips` with `putObject` DI (Task 4), Stage 0 routing + physical branch + dispose (Task 5), share API presigned clips (Task 6), `StepCardClips` + per-step selection (Task 7), processing-page statuses (Task 8).
+- [ ] Spec coverage check: `Clip` model + statuses + error code (Task 1), `extractClip` helper (Task 2), `runExtractClips` (Task 3), `runUploadClips` with `putObject` DI + `composeClipSteps` pure compose test (Task 4), Stage 0 routing + physical branch + dispose (Task 5), share API presigned clips (Task 6), `StepCardClips` + per-step selection (Task 7), processing-page statuses (Task 8).
 - [ ] End-to-end: trigger a run on a physical-process video; confirm `appType: "physical"`, status reaches `done`, each step has one `clip` with a playable mp4 + poster, and the share page renders `<video>` players.
