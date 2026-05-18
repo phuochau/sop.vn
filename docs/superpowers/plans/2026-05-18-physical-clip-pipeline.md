@@ -444,7 +444,7 @@ import assert from "node:assert";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { runUploadClips } from "./uploadClips";
+import { runUploadClips, composeClipSteps, type StepClips } from "./uploadClips";
 
 async function tmpFile(content: string): Promise<string> {
   const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "uc-"));
@@ -492,7 +492,7 @@ test("runUploadClips passes a failed-extraction step through as clipsError, no u
 });
 
 test("composeClipSteps sets clips / clipsError per step and never sets screenshots", () => {
-  const byStep = new Map([
+  const byStep: Map<number, StepClips> = new Map([
     [0, { clips: [{ clipId: "c", r2Key: "k", posterR2Key: "p", startTime: 0, endTime: 5, order: 0 }] }],
     [1, { clips: [], error: "boom" }],
   ]);
@@ -511,8 +511,6 @@ test("composeClipSteps sets clips / clipsError per step and never sets screensho
   assert.equal(steps[1].clipsError, "boom");
 });
 ```
-
-Add `composeClipSteps` to the import line: `import { runUploadClips, composeClipSteps } from "./uploadClips";`.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
@@ -740,7 +738,7 @@ Insert the following immediately before `// Stage 4: build frame pool.` (i.e. th
       await setStatus(_id, "building-pool", { title });
 ```
 
-The screen-path lines from `// Stage 4` through the `sop_completed` insert are now inside the `else` block. Re-indent that moved region by one level (two spaces) so the file stays consistently formatted — `npx next build` runs ESLint, and a clean diff is easier to review. The `else`'s closing `}` is **not** added here; Step 5 adds it.
+The screen-path lines from `// Stage 4` through the `sop_completed` insert are now inside the `else` block. **Leave their indentation unchanged** — do NOT re-indent the moved region. `tsc` and `next build`/ESLint (`next/core-web-vitals`) do not enforce indentation, re-indenting ~130 lines is error-prone, and — critically — Step 5's edit anchor depends on the `sop_completed` insert keeping its original indentation. The moved block sitting one indent-level shallow inside its `else` is a cosmetic-only difference. The `else`'s closing `}` is **not** added here; Step 5 adds it.
 
 Note on empty extraction: if `resolved` is empty, `composeClipSteps` returns `[]` and the SOP is persisted `done` with zero steps — the same behaviour the screen path already has for an empty `resolved` (there is no separate empty-steps guard in the existing code). No new guard is added; the physical path matches the screen path here.
 
