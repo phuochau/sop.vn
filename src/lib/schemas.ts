@@ -123,10 +123,29 @@ export const CanonicalizationOutput = z.object({
   })),
 });
 
+/** Curated, product-pragmatic industry list. `other` is the escape hatch.
+ *  All values are lowercase-hyphenated — no internal capitalization. */
+export const INDUSTRY_VALUES = [
+  "manufacturing",
+  "healthcare",
+  "food-and-beverage",
+  "hospitality",
+  "logistics-and-warehousing",
+  "retail",
+  "field-service-and-maintenance",
+  "construction",
+  "laboratory-and-pharma",
+  "agriculture",
+  "software-and-it",
+  "office-and-admin",
+  "other",
+] as const;
+
 export const VideoAnalysisOutput = z.object({
   appUIFrameCount: z.number().int().nonnegative(),
   totalFrames: z.number().int().nonnegative(),
-  appType: z.enum(["web", "mobile", "desktop", "none"]),
+  appType: z.enum(["web", "mobile", "desktop", "physical", "none"]),
+  industry: z.enum(INDUSTRY_VALUES),
   category: z.string(),
   domainSummary: z.string(),
 });

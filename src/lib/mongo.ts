@@ -87,7 +87,7 @@ export interface SopDoc {
   title: string;                     // AI-generated in Stage 4
   category: string;                  // AI-detected in Stage 3
   inputMode?: "speech" | "silent";
-  appType?: "web" | "mobile" | "desktop" | "none"; // detected by Stage 0
+  appType?: "web" | "mobile" | "desktop" | "physical" | "none"; // detected by Stage 0
   defaultLanguage?: string;
   sourceType?: "upload" | "loom";   // absent ⇒ "upload" (legacy rows)
   sourceUrl?: string;               // original Loom share URL (sourceType === "loom")

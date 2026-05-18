@@ -5,6 +5,7 @@ import {
   AutomationFields,
   ClassifiedCandidate,
   verbToAutomationAction,
+  VideoAnalysisOutput,
 } from "./schemas";
 
 test("HighlightDecision accepts a point", () => {
@@ -75,4 +76,35 @@ test("ClassifiedCandidate accepts automation and allows it to be absent", () => 
     discardReason: "hover",
   });
   assert.equal(without.automation ?? null, null);
+});
+
+test("VideoAnalysisOutput parses appType physical with a valid industry", () => {
+  const parsed = VideoAnalysisOutput.parse({
+    appUIFrameCount: 0,
+    totalFrames: 12,
+    appType: "physical",
+    industry: "manufacturing",
+    category: "Assembly line",
+    domainSummary: "A worker assembles a part.",
+  });
+  assert.equal(parsed.appType, "physical");
+  assert.equal(parsed.industry, "manufacturing");
+});
+
+test("VideoAnalysisOutput rejects an industry outside the enum", () => {
+  assert.throws(() =>
+    VideoAnalysisOutput.parse({
+      appUIFrameCount: 5, totalFrames: 10, appType: "web",
+      industry: "banking", category: "x", domainSummary: "y",
+    }),
+  );
+});
+
+test("VideoAnalysisOutput rejects an appType outside the 5-value enum", () => {
+  assert.throws(() =>
+    VideoAnalysisOutput.parse({
+      appUIFrameCount: 5, totalFrames: 10, appType: "game",
+      industry: "retail", category: "x", domainSummary: "y",
+    }),
+  );
 });
