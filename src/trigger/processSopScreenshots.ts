@@ -15,6 +15,8 @@ import { runVisualExtract } from "./stages/visualExtract";
 import { resolveTimes } from "./stages/resolveTimes";
 import { runBuildFramePool } from "./stages/buildFramePool";
 import { runUploadScreenshots } from "./stages/uploadScreenshots";
+import { runExtractClips } from "./stages/extractClips";
+import { runUploadClips, composeClipSteps } from "./stages/uploadClips";
 import { buildScreenClusters } from "@/trigger/lib/screenId";
 import { runExtractClickEvents } from "./stages/extractClickEvents";
 import { runClassifyAndMergeEvents } from "./stages/classifyAndMergeEvents";
@@ -87,6 +89,7 @@ async function runPipeline(_id: ObjectId): Promise<void> {
     catch (e) { logger.error("source download failed", { e: String(e) }); return fail(_id, "video_download_failed"); }
 
     let pool: Awaited<ReturnType<typeof runBuildFramePool>> | undefined;
+      let clipDispose: (() => Promise<void>) | undefined;
     try {
       // Stage 0: analyze video — app-recording gate + category/domainSummary.
       await setStatus(_id, "analyzing");
@@ -101,7 +104,16 @@ async function runPipeline(_id: ObjectId): Promise<void> {
         logger.error("analyze failed", { e: String(e) });
         return fail(_id, "analysis_failed");
       }
-      if (!decideAppGate(analysis.appUIFrameCount, analysis.totalFrames)) {
+      if (analysis.appType === "none") {
+        logger.info("rejected: not a usable recording", {
+          sopId: _id.toHexString(),
+          appUIFrameCount: analysis.appUIFrameCount,
+          totalFrames: analysis.totalFrames,
+        });
+        return fail(_id, "not_an_app");
+      }
+      const isPhysical = analysis.appType === "physical";
+      if (!isPhysical && !decideAppGate(analysis.appUIFrameCount, analysis.totalFrames)) {
         logger.info("rejected: not an app recording", {
           sopId: _id.toHexString(),
           appUIFrameCount: analysis.appUIFrameCount,
@@ -199,6 +211,37 @@ async function runPipeline(_id: ObjectId): Promise<void> {
         }
       }
 
+      if (isPhysical) {
+        // Physical path: extract one clip per step, upload, compose.
+        await setStatus(_id, "building-clips", { title });
+        let extracted;
+        try {
+          extracted = await runExtractClips({
+            srcPath: src.srcPath,
+            steps: resolved.map(r => ({ startTime: r.startTime, endTime: r.endTime })),
+          });
+          clipDispose = extracted.dispose;
+        } catch (e) {
+          logger.error("clip extraction failed", { e: String(e) });
+          return fail(_id, "clip_extract_failed");
+        }
+
+        await setStatus(_id, "uploading-clips");
+        const clipsByStep = await runUploadClips({
+          sopId: _id.toHexString(),
+          clips: extracted.clips,
+        });
+
+        const stepsOut: Step[] = composeClipSteps(resolved, clipsByStep);
+
+        await (await sops()).updateOne(
+          { _id },
+          { $set: { title, steps: stepsOut, status: "done" as SopStatus, updatedAt: new Date() } },
+        );
+        await (await events()).insertOne({
+          _id: new ObjectId(), type: "sop_completed", sopId: _id, createdAt: new Date(),
+        });
+      } else {
       // Stage 4: build frame pool.
       await setStatus(_id, "building-pool", { title });
       try {
@@ -329,8 +372,10 @@ async function runPipeline(_id: ObjectId): Promise<void> {
       await (await events()).insertOne({
         _id: new ObjectId(), type: "sop_completed", sopId: _id, createdAt: new Date(),
       });
+      }
     } finally {
       if (pool) await pool.dispose();
+      if (clipDispose) await clipDispose();
       await src.dispose();
     }
   } catch (e) {
