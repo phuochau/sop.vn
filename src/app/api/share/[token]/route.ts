@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { sops, events } from "@/lib/mongo";
 import { presignGet } from "@/lib/r2";
-import { mapClipsForStep } from "./mapClips";
+import { mapClipsForStep } from "@/lib/shareClips";
 
 const CLIP_URL_TTL_SEC = 21600; // 6 hours — long enough to outlast clip playback
 

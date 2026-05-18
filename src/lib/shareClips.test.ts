@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert";
-import { mapClipsForStep } from "./mapClips";
+import { mapClipsForStep } from "./shareClips";
 import type { Clip } from "@/lib/mongo";
 
 const clip: Clip = {
