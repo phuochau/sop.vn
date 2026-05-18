@@ -55,6 +55,7 @@ export function verbToAutomationAction(
     case "input": return "type";
     case "select": return "select";
     case "link": return "navigate";
+    default: throw new Error(`verbToAutomationAction: unknown verb "${verb as string}"`);
   }
 }
 
