@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Eye, FileText, Link as LinkIcon, Users, ListOrdered, Timer, Calendar, Shield, ArrowRight } from "lucide-react";
 import { Footer } from "@/components/Footer";
 import { StepCardScreenshots, type ScreenshotItem } from "@/components/StepCardScreenshots";
+import { StepCardClips, type ClipItem } from "@/components/StepCardClips";
 import { headers } from "next/headers";
 
 type Step = {
@@ -10,8 +11,10 @@ type Step = {
   description: string;
   startTime?: number;
   endTime?: number;
-  screenshots: ScreenshotItem[];
+  screenshots?: ScreenshotItem[];
   screenshotsError?: string;
+  clips?: ClipItem[];
+  clipsError?: string;
 };
 type SharedSop = {
   title: string;
@@ -107,16 +110,27 @@ export default async function Page({ params }: { params: Promise<{ token: string
 
         {/* Steps list */}
         <section className="max-w-[840px] mx-auto px-6 md:px-12 py-10 space-y-5">
-          {sop.steps.map((s) => (
-            <StepCardScreenshots
-              key={s.index}
-              index={s.index}
-              title={s.title}
-              description={s.description}
-              screenshots={s.screenshots}
-              screenshotsError={s.screenshotsError}
-            />
-          ))}
+          {sop.steps.map((s) =>
+            (s.clips && s.clips.length > 0) || s.clipsError ? (
+              <StepCardClips
+                key={s.index}
+                index={s.index}
+                title={s.title}
+                description={s.description}
+                clips={s.clips ?? []}
+                clipsError={s.clipsError}
+              />
+            ) : (
+              <StepCardScreenshots
+                key={s.index}
+                index={s.index}
+                title={s.title}
+                description={s.description}
+                screenshots={s.screenshots ?? []}
+                screenshotsError={s.screenshotsError}
+              />
+            ),
+          )}
         </section>
 
         {/* Footer CTA */}
