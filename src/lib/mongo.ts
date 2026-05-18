@@ -88,6 +88,7 @@ export interface SopDoc {
   category: string;                  // AI-detected in Stage 3
   inputMode?: "speech" | "silent";
   appType?: "web" | "mobile" | "desktop" | "physical" | "none"; // detected by Stage 0
+  industry?: string;                // curated industry enum, detected by Stage 0 (legacy rows lack it)
   defaultLanguage?: string;
   sourceType?: "upload" | "loom";   // absent ⇒ "upload" (legacy rows)
   sourceUrl?: string;               // original Loom share URL (sourceType === "loom")
