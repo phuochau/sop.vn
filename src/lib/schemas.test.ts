@@ -1,6 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert";
-import { HighlightDecision } from "./schemas";
+import {
+  HighlightDecision,
+  AutomationFields,
+  ClassifiedCandidate,
+  verbToAutomationAction,
+} from "./schemas";
 
 test("HighlightDecision accepts a point", () => {
   const parsed = HighlightDecision.parse({
@@ -29,4 +34,45 @@ test("HighlightDecision accepts the grounding_unavailable reason", () => {
     noHighlightReason: "grounding_unavailable",
   });
   assert.equal(parsed.noHighlightReason, "grounding_unavailable");
+});
+
+test("AutomationFields parses a full object", () => {
+  const parsed = AutomationFields.parse({
+    target: { text: "Save", role: "button", location: "top-right toolbar" },
+    inputValue: { field: "email", valueType: "email", example: "j***@***.com" },
+    expectedOutcome: "the contact form opens",
+  });
+  assert.equal(parsed.target.role, "button");
+  assert.equal(parsed.inputValue?.valueType, "email");
+});
+
+test("AutomationFields allows inputValue and expectedOutcome to be omitted", () => {
+  const parsed = AutomationFields.parse({
+    target: { text: "Companies", role: "link", location: "left sidebar" },
+  });
+  assert.equal(parsed.inputValue ?? null, null);
+  assert.equal(parsed.expectedOutcome ?? null, null);
+});
+
+test("verbToAutomationAction maps each actionable verb", () => {
+  assert.equal(verbToAutomationAction("click"), "click");
+  assert.equal(verbToAutomationAction("input"), "type");
+  assert.equal(verbToAutomationAction("select"), "select");
+  assert.equal(verbToAutomationAction("link"), "navigate");
+});
+
+test("ClassifiedCandidate accepts automation and allows it to be absent", () => {
+  const withAuto = ClassifiedCandidate.parse({
+    index: 0, decision: "action", verb: "click",
+    screenName: "x", elementCaption: "Save button", displayFrameIndex: 0,
+    discardReason: null,
+    automation: { target: { text: "Save", role: "button", location: "toolbar" } },
+  });
+  assert.ok(withAuto.automation);
+  const without = ClassifiedCandidate.parse({
+    index: 1, decision: "discard", verb: null,
+    screenName: null, elementCaption: null, displayFrameIndex: null,
+    discardReason: "hover",
+  });
+  assert.equal(without.automation ?? null, null);
 });

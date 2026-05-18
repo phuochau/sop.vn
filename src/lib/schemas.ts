@@ -41,6 +41,56 @@ export const Highlight = z.object({
   bbox: BBox,
 });
 
+export type AutomationAction = "click" | "type" | "select" | "navigate";
+
+/**
+ * Maps a sub-step's `verb` to its automation `action`. `view` is never passed —
+ * `view` sub-steps are non-actionable and carry no automation metadata.
+ */
+export function verbToAutomationAction(
+  verb: "click" | "input" | "select" | "link",
+): AutomationAction {
+  switch (verb) {
+    case "click": return "click";
+    case "input": return "type";
+    case "select": return "select";
+    case "link": return "navigate";
+  }
+}
+
+/**
+ * VLM-emitted portion of the automation descriptor (no `action` — that is
+ * derived in code by `buildActionsForStep`). `inputValue` is present only for
+ * `input`/`select` candidates; the schema cannot express that, so it is
+ * `.nullish()` and the invariant is enforced by the classifier prompt and by
+ * `buildActionsForStep`.
+ */
+export const AutomationFields = z.object({
+  target: z.object({
+    text: z.string(),
+    role: z.string(),
+    location: z.string(),
+  }),
+  inputValue: z.object({
+    field: z.string(),
+    valueType: z.enum(["text", "email", "password", "number", "date", "url", "selection", "other"]),
+    example: z.string().nullish(),
+  }).nullish(),
+  expectedOutcome: z.string().nullish(),
+});
+
+/** Full automation descriptor stored on `Action` / `Screenshot` (includes `action`). */
+export type AutomationMeta = {
+  action: AutomationAction;
+  target: { text: string; role: string; location: string };
+  inputValue?: {
+    field: string;
+    valueType: "text" | "email" | "password" | "number" | "date" | "url" | "selection" | "other";
+    example?: string;
+  };
+  expectedOutcome?: string;
+};
+
 export const ClassifiedCandidate = z.object({
   index: z.number(),
   decision: z.enum(["action", "discard"]),
@@ -49,6 +99,7 @@ export const ClassifiedCandidate = z.object({
   elementCaption: z.string().nullable(),
   displayFrameIndex: z.number().int().nullable(),
   discardReason: z.enum(["transition", "hover", "press_flicker", "animation", "not_a_ui", "other"]).nullable(),
+  automation: AutomationFields.nullish(),
 });
 
 export const StepClassification = z.object({
@@ -110,4 +161,5 @@ export type Action = {
     bbox?: { x: number; y: number; w: number; h: number };
     point?: { x: number; y: number };
   };
+  automation?: AutomationMeta;
 };
