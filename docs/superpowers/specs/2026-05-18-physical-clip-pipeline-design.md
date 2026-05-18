@@ -64,51 +64,78 @@ These were settled in discussion; recorded here so the spec is self-contained:
 
 ### Stage 0 routing change (`processSopScreenshots.ts`)
 
-Today: `if (!decideAppGate(...)) return fail(_id, "not_an_app")`.
+Today the code is, in order: call `runAnalyzeVideo` → `if (!decideAppGate(...))
+return fail(_id, "not_an_app")` → destructure `{ category, domainSummary,
+appType, industry }` → `updateOne` persisting those four fields.
 
-New routing, immediately after `runAnalyzeVideo`:
+New routing replaces **only the gate's `fail` decision**. The
+field-destructure and the `updateOne` persist of `category`/`domainSummary`/
+`appType`/`industry` **must still run on the physical branch** — `extract` and
+`visualExtract` consume `category` and `domainSummary` downstream. Concretely:
 
 - `appType === "none"` → `fail(_id, "not_an_app")` (unchanged outcome).
-- `appType === "physical"` → physical branch (skip `decideAppGate`).
-- otherwise (`web`/`mobile`/`desktop`) → run `decideAppGate`; if it fails,
-  `fail(_id, "not_an_app")`; else screen branch (existing behaviour).
+- `appType === "physical"` → do NOT call `decideAppGate`; set `isPhysical =
+  true`; continue.
+- otherwise (`web`/`mobile`/`desktop`) → call `decideAppGate`; if it fails,
+  `fail(_id, "not_an_app")`; else `isPhysical = false`; continue.
 
-`decideAppGate` itself is unchanged — it stays as the screen-path sanity check.
-A boolean `isPhysical` is computed once and used to select the back-half
-stages.
+After this routing, the existing destructure + `updateOne` run unchanged for
+every non-rejected path. `decideAppGate` itself is not modified — it stays as
+the screen-path sanity check. The boolean `isPhysical` selects the back-half.
 
 ### Pipeline stages
 
 Shared (unchanged) for both paths: duration probe, source download, Stage 0,
 transcribe, speech/silent branch, normalize, `extract` / `visualExtract`. After
 extraction both paths hold `resolved: { title, description, startTime,
-endTime }[]` (from `resolveTimes` for narrated, direct for silent).
+endTime }[]` (from `resolveTimes` for narrated, direct for silent). The
+`resolved` variable already exists in the orchestrator and is populated by both
+the speech and silent branches before the back-half begins.
 
-**Screen path:** existing stages 4–8 (frame pool → click detect → classify →
-highlight → upload screenshots → compose). Unchanged.
+**The back-half is not a tidy stage block.** In the current code the screen
+back-half (frame pool → click detect → classify/merge → a per-step loop doing
+screen clustering / classify / canonicalize / highlight → upload screenshots →
+compose `Step[]` → persist `status:done` → insert the `sop_completed` event) is
+~130 continuous lines, not a callable unit. The branch is therefore introduced
+as a literal `if (isPhysical) { …physical… } else { …existing screen lines… }`
+wrapping that region. The existing screen lines are moved verbatim into the
+`else` with no behavioural change. **No refactor of the screen path into a
+named function is in scope** — minimising risk to working code is preferred.
 
-**Physical path** — three new stages replacing 4–8:
+**Screen path (`else` branch):** the existing back-half, unchanged.
+
+**Physical path (`if (isPhysical)` branch)** — its own self-contained sequence:
 
 1. **Extract clips** (`runExtractClips`, status `building-clips`): for each
    resolved step, ffmpeg-trim the source video to `[startTime, endTime]` into a
    temp `.mp4`, and grab one poster frame at the step midpoint into a temp
    `.jpg`. Returns, per step index, a local clip path + local poster path +
-   the time bounds.
+   the time bounds. The returned temp paths must outlive `runUploadClips`, so
+   the temp-dir cleanup is **not** done inside `runExtractClips` — it is done in
+   the orchestrator's outer `finally` (the same place `pool.dispose()` runs for
+   the screen path). `runExtractClips` returns a `dispose()` for that purpose.
 2. **Upload clips** (`runUploadClips`, status `uploading-clips`): for each
-   step's clip, `putObject` the mp4 (`video/mp4`) and the poster (`image/jpeg`)
-   to R2, producing a `Clip` record.
-3. **Compose & persist:** assemble `Step[]` with `clips` populated instead of
-   `screenshots`; write `status: "done"`.
+   step's clip, upload the mp4 (`video/mp4`) and the poster (`image/jpeg`) to
+   R2, producing a `Clip` record. See the testing section for the `putObject`
+   dependency-injection requirement.
+3. **Compose & persist:** assemble `Step[]` with `clips` populated (and
+   `screenshots` unset); persist via `updateOne` with `{ title, steps,
+   status: "done" }`; then insert the `sop_completed` event. These three lines
+   mirror the screen path's existing tail — duplicating ~5 trivial lines is
+   accepted over refactoring the shared tail out of working code.
 
 ### New ffmpeg helper
 
 `src/trigger/lib/extractClip.ts` — `extractClip(srcPath, outPath, startSec,
 endSec)`. Uses fluent-ffmpeg with `.seekInput(startSec)` +
-`.duration(endSec - startSec)` and re-encodes (`libx264`, `aac`,
-`-movflags +faststart` for progressive web playback). Re-encoding (not
-`-c copy`) is chosen so cut boundaries are frame-accurate rather than snapped
-to keyframes. Poster frames reuse the existing single-frame grab helper
-(`grabFrame` in `src/trigger/lib/videoTmp.ts`).
+`.duration(endSec - startSec)` and re-encodes (`libx264` at `-preset veryfast`,
+`aac` audio, `-movflags +faststart` for progressive web playback). Re-encoding
+(not `-c copy`) is chosen so cut boundaries are frame-accurate rather than
+snapped to keyframes; `-preset veryfast` keeps re-encode time low. Poster
+frames reuse the existing single-frame grab helper `grabFrame(input, out,
+atSec)` in `src/trigger/lib/videoTmp.ts` — note it produces a 640px-wide JPEG
+(it uses fluent-ffmpeg `.screenshots`), which is fine for a thumbnail; `out`'s
+parent directory must exist before the call.
 
 ## Data model (`src/lib/mongo.ts`)
 
@@ -136,11 +163,14 @@ have neither set to `clips`):
 
 `SopStatus` union gains `"building-clips"` and `"uploading-clips"`.
 
-R2 key helpers (`src/lib/utils.ts`, alongside `screenshotKey`):
+R2 key helpers (`src/lib/utils.ts`, alongside `screenshotKey`). They must follow
+the existing key convention — every key helper in that file starts with the
+`sops/` prefix and uses a `step-${stepIndex}` segment (e.g. `screenshotKey` →
+`sops/${sopId}/screenshots/step-${stepIndex}/${frameId}.jpg`):
 
 ```ts
-clipKey(sopId, stepIndex, clipId)       → `${sopId}/clips/${stepIndex}/${clipId}.mp4`
-clipPosterKey(sopId, stepIndex, clipId) → `${sopId}/clips/${stepIndex}/${clipId}-poster.jpg`
+clipKey(sopId, stepIndex, clipId)       → `sops/${sopId}/clips/step-${stepIndex}/${clipId}.mp4`
+clipPosterKey(sopId, stepIndex, clipId) → `sops/${sopId}/clips/step-${stepIndex}/${clipId}-poster.jpg`
 ```
 
 ## Data flow
@@ -160,23 +190,34 @@ download → Stage 0 analyze ─ appType?
 
 ## Share API (`src/app/api/share/[token]/route.ts`)
 
+Today the route's `doc.steps.map` is fully synchronous and screenshots are
+exposed as a proxy URL (`/api/screenshots/${sopId}/${frameId}.jpg`), not a
+presigned URL. Clips instead use **presigned R2 URLs returned directly** in the
+response (presigned URLs support HTTP range requests, which video seeking
+needs).
+
 The step mapping gains a `clips` array, built only when `s.clips` is present:
 
 ```ts
-clips: (s.clips ?? []).map(c => ({
+clips: await Promise.all((s.clips ?? []).map(async c => ({
   clipId: c.clipId,
-  url: presignGet(c.r2Key),          // presigned mp4 URL
-  posterUrl: presignGet(c.posterR2Key),
+  url: await presignGet(c.r2Key, CLIP_URL_TTL_SEC),
+  posterUrl: await presignGet(c.posterR2Key, CLIP_URL_TTL_SEC),
   startTime: c.startTime,
   endTime: c.endTime,
   order: c.order,
-})),
+}))),
 clipsError: s.clipsError,
 ```
 
-`presignGet` is async, so the `steps.map` becomes a `Promise.all` over an async
-mapper. `screenshots` mapping is unchanged. A step yields one of the two arrays
-non-empty.
+`presignGet` (in `src/lib/r2.ts`) is async but does only local crypto — no
+network — so the per-request cost of `2 × clipCount` presign calls is
+negligible. Because it is async, the whole `doc.steps.map(...)` becomes
+`await Promise.all(doc.steps.map(async (s, i) => ({ ... })))`. The `screenshots`
+mapping inside it is unchanged. `presignGet`'s default TTL is 3600 s, too short
+for a long clip still playing an hour later; clip URLs use an explicit
+`CLIP_URL_TTL_SEC = 21600` (6 hours) constant defined in the route. A step
+yields exactly one of `screenshots` / `clips` non-empty.
 
 ## UI (`src/app/share/[token]/page.tsx` + new component)
 
@@ -186,16 +227,33 @@ as an HTML5 `<video controls preload="metadata" poster={posterUrl}>` with the
 presigned mp4 as `src`. On `clipsError`, shows the same amber "unavailable"
 notice `StepCardScreenshots` uses.
 
-`page.tsx` selects the component per step: if the step's `clips` array is
-non-empty (or `clipsError` is set) render `StepCardClips`, else
-`StepCardScreenshots`. A SOP-wide check is acceptable too since a SOP is wholly
-one kind, but per-step keeps it simple and robust.
+`page.tsx` changes:
+
+- The page's local `Step` type currently hard-requires `screenshots:
+  ScreenshotItem[]`. It must be widened: `screenshots?` becomes optional and a
+  `clips?: ClipItem[]` plus `clipsError?: string` are added (mirroring the
+  share-API `Step` type, which has the same duplicated shape and the same
+  edit).
+- The render loop selects the component per step: if the step's `clips` array
+  is non-empty (or `clipsError` is set) render `StepCardClips`, else
+  `StepCardScreenshots`.
 
 ## Processing-status page (`src/app/processing/[id]/page.tsx`)
 
-The status→label map gains friendly text for the two new statuses, e.g.
-`building-clips` → "Cutting video clips…", `uploading-clips` → "Uploading
-clips…". (Verify the exact shape of the existing map when implementing.)
+This page does **not** have a status→label map. It has: (a) a locally
+hand-duplicated `Status` union, (b) a `STATUS_STEP_INDEX` record mapping each
+status to a progress-step index, and (c) a `STEPS` array of progress-step
+labels. Required changes:
+
+- Add `"building-clips"` and `"uploading-clips"` to the local `Status` union.
+- Add both to `STATUS_STEP_INDEX`, mapping `building-clips` to the same index
+  the screen path's `building-pool` uses and `uploading-clips` to the index
+  `uploading-screenshots` uses — so the progress bar advances correctly for the
+  physical path without new progress-step rows.
+- The `STEPS` label copy is screen-specific (e.g. "create screenshots"). For
+  v1 this slightly-off copy on a physical run is **accepted** — the processing
+  page is a transient progress view; per-pipeline copy is a deferred polish
+  item, not part of this spec.
 
 ## Error handling
 
@@ -222,9 +280,13 @@ clips…". (Verify the exact shape of the existing map when implementing.)
   one clip + one poster temp file per step, correct time bounds, and that a
   failing step records a `clipsError` without aborting the others (inject a
   failing trim).
-- **`runUploadClips`** — inject a fake `putObject`; assert two `putObject` calls
-  per clip (mp4 + poster), correct content types, correct R2 keys, and a
-  well-formed `Clip` record (ids, order).
+- **`runUploadClips`** — note that `uploadScreenshots.ts` calls `putObject` via
+  a hard `import` with no injection seam, so it is **not** a pattern to mirror
+  for testability. `runUploadClips` must therefore be designed with dependency
+  injection: a final optional parameter `putObject: PutObjectFn =
+  realPutObject` (defaulting to the real `@/lib/r2` `putObject`). The test
+  passes a fake and asserts two calls per clip (mp4 `video/mp4` + poster
+  `image/jpeg`), correct R2 keys, and a well-formed `Clip` record (ids, order).
 - **Key helpers** — unit-test `clipKey` / `clipPosterKey` output shape.
 - **Compose** — pure-function test that a physical run yields `Step[]` with
   `clips` set and `screenshots` unset.
@@ -244,7 +306,13 @@ clips…". (Verify the exact shape of the existing map when implementing.)
 - `src/lib/mongo.ts` — `Clip` interface, `Step.clips`/`clipsError`,
   `SopStatus` additions.
 - `src/lib/utils.ts` — `clipKey`, `clipPosterKey`.
-- `src/trigger/processSopScreenshots.ts` — Stage 0 routing + physical branch.
-- `src/app/api/share/[token]/route.ts` — `clips` in the step mapping.
-- `src/app/share/[token]/page.tsx` — per-step component selection.
-- `src/app/processing/[id]/page.tsx` — labels for the two new statuses.
+- `src/trigger/processSopScreenshots.ts` — Stage 0 routing + `if (isPhysical)`
+  back-half branch + clip-stage temp-dir dispose in the outer `finally`.
+- `src/app/api/share/[token]/route.ts` — `clips` in the step mapping; the
+  `doc.steps.map` becomes `await Promise.all(...)`; widen the route's local
+  `Step` type (`screenshots?` optional, add `clips?`/`clipsError?`);
+  `CLIP_URL_TTL_SEC` constant.
+- `src/app/share/[token]/page.tsx` — widen the local `Step` type, add the
+  `ClipItem` type, per-step component selection.
+- `src/app/processing/[id]/page.tsx` — add the two statuses to the local
+  `Status` union and to `STATUS_STEP_INDEX`.
