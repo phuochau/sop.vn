@@ -180,3 +180,76 @@ test("emitted actions carry no highlight field (the highlight pass fills it late
   });
   assert.equal(out[0].highlight, undefined);
 });
+
+test("buildActionsForStep attaches automation with action derived from verb", () => {
+  const out = buildActionsForStep({
+    stepIndex: 0,
+    classified: [action({
+      index: 0, verb: "click",
+      automation: { target: { text: "Save", role: "button", location: "toolbar" } },
+    })],
+    screenClusters: [],
+    eventTimes: [5],
+    viewMinDurationSec: 3,
+    language: "en",
+  });
+  assert.equal(out.length, 1);
+  assert.equal(out[0].automation?.action, "click");
+  assert.equal(out[0].automation?.target.text, "Save");
+});
+
+test("buildActionsForStep sources automation from the input record when a group is promoted to input", () => {
+  // Same (screen, element) key -> one group. The earlier click record anchors,
+  // the input record follows; the group's effective verb becomes "input".
+  const out = buildActionsForStep({
+    stepIndex: 0,
+    classified: [
+      action({
+        index: 0, verb: "click", screenName: "form", elementCaption: "Email field",
+        automation: { target: { text: "Email", role: "textbox", location: "form" } },
+      }),
+      action({
+        index: 1, verb: "input", screenName: "form", elementCaption: "Email field",
+        automation: {
+          target: { text: "Email", role: "textbox", location: "form" },
+          inputValue: { field: "email", valueType: "email", example: "j***@***.com" },
+        },
+      }),
+    ],
+    screenClusters: [],
+    eventTimes: [1, 2],
+    viewMinDurationSec: 3,
+    language: "en",
+  });
+  assert.equal(out.length, 1);
+  assert.equal(out[0].verb, "input");
+  assert.equal(out[0].automation?.action, "type");
+  assert.equal(out[0].automation?.inputValue?.example, "j***@***.com");
+});
+
+test("buildActionsForStep view actions have no automation", () => {
+  const out = buildActionsForStep({
+    stepIndex: 0,
+    classified: [],
+    screenClusters: [cluster("A", 0, 10)],
+    eventTimes: [],
+    viewMinDurationSec: 3,
+    language: "en",
+  });
+  assert.equal(out.length, 1);
+  assert.equal(out[0].verb, "view");
+  assert.equal(out[0].automation ?? null, null);
+});
+
+test("buildActionsForStep omits automation when the record has none", () => {
+  const out = buildActionsForStep({
+    stepIndex: 0,
+    classified: [action({ index: 0, verb: "click" })],
+    screenClusters: [],
+    eventTimes: [5],
+    viewMinDurationSec: 3,
+    language: "en",
+  });
+  assert.equal(out.length, 1);
+  assert.equal(out[0].automation ?? null, null);
+});

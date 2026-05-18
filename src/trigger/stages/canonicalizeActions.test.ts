@@ -92,3 +92,18 @@ test("empty / all-discard input returns input with NO LLM call", async () => {
   assert.equal(out2.length, 1);
   assert.equal(calls.length, 0);
 });
+
+test("canonicalizeActions preserves automation on records", async () => {
+  const { fn } = fakeLlm({
+    actions: [{ index: 0, screenName: "contacts", elementCaption: "Save button" }],
+  });
+  const out = await canonicalizeActions({
+    classified: [rec({
+      index: 0,
+      automation: { target: { text: "Save", role: "button", location: "toolbar" } },
+    })],
+    language: "en",
+    llmFn: fn,
+  });
+  assert.equal(out[0].automation?.target.role, "button");
+});
