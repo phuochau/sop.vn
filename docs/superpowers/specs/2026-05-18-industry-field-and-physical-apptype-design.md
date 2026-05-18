@@ -65,22 +65,24 @@ field-service-and-maintenance
 construction
 laboratory-and-pharma
 agriculture
-software-and-IT
+software-and-it
 office-and-admin
 other
 ```
 
 `other` is the escape hatch. The list is intentionally coarse and
 product-pragmatic (not NAICS/GICS granularity); it will be revisited once real
-upload data shows what clusters into `other`.
+upload data shows what clusters into `other`. All 13 values are
+lowercase-hyphenated — no internal capitalization.
 
 **`src/lib/mongo.ts` — `SopDoc`:**
 
-- `appType` field's union extended: `"web" | "mobile" | "desktop" | "physical" | "none"`.
+- `appType` stays **optional** (`appType?:`); its union gains `"physical"`:
+  `appType?: "web" | "mobile" | "desktop" | "physical" | "none"`.
 - New optional field `industry?: string` — optional because legacy SopDocs
-  predate it. Typed as `string` (not the enum literal union) to match the
-  existing loose typing of `category`/`appType` siblings and to tolerate any
-  future enum drift in stored data.
+  predate it. Typed as `string` (not the enum literal union) to tolerate future
+  enum drift in already-stored data; this mirrors how the sibling `category`
+  field is typed `string` rather than a fixed union.
 
 ### 2. Stage 0 prompt — `analyzeVideoSystem` (`src/config/index.ts`)
 
@@ -93,7 +95,11 @@ The prompt is updated so the VLM:
   - **`none`** — genuine non-process video: a person talking to camera, a
     slideshow/presentation, a static title card, or gameplay.
   - The existing screen types (`web`/`mobile`/`desktop`) are unchanged.
-- Returns a new `industry` field — one of the 13 enum values.
+- Returns a new `industry` field — one of the 13 enum values. The prompt must
+  instruct the VLM to: pick the industry from what the video shows (screen
+  content and/or narration); default to `other` when no industry clearly fits;
+  and treat `software-and-it` as valid for any `appType` (a screen recording of
+  a generic SaaS tool with no clear vertical is `software-and-it`).
 
 The returned JSON shape becomes:
 `{ "appUIFrameCount": int, "totalFrames": int,
@@ -112,7 +118,8 @@ persisted; physical recordings reject before the write, so in practice
 
 ### 4. Persistence — `src/trigger/processSopScreenshots.ts`
 
-`industry` is added to the existing post-gate `$set`:
+`industry` is added to the existing post-gate destructure + `$set`
+(`processSopScreenshots.ts:112-116`):
 
 ```ts
 const { category, domainSummary, appType, industry } = analysis;
