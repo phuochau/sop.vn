@@ -115,3 +115,29 @@ test("classifyStepWithLLM forwards each chunk to the injected classifier and con
   const indices = out.map(c => c.index).sort((a, b) => a - b);
   assert.deepEqual(indices, [0, 1, 2, 3]);
 });
+
+test("classifyStepWithLLM carries automation from the classifier onto each record", async () => {
+  const { classifyStepWithLLM } = await import("./classifyStepWithLLM");
+  const out = await classifyStepWithLLM({
+    stepTitle: "t",
+    language: "en",
+    candidates: [c(0, 1)],
+    maxCandidatesPerCall: 2,
+    classifier: async ({ candidates }) => ({
+      candidates: candidates.map(cand => ({
+        index: cand.index,
+        decision: "action" as const,
+        verb: "click" as const,
+        screenName: "x",
+        elementCaption: "Save button",
+        displayFrameIndex: 0,
+        discardReason: null,
+        automation: {
+          target: { text: "Save", role: "button", location: "toolbar" },
+        },
+      })),
+    }),
+  });
+  assert.equal(out.length, 1);
+  assert.equal(out[0].automation?.target.role, "button");
+});
