@@ -19,6 +19,12 @@ export function keyframeKey(sopId: string, stepIndex: number, frameIndex: number
 export function screenshotKey(sopId: string, stepIndex: number, frameId: string) {
   return `sops/${sopId}/screenshots/step-${stepIndex}/${frameId}.jpg`;
 }
+export function clipKey(sopId: string, stepIndex: number, clipId: string) {
+  return `sops/${sopId}/clips/step-${stepIndex}/${clipId}.mp4`;
+}
+export function clipPosterKey(sopId: string, stepIndex: number, clipId: string) {
+  return `sops/${sopId}/clips/step-${stepIndex}/${clipId}-poster.jpg`;
+}
 export function extFromMime(mime: string): string {
   return ({ "video/mp4":"mp4","video/quicktime":"mov","video/webm":"webm","video/x-msvideo":"avi" } as Record<string, string>)[mime] ?? "mp4";
 }

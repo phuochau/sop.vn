@@ -17,6 +17,7 @@ export async function getDb(): Promise<Db> {
 export type SopStatus =
   | "uploading" | "ingesting" | "transcribing" | "normalizing" | "analyzing"
   | "generating" | "building-pool" | "assigning" | "uploading-screenshots"
+  | "building-clips" | "uploading-clips"
   | "done" | "failed";
 
 export type ErrorCode =
@@ -27,6 +28,7 @@ export type ErrorCode =
   | "visual_extract_failed"
   | "frame_sampling_failed" | "video_download_failed"
   | "screenshot_pool_failed"
+  | "clip_extract_failed"
   | "not_an_app"           // Stage 0: < 50% of sampled frames show an app UI
   | "analysis_failed"      // Stage 0: the analysis VLM call errored (retryable)
   | "click_detect_failed"
@@ -73,6 +75,15 @@ export interface Screenshot {
   };
 }
 
+export interface Clip {
+  clipId: string;        // nanoid(10), unique per clip
+  r2Key: string;         // mp4 object key in R2
+  posterR2Key: string;   // jpg poster object key in R2
+  startTime: number;     // clip start in source video, seconds
+  endTime: number;       // clip end in source video, seconds
+  order: number;         // display order within the step (0 in v1 — one clip)
+}
+
 export interface Step {
   title: string;
   description: string;
@@ -80,6 +91,8 @@ export interface Step {
   endTime: number;
   screenshots?: Screenshot[];
   screenshotsError?: string;
+  clips?: Clip[];
+  clipsError?: string;
 }
 
 export interface SopDoc {
