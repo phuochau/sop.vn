@@ -161,7 +161,8 @@ have neither set to `clips`):
   clipsError?: string;   // set when clip extraction failed for the step
 ```
 
-`SopStatus` union gains `"building-clips"` and `"uploading-clips"`.
+`SopStatus` union gains `"building-clips"` and `"uploading-clips"`. The
+`ErrorCode` union gains `"clip_extract_failed"` (see Error handling).
 
 R2 key helpers (`src/lib/utils.ts`, alongside `screenshotKey`). They must follow
 the existing key convention — every key helper in that file starts with the
@@ -193,10 +194,18 @@ download → Stage 0 analyze ─ appType?
 Today the route's `doc.steps.map` is fully synchronous and screenshots are
 exposed as a proxy URL (`/api/screenshots/${sopId}/${frameId}.jpg`), not a
 presigned URL. Clips instead use **presigned R2 URLs returned directly** in the
-response (presigned URLs support HTTP range requests, which video seeking
-needs).
+response. The screenshot proxy route is small and image-oriented; serving video
+through it would need HTTP range-request handling and content-type branching,
+whereas a presigned R2 URL gives native range support (which video seeking
+needs) with zero new route code — hence clips diverge from the screenshot
+proxy pattern.
 
-The step mapping gains a `clips` array, built only when `s.clips` is present:
+The route has **no local `Step` type** — it maps `doc.steps` directly off the
+MongoDB `Step` interface (already widened in `mongo.ts` with `clips?`/
+`clipsError?`). So no type declaration is edited here; only the output mapping
+changes. The step mapping gains a `clips` array, emitted unconditionally (empty
+array when the step has no clips, exactly as `screenshots` is already emitted
+with `s.screenshots ?? []`):
 
 ```ts
 clips: await Promise.all((s.clips ?? []).map(async c => ({
@@ -216,8 +225,8 @@ negligible. Because it is async, the whole `doc.steps.map(...)` becomes
 `await Promise.all(doc.steps.map(async (s, i) => ({ ... })))`. The `screenshots`
 mapping inside it is unchanged. `presignGet`'s default TTL is 3600 s, too short
 for a long clip still playing an hour later; clip URLs use an explicit
-`CLIP_URL_TTL_SEC = 21600` (6 hours) constant defined in the route. A step
-yields exactly one of `screenshots` / `clips` non-empty.
+`CLIP_URL_TTL_SEC = 21600` (6 hours) constant defined in the route. For any
+given step exactly one of `screenshots` / `clips` is non-empty.
 
 ## UI (`src/app/share/[token]/page.tsx` + new component)
 
@@ -230,10 +239,11 @@ notice `StepCardScreenshots` uses.
 `page.tsx` changes:
 
 - The page's local `Step` type currently hard-requires `screenshots:
-  ScreenshotItem[]`. It must be widened: `screenshots?` becomes optional and a
-  `clips?: ClipItem[]` plus `clipsError?: string` are added (mirroring the
-  share-API `Step` type, which has the same duplicated shape and the same
-  edit).
+  ScreenshotItem[]`. It must be widened: `screenshots` becomes optional and a
+  `clips?: ClipItem[]` plus `clipsError?: string` are added. A new `ClipItem`
+  type is declared matching the share-API `clips` shape (`clipId`, `url`,
+  `posterUrl`, `startTime`, `endTime`, `order`). (The share-API route has no
+  local `Step` type, so there is no second type to keep in sync.)
 - The render loop selects the component per step: if the step's `clips` array
   is non-empty (or `clipsError` is set) render `StepCardClips`, else
   `StepCardScreenshots`.
@@ -263,10 +273,13 @@ labels. Required changes:
 - If `extractClip` fails for one step, that step's `clipsError` is set and the
   step is persisted clip-less; other steps are unaffected — mirrors how
   `screenshotsError` works per step. The SOP still reaches `done`.
-- ffmpeg/process errors that abort the whole stage map to a failure code; reuse
-  the existing `withStage` wrapper and a suitable existing `ErrorCode`
-  (`frame_sampling_failed` is the closest existing analogue for clip
-  extraction; no new error code is introduced).
+- ffmpeg/process errors that abort the whole clip-extraction stage map to a new
+  `ErrorCode` value `clip_extract_failed` (added to the `ErrorCode` union in
+  `mongo.ts`). The existing `frame_sampling_failed` is semantically about frame
+  sampling, not clip trimming, so a dedicated code is clearer. The processing
+  page's `ERROR_MSG` map gets a matching user-facing entry for
+  `clip_extract_failed`. The stage is wrapped with the existing `withStage`
+  helper, as the screen stages are.
 - Temp directories for clips/posters are removed in a `finally`, following the
   `dispose()` pattern in `sampleFrames`.
 
@@ -276,10 +289,11 @@ labels. Required changes:
   `samples/trimmed-hubspot_crm.mp4` fixture: trim a known sub-range, ffprobe the
   output, assert duration ≈ requested span (±0.5 s) and the file is a valid
   mp4.
-- **`runExtractClips`** — with a tiny fixture and a few resolved steps, assert
-  one clip + one poster temp file per step, correct time bounds, and that a
-  failing step records a `clipsError` without aborting the others (inject a
-  failing trim).
+- **`runExtractClips`** — against the `samples/trimmed-hubspot_crm.mp4` fixture
+  with a few resolved steps, assert one clip + one poster temp file per step,
+  correct time bounds, and that a failing step records a `clipsError` without
+  aborting the others (inject a failing trim via the injectable `extractClip`
+  dependency).
 - **`runUploadClips`** — note that `uploadScreenshots.ts` calls `putObject` via
   a hard `import` with no injection seam, so it is **not** a pattern to mirror
   for testability. `runUploadClips` must therefore be designed with dependency
@@ -304,15 +318,17 @@ labels. Required changes:
 
 **Modified:**
 - `src/lib/mongo.ts` — `Clip` interface, `Step.clips`/`clipsError`,
-  `SopStatus` additions.
+  `SopStatus` additions, `ErrorCode` gains `clip_extract_failed`.
 - `src/lib/utils.ts` — `clipKey`, `clipPosterKey`.
 - `src/trigger/processSopScreenshots.ts` — Stage 0 routing + `if (isPhysical)`
-  back-half branch + clip-stage temp-dir dispose in the outer `finally`.
-- `src/app/api/share/[token]/route.ts` — `clips` in the step mapping; the
-  `doc.steps.map` becomes `await Promise.all(...)`; widen the route's local
-  `Step` type (`screenshots?` optional, add `clips?`/`clipsError?`);
-  `CLIP_URL_TTL_SEC` constant.
+  back-half branch + clip-stage temp-dir dispose in the outer `finally` (the
+  dispose handle is declared `undefined` at orchestrator outer scope, like the
+  existing `pool` variable, so the `finally` can reach it).
+- `src/app/api/share/[token]/route.ts` — `clips` added to the step output
+  mapping; the `doc.steps.map` becomes `await Promise.all(...)`;
+  `CLIP_URL_TTL_SEC` constant. (No local `Step` type exists in this file.)
 - `src/app/share/[token]/page.tsx` — widen the local `Step` type, add the
   `ClipItem` type, per-step component selection.
 - `src/app/processing/[id]/page.tsx` — add the two statuses to the local
-  `Status` union and to `STATUS_STEP_INDEX`.
+  `Status` union and to `STATUS_STEP_INDEX`; add a `clip_extract_failed` entry
+  to the `ERROR_MSG` map.
