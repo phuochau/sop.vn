@@ -170,3 +170,24 @@ test("llmJsonVision defaults maxRetries to 3 when not specified", async () => {
   }));
   assert.equal(calls, 4, "default maxRetries=3 → 4 total attempts");
 });
+
+test("zodToJsonSchemaLike handles .nullish() (ZodOptional) fields", async () => {
+  const captured: { body: string | null } = { body: null };
+  const fakeFetch: typeof fetch = async (_url, init) => {
+    captured.body = String(init?.body ?? "");
+    return okResponse(llmContent({ a: "x", b: null }));
+  };
+  await llmJson({
+    model: "m", system: "s", user: "u",
+    schema: z.object({
+      a: z.string().nullish(),
+      b: z.object({ c: z.number() }).nullish(),
+    }),
+    schemaName: "n", maxRetries: 0,
+    fetcher: fakeFetch,
+  });
+  assert.ok(captured.body, "fetch should have been called (converter must not throw)");
+  const schema = JSON.parse(captured.body!).response_format.json_schema.schema;
+  assert.deepEqual(schema.properties.a.type, ["string", "null"]);
+  assert.deepEqual(schema.properties.b.type, ["object", "null"]);
+});

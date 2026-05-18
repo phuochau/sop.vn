@@ -142,9 +142,12 @@ function zodToJsonSchemaLike(schema: ZodTypeAny): unknown {
     case "ZodString": return { type: "string" };
     case "ZodNumber": return { type: "number" };
     case "ZodEnum":   return { type: "string", enum: def.values };
-    case "ZodNullable": {
-      // Unwrap inner schema and union its `type` with "null" so strict JSON-schema
-      // mode accepts `null`. e.g. ZodNullable<ZodString> → { type: ["string", "null"] }.
+    case "ZodNullable":
+    case "ZodOptional": {
+      // Unwrap inner schema and union its `type` with "null". In strict
+      // JSON-schema mode every property stays `required`, so an optional field
+      // is expressed the same as a nullable one: the value may be `null`.
+      // Both ZodNullable and ZodOptional expose `_def.innerType`.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const inner = zodToJsonSchemaLike(def.innerType) as any;
       const innerType = inner.type;
