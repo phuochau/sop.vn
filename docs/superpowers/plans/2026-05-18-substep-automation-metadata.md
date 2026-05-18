@@ -570,7 +570,7 @@ In `src/lib/mongo.ts`, in the `Screenshot` interface, after the `highlightError?
 
 In `src/trigger/stages/uploadScreenshots.ts`:
 
-(a) Ensure `Action` is imported from `@/lib/schemas`. It is already used as `Map<number, Action[]>`, so the import exists — confirm `import type { Action } from "@/lib/schemas";` (or that `Action` is in an existing import from that module).
+(a) `Action` is already imported (`import type { Action } from "@/lib/schemas";`, line 8) — no import change needed.
 
 (b) Add this exported helper just above `export async function runUploadScreenshots`:
 
