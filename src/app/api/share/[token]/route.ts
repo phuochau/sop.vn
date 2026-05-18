@@ -30,6 +30,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
         order: ss.order,
         description: ss.description,
         highlight: ss.highlight,
+        automation: ss.automation,
       })),
       screenshotsError: s.screenshotsError,
     })),
