@@ -165,6 +165,7 @@ export const HighlightDecision = z.object({
   noHighlightReason: z
     .enum(["view_action", "no_specific_target", "non_ui_frame", "grounding_unavailable"])
     .nullable(),
+  grounder: z.enum(["ui-tars", "qwen3-vl"]).optional(),
 });
 
 export type Action = {
@@ -180,6 +181,11 @@ export type Action = {
     kind: "click" | "input";
     bbox?: { x: number; y: number; w: number; h: number };
     point?: { x: number; y: number };
+    source?: {
+      subStepIndex: number;
+      actionId?: string;        // reserved — currently unset because Action has no stable id
+      grounder?: "ui-tars" | "qwen3-vl";
+    };
   };
   automation?: AutomationMeta;
 };

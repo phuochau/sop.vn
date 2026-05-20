@@ -42,12 +42,16 @@ type GroundDeps = {
 };
 const defaultGroundDeps: GroundDeps = { uiTars: uiTarsPoint, qwen: qwenPoint };
 
-function yesDecision(point: { x: number; y: number }): Decision {
+function yesDecision(
+  point: { x: number; y: number },
+  grounder: "ui-tars" | "qwen3-vl",
+): Decision {
   return {
     highlight: "yes",
     point,
     bbox: null,
     noHighlightReason: null,
+    grounder,
   };
 }
 
@@ -71,7 +75,7 @@ export async function pointFallbackHighlight(
       framePath: args.framePath, intent: args.intent, verb: args.verb,
       frameW, frameH, model: config.ai.pointPrimaryModel,
     });
-    if (r.point) return yesDecision(r.point);
+    if (r.point) return yesDecision(r.point, "ui-tars");
   } catch {
     uiTarsErrored = true;
   }
@@ -82,7 +86,7 @@ export async function pointFallbackHighlight(
       framePath: args.framePath, intent: args.intent, verb: args.verb,
       model: config.ai.pointFallbackModel,
     });
-    if (r.point) return yesDecision(r.point);
+    if (r.point) return yesDecision(r.point, "qwen3-vl");
   } catch {
     qwenErrored = true;
   }
