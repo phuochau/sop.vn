@@ -194,6 +194,9 @@ export function UploadZone() {
                   <option value="en">English</option>
                 </select>
               </div>
+              <span className="text-[11px] text-[#9CA3AF] pl-1">
+                Chỉ dùng khi video không có người nói.
+              </span>
               <div className="flex items-center gap-1.5">
                 <span className="text-[12px] text-[#666666]">Đầu ra:</span>
                 {(["auto", "screenshots", "clips"] as const).map((v) => (
@@ -219,9 +222,6 @@ export function UploadZone() {
                   </button>
                 ))}
               </div>
-              <span className="text-[11px] text-[#9CA3AF] pl-1">
-                Chỉ dùng khi video không có người nói.
-              </span>
             </div>
             <label className="inline-flex items-center gap-2 cursor-pointer">
               <input

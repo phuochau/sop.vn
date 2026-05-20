@@ -21,6 +21,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     title: doc.title,
     category: doc.category,
     createdAt: doc.createdAt,
+    outputFormatCoerced: doc.outputFormatCoerced,
     steps: await Promise.all(doc.steps.map(async (s, i) => ({
       index: i,
       title: s.title,

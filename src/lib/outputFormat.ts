@@ -1,5 +1,7 @@
+import type { OutputFormatChoice } from "./schemas";
+export type { OutputFormatChoice };
+
 export type GatedAppType = "web" | "mobile" | "desktop" | "physical";
-export type OutputFormatChoice = "auto" | "screenshots" | "clips";
 export type EffectiveOutputFormat = "screenshots" | "clips";
 
 export interface ResolveResult {
