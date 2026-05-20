@@ -18,6 +18,7 @@ export function UploadZone() {
   const [progress, setProgress] = useState(0);
   const [isPublic, setIsPublic] = useState(false);
   const [language, setLanguage] = useState<"vi" | "en">("vi");
+  const [outputFormat, setOutputFormat] = useState<"auto" | "screenshots" | "clips">("auto");
 
   function pickFile(f: File | null) {
     setError(null);
@@ -54,7 +55,7 @@ export function UploadZone() {
     const commit = await fetch("/api/upload/commit", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sopId: init.sopId, defaultLanguage: language }),
+      body: JSON.stringify({ sopId: init.sopId, defaultLanguage: language, outputFormat }),
     });
     if (!commit.ok) throw new Error("commit_failed");
     return init.sopId as string;
@@ -64,7 +65,7 @@ export function UploadZone() {
     const r = await fetch("/api/ingest/loom", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url, defaultLanguage: language }),
+      body: JSON.stringify({ url, defaultLanguage: language, outputFormat }),
     });
     const json = await r.json();
     if (!r.ok) {
@@ -181,7 +182,7 @@ export function UploadZone() {
 
           {/* Options row */}
           <div className="flex items-center justify-between gap-4 flex-wrap">
-            <div className="flex flex-col items-start gap-1">
+            <div className="flex flex-col items-start gap-2">
               <div className="inline-flex items-center gap-2.5 rounded-xl border border-gray-200 bg-[#FAFAFA] px-3.5 py-2.5">
                 <Globe className="w-4 h-4 text-[#0A0A0A]" strokeWidth={2} />
                 <select
@@ -192,6 +193,31 @@ export function UploadZone() {
                   <option value="vi">Tiếng Việt</option>
                   <option value="en">English</option>
                 </select>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[12px] text-[#666666]">Đầu ra:</span>
+                {(["auto", "screenshots", "clips"] as const).map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => setOutputFormat(v)}
+                    className={
+                      "px-3 py-1 rounded-md text-[12px] border transition " +
+                      (outputFormat === v
+                        ? "bg-[#0A0A0A] text-white border-[#0A0A0A]"
+                        : "bg-white text-[#374151] border-gray-200 hover:bg-gray-50")
+                    }
+                    title={
+                      v === "auto"
+                        ? "Tự động chọn theo loại video"
+                        : v === "screenshots"
+                        ? "Sinh ảnh chụp màn hình từng bước"
+                        : "Sinh video clip ngắn cho từng bước"
+                    }
+                  >
+                    {v === "auto" ? "Tự động" : v === "screenshots" ? "Ảnh" : "Video"}
+                  </button>
+                ))}
               </div>
               <span className="text-[11px] text-[#9CA3AF] pl-1">
                 Chỉ dùng khi video không có người nói.
