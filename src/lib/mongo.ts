@@ -102,6 +102,9 @@ export interface SopDoc {
   inputMode?: "speech" | "silent";
   appType?: "web" | "mobile" | "desktop" | "physical" | "none"; // detected by Stage 0
   industry?: string;                // curated industry enum, detected by Stage 0 (legacy rows lack it)
+  outputFormat?: "auto" | "screenshots" | "clips"; // user's choice at upload (legacy rows lack it)
+  effectiveOutputFormat?: "screenshots" | "clips"; // resolved after analyze
+  outputFormatCoerced?: { from: "screenshots"; to: "clips"; reason: "physical_detected" };
   defaultLanguage?: string;
   sourceType?: "upload" | "loom";   // absent ⇒ "upload" (legacy rows)
   sourceUrl?: string;               // original Loom share URL (sourceType === "loom")
