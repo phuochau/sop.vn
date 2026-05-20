@@ -26,6 +26,7 @@ import { buildActionsForStep } from "./stages/buildActionsForStep";
 import { collapseDuplicateActions } from "./stages/collapseDuplicateActions";
 import { highlightActions } from "./stages/highlightActions";
 import { runWithCostTracking, withStage, recordCost } from "@/lib/aiCost";
+import { resolveOutputFormat, type GatedAppType } from "@/lib/outputFormat";
 import type { Action } from "@/lib/schemas";
 
 type ResolvedStep = { title: string; description: string; startTime: number; endTime: number };
@@ -122,9 +123,17 @@ async function runPipeline(_id: ObjectId): Promise<void> {
         return fail(_id, "not_an_app");
       }
       const { category, domainSummary, appType, industry } = analysis;
+      const userChoice = doc.outputFormat ?? "auto";
+      const { effective: effectiveOutputFormat, coerced: outputFormatCoerced } =
+        resolveOutputFormat(userChoice, appType as GatedAppType);
       await (await sops()).updateOne(
         { _id },
-        { $set: { category, domainSummary, appType, industry, updatedAt: new Date() } },
+        { $set: {
+            category, domainSummary, appType, industry,
+            effectiveOutputFormat,
+            ...(outputFormatCoerced ? { outputFormatCoerced } : {}),
+            updatedAt: new Date(),
+        } },
       );
 
       // Stage 1: transcribe (always run).
@@ -211,7 +220,7 @@ async function runPipeline(_id: ObjectId): Promise<void> {
         }
       }
 
-      if (isPhysical) {
+      if (effectiveOutputFormat === "clips") {
         // Physical path: extract one clip per step, upload, compose.
         await setStatus(_id, "building-clips", { title });
         let extracted;
