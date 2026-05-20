@@ -23,7 +23,7 @@ test("writes a point highlight onto a non-view action when the highlighter retur
     actions,
     highlighter: async () => ({ highlight: "yes", point: { x: 0.5, y: 0.4 }, bbox: null, noHighlightReason: null }),
   });
-  assert.deepEqual(out[0].highlight, { kind: "click", point: { x: 0.5, y: 0.4 } });
+  assert.deepEqual(out[0].highlight, { kind: "click", point: { x: 0.5, y: 0.4 }, source: { subStepIndex: 0 } });
 });
 
 test("maps verb 'input' to highlight kind 'input', everything else to 'click'", async () => {
@@ -52,6 +52,31 @@ test("leaves highlight unset when the highlighter returns no point", async () =>
     highlighter: async () => ({ highlight: "no", point: null, bbox: null, noHighlightReason: "no_specific_target" }),
   });
   assert.equal(out[0].highlight, undefined);
+});
+
+test("highlightActions writes highlight.source with subStepIndex + grounder", async () => {
+  const actions: Action[] = [
+    {
+      stepIndex: 0, order: 0, verb: "click",
+      description: "open menu", screenName: "home", elementCaption: "menu",
+      displayFramePath: "/tmp/f.jpg", time: 1.0,
+    },
+    {
+      stepIndex: 0, order: 1, verb: "click",
+      description: "click save", screenName: "form", elementCaption: "save",
+      displayFramePath: "/tmp/g.jpg", time: 2.0,
+    },
+  ];
+  const highlighter = async () => ({
+    highlight: "yes" as const,
+    point: { x: 0.5, y: 0.5 },
+    bbox: null,
+    noHighlightReason: null,
+    grounder: "ui-tars" as const,
+  });
+  const out = await highlightActions({ actions, highlighter });
+  assert.deepEqual(out[0].highlight?.source, { subStepIndex: 0, grounder: "ui-tars" });
+  assert.deepEqual(out[1].highlight?.source, { subStepIndex: 1, grounder: "ui-tars" });
 });
 
 test("grounds each call on the action's own displayFramePath and description", async () => {

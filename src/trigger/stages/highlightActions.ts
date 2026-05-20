@@ -24,7 +24,8 @@ export async function highlightActions(args: {
   highlighter?: HighlightFn;
 }): Promise<Action[]> {
   const highlighter: HighlightFn = args.highlighter ?? runLocateHighlight;
-  for (const action of args.actions) {
+  for (let idx = 0; idx < args.actions.length; idx++) {
+    const action = args.actions[idx];
     if (action.verb === "view") continue;
     const decision = await highlighter({
       intent: action.description,
@@ -35,6 +36,10 @@ export async function highlightActions(args: {
       action.highlight = {
         kind: highlightKind(action.verb),
         point: { x: decision.point.x, y: decision.point.y },
+        source: {
+          subStepIndex: idx,
+          ...(decision.grounder ? { grounder: decision.grounder } : {}),
+        },
       };
     }
   }
