@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Eye, FileText, Link as LinkIcon, Users, ListOrdered, Timer, Calendar, Shield, ArrowRight } from "lucide-react";
+import { Eye, FileText, Info, Link as LinkIcon, Users, ListOrdered, Timer, Calendar, Shield, ArrowRight } from "lucide-react";
 import { Footer } from "@/components/Footer";
 import { StepCardScreenshots, type ScreenshotItem } from "@/components/StepCardScreenshots";
 import { StepCardClips, type ClipItem } from "@/components/StepCardClips";
@@ -21,6 +21,7 @@ type SharedSop = {
   category: string;
   createdAt: string;
   steps: Step[];
+  outputFormatCoerced?: { from: "screenshots"; to: "clips"; reason: "physical_detected" };
 };
 
 async function getShared(token: string): Promise<SharedSop | null> {
@@ -110,6 +111,15 @@ export default async function Page({ params }: { params: Promise<{ token: string
 
         {/* Steps list */}
         <section className="max-w-[840px] mx-auto px-6 md:px-12 py-10 space-y-5">
+          {sop.outputFormatCoerced && (
+            <div className="flex items-center gap-2.5 rounded-xl bg-[#FEF3C7] px-4 py-3">
+              <Info className="w-3.5 h-3.5 text-[#92400E] shrink-0" strokeWidth={2} />
+              <p className="text-[12px] text-[#92400E]">
+                Video này được nhận diện là quay thực tế, nên hệ thống đã tạo video clip thay vì ảnh chụp màn hình.
+              </p>
+            </div>
+          )}
+
           {sop.steps.map((s) =>
             (s.clips && s.clips.length > 0) || s.clipsError ? (
               <StepCardClips

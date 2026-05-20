@@ -26,6 +26,7 @@ type Sop = {
   createdAt: string;
   shareToken: string;
   steps: Step[];
+  outputFormatCoerced?: { from: "screenshots"; to: "clips"; reason: "physical_detected" };
 };
 
 async function getSop(id: string): Promise<Sop | null> {
@@ -118,6 +119,15 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
                 Lưu ý: Video gốc sẽ tự xóa sau 30 ngày. Hãy sao chép liên kết chia sẻ để giữ SOP này.
               </p>
             </div>
+
+            {sop.outputFormatCoerced && (
+              <div className="flex items-center gap-2.5 rounded-xl bg-[#FEF3C7] px-4 py-3">
+                <Info className="w-3.5 h-3.5 text-[#92400E] shrink-0" strokeWidth={2} />
+                <p className="text-[12px] text-[#92400E]">
+                  Video này được nhận diện là quay thực tế, nên hệ thống đã tạo video clip thay vì ảnh chụp màn hình.
+                </p>
+              </div>
+            )}
 
             {sop.steps.map((s) =>
               (s.clips && s.clips.length > 0) || s.clipsError ? (
