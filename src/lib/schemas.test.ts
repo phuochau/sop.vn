@@ -6,6 +6,7 @@ import {
   ClassifiedCandidate,
   verbToAutomationAction,
   VideoAnalysisOutput,
+  OutputFormatChoice,
 } from "./schemas";
 
 test("HighlightDecision accepts a point", () => {
@@ -107,4 +108,14 @@ test("VideoAnalysisOutput rejects an appType outside the 5-value enum", () => {
       industry: "retail", category: "x", domainSummary: "y",
     }),
   );
+});
+
+test("OutputFormatChoice accepts auto, screenshots, clips", () => {
+  assert.equal(OutputFormatChoice.parse("auto"), "auto");
+  assert.equal(OutputFormatChoice.parse("screenshots"), "screenshots");
+  assert.equal(OutputFormatChoice.parse("clips"), "clips");
+});
+
+test("OutputFormatChoice rejects unknown values", () => {
+  assert.throws(() => OutputFormatChoice.parse("video"));
 });

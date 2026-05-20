@@ -183,3 +183,6 @@ export type Action = {
   };
   automation?: AutomationMeta;
 };
+
+export const OutputFormatChoice = z.enum(["auto", "screenshots", "clips"]);
+export type OutputFormatChoice = z.infer<typeof OutputFormatChoice>;
