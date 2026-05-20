@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import ffmpeg from "fluent-ffmpeg";
 
@@ -51,7 +52,6 @@ export async function probeSourceFile(filePath: string): Promise<SourceMetadata>
 }
 
 export async function probeSourceFromUrl(signedUrl: string, ext: string): Promise<SourceMetadata> {
-  const os = await import("node:os");
   const tmp = await fs.promises.mkdtemp(path.join(os.tmpdir(), "probe-src-"));
   const file = path.join(tmp, `src.${ext}`);
   try {

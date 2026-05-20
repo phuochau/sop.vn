@@ -21,7 +21,9 @@ const DOWNSCALE_MAX_EDGE = 1280;
 export function coerceForViewVerb(verb: SubStep["verb"], d: Decision): Decision {
   if (verb !== "view") return d;
   return {
+    ...d,
     highlight: "no",
+    point: null,
     bbox: null,
     noHighlightReason: "view_action",
   };
