@@ -6,10 +6,12 @@ import { sops } from "@/lib/mongo";
 import { newShareToken, videoKey } from "@/lib/utils";
 import { config } from "@/config";
 import { parseLoomUrl } from "@/lib/loom";
+import { OutputFormatChoice } from "@/lib/schemas";
 
 const Body = z.object({
   url: z.string().min(1),
   defaultLanguage: z.enum(["vi", "en"]).default("vi"),
+  outputFormat: OutputFormatChoice.default("auto"),
 });
 
 export async function POST(req: Request) {
@@ -40,6 +42,7 @@ export async function POST(req: Request) {
     steps: [],
     shareToken: newShareToken(),
     defaultLanguage: parsed.data.defaultLanguage,
+    outputFormat: parsed.data.outputFormat,
     sourceType: "loom",
     sourceUrl: parsed.data.url,
     videoId: loom.videoId,
