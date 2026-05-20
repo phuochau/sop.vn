@@ -62,6 +62,20 @@ Output: [ Auto ] [ Screenshots ] [ Clips ]
 - Each option has a short tooltip explaining the choice.
 - Selection is sent in the upload commit payload as `outputFormat`.
 
+The same control applies to Loom ingest (`POST /api/ingest/loom`), which
+shares the upload form.
+
+## API changes
+
+Two routes accept an optional `outputFormat` field:
+
+- `POST /api/upload/commit` — body gains
+  `outputFormat?: "auto" | "screenshots" | "clips"`.
+- `POST /api/ingest/loom` — same field.
+
+Both default to `"auto"` when the field is missing, preserving back-compat
+with any external callers.
+
 ## Data model
 
 Add to the SOP document:
@@ -77,21 +91,22 @@ Existing `Step.screenshots[]` and `Step.clip` schemas are unchanged.
 
 The SOP viewer currently chooses a per-step renderer based on which field is
 populated (`StepCardClips` vs the screenshot renderer — commit `355f851`).
-Switch the top-level decision to read `sop.effectiveOutputFormat` so the
-renderer choice is explicit rather than implied by data presence.
+For new SOPs, read `sop.effectiveOutputFormat` at the top level so the
+renderer choice is explicit. For older SOPs missing the field, keep the
+existing per-step inference from data presence (see Edge cases).
 
 ## Resolver
 
 Single pure function:
 
 ```ts
-type AppType = "web" | "app" | "physical" | "none";
+type GatedAppType = "web" | "app" | "physical"; // "none" is rejected upstream
 type UserChoice = "auto" | "screenshots" | "clips";
 type Effective = "screenshots" | "clips";
 
 function resolveOutputFormat(
   choice: UserChoice,
-  appType: AppType,
+  appType: GatedAppType,
 ): { effective: Effective; coerced?: { from: "screenshots"; to: "clips"; reason: "physical_detected" } } {
   if (appType === "physical") {
     if (choice === "screenshots") {
@@ -105,8 +120,9 @@ function resolveOutputFormat(
 }
 ```
 
-`appType === "none"` is rejected upstream by the analyze gate, so the resolver
-is only called for `web | app | physical`.
+The input type is narrowed to `GatedAppType` because `appType === "none"` is
+rejected by the analyze gate before the resolver runs. The caller is
+responsible for that gate; the resolver does not re-check.
 
 ## Orchestrator change
 
@@ -159,7 +175,8 @@ The `decideAppGate` rejection for non-physical recordings stays — it guards
   `effectiveOutputFormat` is recomputed if analyze re-runs; coercion state
   follows analyze.
 - **Old SOPs missing the field**: viewer treats absent `effectiveOutputFormat`
-  as "infer from data" (current behavior), so existing records keep rendering.
+  as "infer from data" (current per-step behavior from commit `355f851`), so
+  existing records keep rendering. No backfill required.
 
 ## SOP viewer
 
