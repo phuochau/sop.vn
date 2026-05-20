@@ -14,7 +14,7 @@
 
 ## File Structure
 
-- `src/lib/schemas.ts` — add `OutputFormatChoice` and `EffectiveOutputFormat` Zod enums and an `OutputFormatCoerced` object schema.
+- `src/lib/schemas.ts` — add `OutputFormatChoice` Zod enum (the only runtime-validated piece; shared by both API routes).
 - `src/lib/mongo.ts` — extend `SopDoc` with `outputFormat`, `effectiveOutputFormat`, `outputFormatCoerced`.
 - `src/lib/outputFormat.ts` — new file: pure `resolveOutputFormat` function.
 - `src/lib/outputFormat.test.ts` — new file: resolver truth-table tests.
@@ -33,9 +33,14 @@
 - Modify: `src/lib/schemas.ts` (end of file)
 - Test: `src/lib/schemas.test.ts`
 
+Only the user-facing choice enum needs a runtime schema (it's validated by the
+two API routes). The resolved/effective format and the coerced descriptor are
+internal data written by the orchestrator and read by the viewer — TypeScript
+types alone are enough, no runtime validation needed.
+
 - [ ] **Step 1: Write the failing tests**
 
-Append to `src/lib/schemas.test.ts`. Extend the existing import from `./schemas` to include `OutputFormatChoice`, `EffectiveOutputFormat`, and `OutputFormatCoerced`.
+Append to `src/lib/schemas.test.ts`. Extend the existing import from `./schemas` to include `OutputFormatChoice`.
 
 ```ts
 test("OutputFormatChoice accepts auto, screenshots, clips", () => {
@@ -47,45 +52,20 @@ test("OutputFormatChoice accepts auto, screenshots, clips", () => {
 test("OutputFormatChoice rejects unknown values", () => {
   assert.throws(() => OutputFormatChoice.parse("video"));
 });
-
-test("EffectiveOutputFormat accepts screenshots and clips only", () => {
-  assert.equal(EffectiveOutputFormat.parse("screenshots"), "screenshots");
-  assert.equal(EffectiveOutputFormat.parse("clips"), "clips");
-  assert.throws(() => EffectiveOutputFormat.parse("auto"));
-});
-
-test("OutputFormatCoerced parses the physical_detected shape", () => {
-  const parsed = OutputFormatCoerced.parse({
-    from: "screenshots",
-    to: "clips",
-    reason: "physical_detected",
-  });
-  assert.equal(parsed.reason, "physical_detected");
-});
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `npx tsx --test src/lib/schemas.test.ts`
-Expected: FAIL — `OutputFormatChoice`/`EffectiveOutputFormat`/`OutputFormatCoerced` are not exported.
+Expected: FAIL — `OutputFormatChoice` is not exported.
 
-- [ ] **Step 3: Add the schemas**
+- [ ] **Step 3: Add the schema**
 
 Append to `src/lib/schemas.ts`:
 
 ```ts
 export const OutputFormatChoice = z.enum(["auto", "screenshots", "clips"]);
 export type OutputFormatChoice = z.infer<typeof OutputFormatChoice>;
-
-export const EffectiveOutputFormat = z.enum(["screenshots", "clips"]);
-export type EffectiveOutputFormat = z.infer<typeof EffectiveOutputFormat>;
-
-export const OutputFormatCoerced = z.object({
-  from: z.literal("screenshots"),
-  to: z.literal("clips"),
-  reason: z.literal("physical_detected"),
-});
-export type OutputFormatCoerced = z.infer<typeof OutputFormatCoerced>;
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
@@ -97,7 +77,7 @@ Expected: PASS.
 
 ```bash
 git add src/lib/schemas.ts src/lib/schemas.test.ts
-git commit -m "feat(output-format): add OutputFormatChoice/Effective/Coerced schemas"
+git commit -m "feat(output-format): add OutputFormatChoice Zod schema"
 ```
 
 ---
@@ -254,13 +234,19 @@ git commit -m "feat(output-format): add resolveOutputFormat with truth-table tes
 
 - [ ] **Step 1: Update Zod body schema + persist field**
 
+Add the `OutputFormatChoice` import alongside the existing imports:
+
+```ts
+import { OutputFormatChoice } from "@/lib/schemas";
+```
+
 Replace the `Body` schema and the `col.updateOne` `$set` in `src/app/api/upload/commit/route.ts`:
 
 ```ts
 const Body = z.object({
   sopId: z.string().length(24),
   defaultLanguage: z.enum(["vi", "en"]).default("vi"),
-  outputFormat: z.enum(["auto", "screenshots", "clips"]).default("auto"),
+  outputFormat: OutputFormatChoice.default("auto"),
 });
 ```
 
@@ -299,13 +285,19 @@ git commit -m "feat(output-format): accept outputFormat on /api/upload/commit"
 
 - [ ] **Step 1: Update Zod body schema + persist on insert**
 
+Add the import next to the existing ones:
+
+```ts
+import { OutputFormatChoice } from "@/lib/schemas";
+```
+
 Update the `Body` schema and the `insertOne` call in `src/app/api/ingest/loom/route.ts`:
 
 ```ts
 const Body = z.object({
   url: z.string().min(1),
   defaultLanguage: z.enum(["vi", "en"]).default("vi"),
-  outputFormat: z.enum(["auto", "screenshots", "clips"]).default("auto"),
+  outputFormat: OutputFormatChoice.default("auto"),
 });
 ```
 
@@ -405,17 +397,9 @@ git commit -m "feat(output-format): add segmented Auto/Screenshots/Clips control
 **Files:**
 - Modify: `src/trigger/processSopScreenshots.ts:114-128` (the `isPhysical` block + `$set` write) and the existing `if (isPhysical)` branch lower in the file (~line 214).
 
-- [ ] **Step 1: Read `outputFormat` from the SOP doc already in scope**
+- [ ] **Step 1: Replace the `isPhysical` derivation with the resolver call**
 
-The orchestrator already fetches the SOP at `runPipeline` line 67 as `const doc = await (await sops()).findOne({ _id });`. Add this line just before the resolver call (anywhere after `analysis` is computed and before the `$set` write):
-
-```ts
-const userChoice = doc.outputFormat ?? "auto";
-```
-
-No extra findOne — reuse `doc`.
-
-- [ ] **Step 2: Replace the `isPhysical` derivation with the resolver**
+The orchestrator already fetches the SOP at `runPipeline` line 67 as `const doc = await (await sops()).findOne({ _id });`, so `doc` is in scope (and non-null by the early return on line 68). Reuse it — no extra findOne.
 
 Replace these lines in `src/trigger/processSopScreenshots.ts` (the existing `isPhysical` and the `$set` of `category/domainSummary/appType/industry`):
 
@@ -449,8 +433,9 @@ with:
         return fail(_id, "not_an_app");
       }
       const { category, domainSummary, appType, industry } = analysis;
+      const userChoice = doc.outputFormat ?? "auto";
       const { effective: effectiveOutputFormat, coerced: outputFormatCoerced } =
-        resolveOutputFormat(userChoice, appType as "web" | "mobile" | "desktop" | "physical");
+        resolveOutputFormat(userChoice, appType as GatedAppType);
       await (await sops()).updateOne(
         { _id },
         { $set: {
@@ -465,12 +450,12 @@ with:
 Add at the top of the file (with other imports):
 
 ```ts
-import { resolveOutputFormat } from "@/lib/outputFormat";
+import { resolveOutputFormat, type GatedAppType } from "@/lib/outputFormat";
 ```
 
-`appType` is narrowed by the preceding `analysis.appType === "none"` check + the gate; the cast above documents that.
+`appType` is guaranteed non-`"none"` here because the `analysis.appType === "none"` rejection runs earlier in the orchestrator (around line 107). The `as GatedAppType` cast documents the narrowing.
 
-- [ ] **Step 3: Replace the `if (isPhysical)` branch with `effectiveOutputFormat`**
+- [ ] **Step 2: Replace the `if (isPhysical)` branch with `effectiveOutputFormat`**
 
 Find the existing `if (isPhysical) {` block around line 214 and change the condition:
 
@@ -480,25 +465,19 @@ if (effectiveOutputFormat === "clips") {
 
 Everything inside the block (runExtractClips → runUploadClips → composeClipSteps) stays the same. The `else` branch (existing screenshots path) is unchanged.
 
-Remove the now-unused `const isPhysical = …` line *if* it isn't referenced elsewhere — check with grep first:
+**Keep** the `const isPhysical = analysis.appType === "physical";` line — it's still used by the rejection gate immediately below it (`if (!isPhysical && !decideAppGate(...))`). Only the *branch condition* changes; the gate is unrelated to output format.
 
-```bash
-grep -n "isPhysical" src/trigger/processSopScreenshots.ts
-```
-
-If only the original two references remain (rejection log + the branch), drop the `const isPhysical = …` line entirely after both sites are migrated. If anything else references it, leave it.
-
-- [ ] **Step 4: Type-check**
+- [ ] **Step 3: Type-check**
 
 Run: `npx tsc --noEmit`
 Expected: PASS.
 
-- [ ] **Step 5: Run existing orchestrator-adjacent tests**
+- [ ] **Step 4: Run existing orchestrator-adjacent tests**
 
 Run: `npx tsx --test src/trigger/stages/extractClips.test.ts src/trigger/stages/uploadClips.test.ts`
 Expected: PASS (no behavior change in those stages).
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add src/trigger/processSopScreenshots.ts
@@ -552,7 +531,7 @@ Visit `/sop/<id>` and `/share/<token>` and confirm the amber notice renders. Rem
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/app/sop/\[id\]/page.tsx src/app/share/\[token\]/page.tsx
+git add 'src/app/sop/[id]/page.tsx' 'src/app/share/[token]/page.tsx'
 git commit -m "feat(output-format): show coercion notice when screenshots was coerced to clips"
 ```
 
