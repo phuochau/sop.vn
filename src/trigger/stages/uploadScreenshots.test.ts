@@ -120,3 +120,22 @@ test("screenshotMetaFromAction omits the automation key when the action has none
   const meta = screenshotMetaFromAction(baseAction({}));
   assert.ok(!("automation" in meta), "automation key should be absent");
 });
+
+test("buildBufferWithOptionalHighlight returns image width/height alongside the buffer (no-geom)", async () => {
+  const { buf, error, width, height } = await buildBufferWithOptionalHighlight(FIXTURE, null);
+  assert.equal(error, null);
+  assert.ok(buf.length > 0);
+  assert.equal(width, 1920);
+  assert.equal(height, 1080);
+});
+
+test("buildBufferWithOptionalHighlight returns width/height when compositing a point", async () => {
+  const { buf, error, width, height } = await buildBufferWithOptionalHighlight(
+    FIXTURE,
+    { point: { x: 0.5, y: 0.5 } },
+  );
+  assert.equal(error, null);
+  assert.ok(buf.length > 0);
+  assert.equal(width, 1920);
+  assert.equal(height, 1080);
+});

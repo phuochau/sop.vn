@@ -62,33 +62,43 @@ export type HighlightGeom =
 export async function buildBufferWithOptionalHighlight(
   localPath: string,
   geom: HighlightGeom,
-): Promise<{ buf: Buffer; error: string | null }> {
+): Promise<{ buf: Buffer; error: string | null; width: number; height: number }> {
   if (!geom) {
-    return { buf: await fs.promises.readFile(localPath), error: null };
+    const buf = await fs.promises.readFile(localPath);
+    const meta = await sharp(buf).metadata();
+    return { buf, error: null, width: meta.width ?? 0, height: meta.height ?? 0 };
   }
   try {
     const meta = await sharp(localPath).metadata();
     const W = meta.width ?? 0;
     const H = meta.height ?? 0;
     if (!W || !H) {
-      return { buf: await fs.promises.readFile(localPath), error: "missing image metadata" };
+      const buf = await fs.promises.readFile(localPath);
+      return { buf, error: "missing image metadata", width: W, height: H };
     }
     let svg: string | null;
     if ("point" in geom) {
       svg = circleSvg(W, H, geom.point);
     } else {
       svg = rectSvg(W, H, geom.bbox);
-      if (!svg) return { buf: await fs.promises.readFile(localPath), error: "bbox out of range" };
+      if (!svg) {
+        const buf = await fs.promises.readFile(localPath);
+        return { buf, error: "bbox out of range", width: W, height: H };
+      }
     }
     const buf = await sharp(localPath)
       .composite([{ input: Buffer.from(svg), top: 0, left: 0 }])
       .jpeg({ quality: 85 })
       .toBuffer();
-    return { buf, error: null };
+    return { buf, error: null, width: W, height: H };
   } catch (e) {
+    const buf = await fs.promises.readFile(localPath);
+    const meta = await sharp(buf).metadata().catch(() => ({ width: 0, height: 0 }));
     return {
-      buf: await fs.promises.readFile(localPath),
+      buf,
       error: e instanceof Error ? e.message : String(e),
+      width: meta.width ?? 0,
+      height: meta.height ?? 0,
     };
   }
 }
@@ -130,7 +140,7 @@ export async function runUploadScreenshots(args: {
         : h?.bbox
           ? { bbox: h.bbox }
           : null;
-      const { buf, error } = await buildBufferWithOptionalHighlight(action.displayFramePath, geom);
+      const { buf, error, width, height } = await buildBufferWithOptionalHighlight(action.displayFramePath, geom);
       if (error) {
         logger.warn("uploadScreenshots: highlight draw failed; uploaded un-annotated frame", {
           stepIndex, t: action.time, error,
@@ -142,6 +152,11 @@ export async function runUploadScreenshots(args: {
         r2Key,
         t: action.time,
         order,
+        sizeBytes: buf.length,
+        width,
+        height,
+        ext: "jpg",
+        mime: "image/jpeg",
         ...screenshotMetaFromAction(action),
       };
       if (action.highlight && !error) {
