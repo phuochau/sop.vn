@@ -1,7 +1,10 @@
 import { task, tasks, logger } from "@trigger.dev/sdk/v3";
 import { ObjectId } from "mongodb";
+import path from "node:path";
 import { sops, events, type SopStatus, type ErrorCode } from "@/lib/mongo";
 import { resolveLoomMp4, resolveLoomHls, streamLoomToR2, muxLoomHlsToR2, type StreamError } from "@/lib/loom";
+import { presignGet } from "@/lib/r2";
+import { probeSourceFromUrl, type SourceMetadata } from "@/lib/probeSource";
 
 export type Decision =
   | { action: "run" }
@@ -97,9 +100,24 @@ export const ingestLoom = task({
       return;
     }
 
+    let source: SourceMetadata | undefined;
+    try {
+      const signedUrl = await presignGet(doc.videoR2Key);
+      const ext = path.extname(doc.videoR2Key).replace(/^\./, "").toLowerCase() || "mp4";
+      source = await probeSourceFromUrl(signedUrl, ext);
+    } catch (e) {
+      logger.warn("ingestLoom: probeSource failed; continuing without source meta", {
+        sopId: _id.toHexString(), error: e instanceof Error ? e.message : String(e),
+      });
+    }
     await col.updateOne(
       { _id },
-      { $set: { status: "transcribing", videoSizeBytes: streamed.bytes, updatedAt: new Date() } },
+      { $set: {
+          status: "transcribing",
+          videoSizeBytes: streamed.bytes,
+          ...(source ? { source } : {}),
+          updatedAt: new Date(),
+      } },
     );
 
     await tasks.trigger(
