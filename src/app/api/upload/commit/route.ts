@@ -3,10 +3,12 @@ import { ObjectId } from "mongodb";
 import { z } from "zod";
 import { sops, events } from "@/lib/mongo";
 import { tasks } from "@trigger.dev/sdk/v3";
+import { OutputFormatChoice } from "@/lib/schemas";
 
 const Body = z.object({
   sopId: z.string().length(24),
   defaultLanguage: z.enum(["vi", "en"]).default("vi"),
+  outputFormat: OutputFormatChoice.default("auto"),
 });
 
 export async function POST(req: Request) {
@@ -20,6 +22,7 @@ export async function POST(req: Request) {
     { $set: {
         status: "transcribing",
         defaultLanguage: parsed.data.defaultLanguage,
+        outputFormat: parsed.data.outputFormat,
         updatedAt: new Date(),
     } },
   );
