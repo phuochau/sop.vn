@@ -100,7 +100,7 @@ existing per-step inference from data presence (see Edge cases).
 Single pure function:
 
 ```ts
-type GatedAppType = "web" | "app" | "physical"; // "none" is rejected upstream
+type GatedAppType = "web" | "mobile" | "desktop" | "physical"; // "none" is rejected upstream
 type UserChoice = "auto" | "screenshots" | "clips";
 type Effective = "screenshots" | "clips";
 
