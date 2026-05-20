@@ -73,6 +73,12 @@ export interface Screenshot {
     };
     expectedOutcome?: string;
   };
+  // Asset metadata captured at upload time; absent on legacy rows.
+  sizeBytes?: number;
+  width?: number;
+  height?: number;
+  ext?: string;   // "jpg"
+  mime?: string;  // "image/jpeg"
 }
 
 export interface Clip {
@@ -82,6 +88,18 @@ export interface Clip {
   startTime: number;     // clip start in source video, seconds
   endTime: number;       // clip end in source video, seconds
   order: number;         // display order within the step (0 in v1 — one clip)
+  // Asset metadata captured at extract+upload time; absent on legacy rows.
+  sizeBytes?: number;
+  width?: number;
+  height?: number;
+  durationSec?: number;
+  ext?: string;   // "mp4"
+  mime?: string;  // "video/mp4"
+  codec?: string; // ffprobe stream.codec_name, e.g. "h264"
+  posterSizeBytes?: number;
+  posterWidth?: number;
+  posterHeight?: number;
+  posterMime?: string; // "image/jpeg"
 }
 
 export interface Step {
@@ -110,6 +128,16 @@ export interface SopDoc {
   sourceUrl?: string;               // original Loom share URL (sourceType === "loom")
   videoId?: string;                 // Loom video ID (sourceType === "loom")
   videoSizeBytes?: number;          // recorded after successful R2 stream
+  source?: {
+    sizeBytes: number;
+    width: number;
+    height: number;
+    durationSec: number;
+    fps: number;
+    ext: string;
+    mime: string;
+    codec: string;
+  };
   status: SopStatus;
   errorCode: ErrorCode;
   videoR2Key: string | null;
