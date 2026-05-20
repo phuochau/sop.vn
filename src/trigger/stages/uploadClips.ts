@@ -40,12 +40,24 @@ export async function runUploadClips(args: {
     const posterBuf = await fs.promises.readFile(ec.posterPath);
     await putObject(r2Key, clipBuf, "video/mp4");
     await putObject(posterR2Key, posterBuf, "image/jpeg");
-    out.set(ec.stepIndex, {
-      clips: [{
-        clipId, r2Key, posterR2Key,
-        startTime: ec.startTime, endTime: ec.endTime, order: 0,
-      }],
-    });
+    const clip: Clip = {
+      clipId, r2Key, posterR2Key,
+      startTime: ec.startTime, endTime: ec.endTime, order: 0,
+      ext: "mp4",
+      mime: "video/mp4",
+      posterMime: "image/jpeg",
+      ...(ec.meta ? {
+        sizeBytes: ec.meta.sizeBytes,
+        width: ec.meta.width,
+        height: ec.meta.height,
+        durationSec: ec.meta.durationSec,
+        codec: ec.meta.codec,
+        posterSizeBytes: ec.meta.posterSizeBytes,
+        posterWidth: ec.meta.posterWidth,
+        posterHeight: ec.meta.posterHeight,
+      } : {}),
+    };
+    out.set(ec.stepIndex, { clips: [clip] });
   }
   return out;
 }

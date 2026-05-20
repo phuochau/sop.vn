@@ -1,8 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import sharp from "sharp";
 import { extractClip as realExtractClip } from "@/trigger/lib/extractClip";
 import { grabFrame as realGrabFrame } from "@/trigger/lib/videoTmp";
+import { probeSourceFile } from "@/lib/probeSource";
 
 export type ExtractClipFn = (
   srcPath: string, outPath: string, startSec: number, endSec: number,
@@ -18,6 +20,16 @@ export interface ExtractedClip {
   startTime: number;
   endTime: number;
   error?: string;
+  meta?: {
+    sizeBytes: number;
+    width: number;
+    height: number;
+    durationSec: number;
+    codec: string;
+    posterSizeBytes: number;
+    posterWidth: number;
+    posterHeight: number;
+  };
 }
 
 /**
@@ -49,6 +61,23 @@ export async function runExtractClips(args: {
       try {
         await extractClip(args.srcPath, clipPath, startTime, endTime);
         await grabFrame(args.srcPath, posterPath, (startTime + endTime) / 2);
+        try {
+          const clipMeta = await probeSourceFile(clipPath);
+          const posterMeta = await sharp(posterPath).metadata();
+          const posterStat = await fs.promises.stat(posterPath);
+          rec.meta = {
+            sizeBytes: clipMeta.sizeBytes,
+            width: clipMeta.width,
+            height: clipMeta.height,
+            durationSec: clipMeta.durationSec,
+            codec: clipMeta.codec,
+            posterSizeBytes: posterStat.size,
+            posterWidth: posterMeta.width ?? 0,
+            posterHeight: posterMeta.height ?? 0,
+          };
+        } catch {
+          // Best-effort: leave rec.meta undefined; upload still proceeds.
+        }
       } catch (e) {
         rec.error = e instanceof Error ? e.message : String(e);
       }

@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { runUploadClips, composeClipSteps, type StepClips } from "./uploadClips";
+import type { ExtractedClip } from "./extractClips";
 
 async function tmpFile(content: string): Promise<string> {
   const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "uc-"));
@@ -48,6 +49,45 @@ test("runUploadClips passes a failed-extraction step through as clipsError, no u
   const entry = byStep.get(0)!;
   assert.equal(entry.clips.length, 0);
   assert.ok(entry.error && entry.error.includes("ffmpeg boom"));
+});
+
+test("runUploadClips copies ExtractedClip.meta onto Clip records", async () => {
+  const clipPath = await tmpFile("mp4-bytes");
+  const posterPath = await tmpFile("jpg-bytes");
+  const ec: ExtractedClip = {
+    stepIndex: 0,
+    clipPath,
+    posterPath,
+    startTime: 0,
+    endTime: 2,
+    meta: {
+      sizeBytes: 12345,
+      width: 1920,
+      height: 1080,
+      durationSec: 2.0,
+      codec: "h264",
+      posterSizeBytes: 4321,
+      posterWidth: 1920,
+      posterHeight: 1080,
+    },
+  };
+  const result = await runUploadClips({
+    sopId: "sop123",
+    clips: [ec],
+    putObject: async () => {},
+  });
+  const clip = result.get(0)!.clips[0];
+  assert.equal(clip.sizeBytes, 12345);
+  assert.equal(clip.width, 1920);
+  assert.equal(clip.height, 1080);
+  assert.equal(clip.durationSec, 2.0);
+  assert.equal(clip.codec, "h264");
+  assert.equal(clip.ext, "mp4");
+  assert.equal(clip.mime, "video/mp4");
+  assert.equal(clip.posterSizeBytes, 4321);
+  assert.equal(clip.posterWidth, 1920);
+  assert.equal(clip.posterHeight, 1080);
+  assert.equal(clip.posterMime, "image/jpeg");
 });
 
 test("composeClipSteps sets clips / clipsError per step and never sets screenshots", () => {
